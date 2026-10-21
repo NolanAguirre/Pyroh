@@ -1,0 +1,597 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  Badge,
+  Button,
+  Card,
+  CardHeader,
+  CardSection,
+  CardRow,
+  CardLabel,
+  DevInspector,
+  DevScope,
+  FolderIcon,
+  Popup,
+  SplitPane,
+  useBrowserLocation,
+} from 'component-library'
+import SessionsSidebar from './components/SessionsSidebar'
+import SessionView from './components/SessionView'
+import RunningJobsNav from './components/RunningJobsNav'
+import EditorView from './components/Editor/EditorView'
+import TerminalView from './components/Terminal/TerminalView'
+import GitView from './components/Git/GitView'
+import AnalyticsView from './components/Analytics/AnalyticsView'
+import CodeStatsView from './components/CodeStats/CodeStatsView'
+import NewSessionForm from './components/NewSessionForm'
+import NewWorkspaceForm from './components/NewWorkspaceForm'
+import api from './api'
+import harnessForms from './components/HarnessInspector/harnessForms'
+import SessionExplorer from './components/HarnessInspector/sessionExplorer'
+import './App.css'
+
+const harnessViews = [{
+  id: 'harness-sessions',
+  title: 'Harness sessions',
+  icon: '☷',
+  component: SessionExplorer,
+}]
+
+const WORKSPACE_KEY = 'harness.activeWorkspaceId'
+const WORKSPACE_PARAM = 'workspace'
+const SESSION_PARAM = 'session'
+const VIEW_PARAM = 'view'
+const FILE_PARAM = 'file'
+const TERM_PARAM = 'term'
+const EDITOR_VIEW = 'editor'
+const TERMINAL_VIEW = 'terminal'
+const GIT_VIEW = 'git'
+const ANALYTICS_VIEW = 'analytics'
+const CODE_STATS_VIEW = 'code-stats'
+const ACTIVE_JOB = (session) => session.status === 'running' || session.status === 'awaiting_input'
+const JOB_LIST_LIMIT = 20
+
+const selectionFromUrl = (url) => ({
+  workspaceId: url.searchParams.get(WORKSPACE_PARAM),
+  sessionId: url.searchParams.get(SESSION_PARAM),
+  view: url.searchParams.get(VIEW_PARAM),
+  file: url.searchParams.get(FILE_PARAM),
+  term: url.searchParams.get(TERM_PARAM),
+})
+
+const urlWithSelection = (url, workspaceId, sessionId, view, file, term) => {
+  const next = new URL(url.href)
+  if (workspaceId) next.searchParams.set(WORKSPACE_PARAM, workspaceId)
+  else next.searchParams.delete(WORKSPACE_PARAM)
+  if (sessionId) next.searchParams.set(SESSION_PARAM, sessionId)
+  else next.searchParams.delete(SESSION_PARAM)
+  if (view) next.searchParams.set(VIEW_PARAM, view)
+  else if (view === null) next.searchParams.delete(VIEW_PARAM)
+  if (file) next.searchParams.set(FILE_PARAM, file)
+  else if (file === null || file === '') next.searchParams.delete(FILE_PARAM)
+  if (term) next.searchParams.set(TERM_PARAM, term)
+  else if (term === null || term === '') next.searchParams.delete(TERM_PARAM)
+  return next
+}
+
+const readStoredWorkspace = () => {
+  try {
+    return localStorage.getItem(WORKSPACE_KEY) || null
+  } catch {
+    return null
+  }
+}
+
+if (!new URL(window.location.href).searchParams.get(WORKSPACE_PARAM)) {
+  const stored = readStoredWorkspace()
+  if (stored) {
+    const next = urlWithSelection(new URL(window.location.href), stored, new URL(window.location.href).searchParams.get(SESSION_PARAM))
+    window.history.replaceState(null, '', next.href)
+  }
+}
+
+const AppPlaceholder = ({ workspace, workspaces = [], sessions = [], providers = [], onCreated, onWorkspaceCreated, onOpenEditor }) => (
+  <DevScope id="hr3n8w4" state={{ workspace: workspace?.id, sessionCount: sessions.length }}>
+    <div className="app__placeholder-hero">
+      <div className="app__placeholder-content">
+        <div className="app__hero-badge">
+          <Badge variant="primary" size="small">Cursor SDK Harness</Badge>
+        </div>
+        <h1 className="app__hero-title">Multi-Agent Development Environment</h1>
+        <p className="app__hero-desc">
+          Run interactive turns with Plan, Execute, Decompose, and Token-waste modes.
+        </p>
+
+        {workspace ? (
+          <Card>
+            <CardHeader>
+              <div className="app__ws-card-header">
+                <span className="app__ws-card-title">Active Workspace: {workspace.name}</span>
+                <Badge variant="info" size="small">{sessions.length} sessions</Badge>
+              </div>
+            </CardHeader>
+            <CardSection>
+              <div className="app__ws-cwd">
+                <FolderIcon size={14} className="app__ws-cwd-icon" />
+                <code>{workspace.cwd}</code>
+              </div>
+            </CardSection>
+            <CardRow>
+              <CardSection>
+                <CardLabel>Quick Actions</CardLabel>
+                <div className="app__hero-actions">
+                  <Popup devId="y3m7p9d" panelClassName="new-session-panel">
+                    <NewSessionForm
+                      devId="e2b8v4k"
+                      providers={providers}
+                      workspace={workspace}
+                      onCreated={onCreated}
+                    />
+                    <Button variant="primary" size="sm" devId="d6t1j9x">
+                      + Start Session
+                    </Button>
+                  </Popup>
+                  <Button variant="secondary" size="sm" onClick={onOpenEditor} devId="n8k3w7f">
+                    Open File Editor
+                  </Button>
+                </div>
+              </CardSection>
+            </CardRow>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>Get Started</CardHeader>
+            <CardSection>
+              <p className="hint">No workspace selected. Create a workspace to point at your working directory.</p>
+              <div className="app__hero-actions">
+                <Popup devId="a4r9b2m" panelClassName="new-session-panel">
+                  <NewWorkspaceForm devId="u7m1v5c" onCreated={onWorkspaceCreated} />
+                  <Button variant="primary" size="sm">
+                    + Create Workspace
+                  </Button>
+                </Popup>
+              </div>
+            </CardSection>
+          </Card>
+        )}
+
+        <div className="app__capabilities-grid">
+          <div className="app__cap-tile">
+            <span className="app__cap-icon">◇</span>
+            <strong>Plan Mode</strong>
+            <p className="hint">Architectural overview and turn breakdown without touching files.</p>
+          </div>
+          <div className="app__cap-tile">
+            <span className="app__cap-icon">▶</span>
+            <strong>Execute Mode</strong>
+            <p className="hint">Autonomous agent execution with full workspace tool calling and terminal runs.</p>
+          </div>
+          <div className="app__cap-tile">
+            <span className="app__cap-icon">⑂</span>
+            <strong>Decompose Mode</strong>
+            <p className="hint">Multi-phase recursive task breakdown and execution tracking.</p>
+          </div>
+          <div className="app__cap-tile">
+            <span className="app__cap-icon">⚙</span>
+            <strong>Token Waste</strong>
+            <p className="hint">Deep analysis of transcript tokens to highlight efficiency gains.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </DevScope>
+)
+
+const App = () => {
+  const { url, navigate } = useBrowserLocation()
+  const { workspaceId: activeWorkspaceId, sessionId: activeId, view, file, term } = selectionFromUrl(url)
+  const editorOpen = view === EDITOR_VIEW
+  const terminalOpen = view === TERMINAL_VIEW
+  const gitOpen = view === GIT_VIEW
+  const analyticsOpen = view === ANALYTICS_VIEW
+  const codeStatsOpen = view === CODE_STATS_VIEW
+  const [providers, setProviders] = useState([])
+  const [workspaces, setWorkspaces] = useState([])
+  const [workspacesLoaded, setWorkspacesLoaded] = useState(false)
+  const [sessions, setSessions] = useState([])
+  const [sessionsReadyFor, setSessionsReadyFor] = useState(null)
+  const [showArchived, setShowArchived] = useState(false)
+  const [archiveBusy, setArchiveBusy] = useState(false)
+  const [archiveError, setArchiveError] = useState(null)
+  const [pinBusy, setPinBusy] = useState(false)
+  const [pinError, setPinError] = useState(null)
+  const [runningJobs, setRunningJobs] = useState([])
+  const [jobsCollapsed, setJobsCollapsed] = useState(false)
+  const [transcriptFontSize, setTranscriptFontSize] = useState(13)
+  const [settingsError, setSettingsError] = useState('')
+  const transcriptFontTouched = useRef(false)
+  const fontSaveTimer = useRef(null)
+
+  const go = useCallback((workspaceId, sessionId, { replace = false, view: nextView, file: nextFile, term: nextTerm } = {}) => {
+    const workspaceChanged = workspaceId !== activeWorkspaceId
+    const fileParam = nextFile === undefined && workspaceChanged ? null : nextFile
+    const termParam = nextTerm === undefined && workspaceChanged ? null : nextTerm
+    navigate(urlWithSelection(new URL(window.location.href), workspaceId, sessionId, nextView, fileParam, termParam).href, { replace })
+  }, [navigate, activeWorkspaceId])
+
+  const onFileChange = useCallback((nextFile) => {
+    go(activeWorkspaceId, activeId, { replace: true, file: nextFile || null })
+  }, [go, activeWorkspaceId, activeId])
+
+  const onTermChange = useCallback((nextTerm) => {
+    go(activeWorkspaceId, activeId, { replace: true, term: nextTerm || null })
+  }, [go, activeWorkspaceId, activeId])
+
+  const onTerminalWorkspace = useCallback((id, nextTerm) => {
+    go(id, null, nextTerm === undefined ? {} : { replace: true, term: nextTerm })
+  }, [go])
+
+  const loadWorkspaces = useCallback(() => {
+    api
+      .listWorkspaces()
+      .then(({ workspaces: list }) => {
+        setWorkspaces(list.filter((item) => !item.deleted))
+        setWorkspacesLoaded(true)
+      })
+      .catch(() => {
+        setWorkspaces([])
+        setWorkspacesLoaded(true)
+      })
+  }, [])
+
+  const loadSessions = useCallback(() => {
+    if (!activeWorkspaceId) {
+      setSessions([])
+      setSessionsReadyFor(null)
+      return
+    }
+    const workspaceId = activeWorkspaceId
+    api
+      .listSessions(workspaceId, true)
+      .then(({ sessions: list }) => {
+        setSessions(list)
+        setSessionsReadyFor(workspaceId)
+      })
+      .catch(() => {
+        setSessions([])
+        setSessionsReadyFor(null)
+      })
+  }, [activeWorkspaceId])
+
+  const loadRunningJobs = useCallback(() => {
+    api
+      .listSessions(null, false, { orderBy: 'createdAt', order: 'desc', active: true, limit: JOB_LIST_LIMIT })
+      .then(async ({ sessions: activeJobs }) => {
+        if (activeJobs.length >= JOB_LIST_LIMIT) {
+          setRunningJobs(activeJobs)
+          return
+        }
+        const { sessions: recentChats } = await api.listSessions(null, false, {
+          orderBy: 'createdAt', order: 'desc', active: false, limit: JOB_LIST_LIMIT - activeJobs.length,
+        })
+        const activeIds = new Set(activeJobs.map(job => job.id))
+        const byRecent = (a, b) => (b.createdAt || 0) - (a.createdAt || 0) || a.id.localeCompare(b.id)
+        setRunningJobs([...activeJobs, ...recentChats.filter(job => !activeIds.has(job.id))].sort(byRecent))
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    api
+      .getProviders()
+      .then(({ providers: list }) => setProviders(list))
+      .catch(() => setProviders([]))
+    loadWorkspaces()
+  }, [loadWorkspaces])
+
+  useEffect(() => {
+    let cancelled = false
+    api
+      .getUiSettings()
+      .then(({ settings }) => {
+        if (cancelled || transcriptFontTouched.current) return
+        if (settings && Number.isInteger(settings.transcriptFontSize)) {
+          setTranscriptFontSize(settings.transcriptFontSize)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+      if (fontSaveTimer.current) clearTimeout(fontSaveTimer.current)
+    }
+  }, [])
+
+  const changeTranscriptFontSize = (value) => {
+    const next = Number(value)
+    if (!Number.isInteger(next)) return
+    transcriptFontTouched.current = true
+    setTranscriptFontSize(next)
+    setSettingsError('')
+    if (fontSaveTimer.current) clearTimeout(fontSaveTimer.current)
+    fontSaveTimer.current = setTimeout(() => {
+      api
+        .setUiSettings({ transcriptFontSize: next })
+        .catch((err) => setSettingsError(err && err.message ? err.message : String(err)))
+    }, 300)
+  }
+
+  useEffect(() => {
+    loadSessions()
+  }, [loadSessions])
+
+  useEffect(() => {
+    loadRunningJobs()
+  }, [loadRunningJobs])
+
+  useEffect(() => {
+    if (!workspacesLoaded) return
+    try {
+      if (activeWorkspaceId) localStorage.setItem(WORKSPACE_KEY, activeWorkspaceId)
+      else localStorage.removeItem(WORKSPACE_KEY)
+    } catch {
+      // ignore
+    }
+  }, [workspacesLoaded, activeWorkspaceId])
+
+  useEffect(() => {
+    if (!workspacesLoaded) return
+    if (activeWorkspaceId && workspaces.some((item) => item.id === activeWorkspaceId)) return
+    const next = workspaces[0]?.id || null
+    if (next === activeWorkspaceId) return
+    go(next, null, { replace: true })
+  }, [workspacesLoaded, workspaces, activeWorkspaceId, go])
+
+  useEffect(() => {
+    if (!activeId || sessionsReadyFor !== activeWorkspaceId) return
+    if (sessions.some((item) => item.id === activeId)) return
+    go(activeWorkspaceId, null, { replace: true })
+  }, [activeId, activeWorkspaceId, sessions, sessionsReadyFor, go])
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      loadSessions()
+      loadRunningJobs()
+    }, 3000)
+    return () => clearInterval(timer)
+  }, [loadSessions, loadRunningJobs])
+
+  const deleteWorkspace = async (id) => {
+    await api.setWorkspaceDeleted(id, true)
+    setWorkspaces((prev) => prev.filter((item) => item.id !== id))
+  }
+
+  const onWorkspaceCreated = (workspace) => {
+    setWorkspaces((prev) =>
+      [...prev.filter((item) => item.id !== workspace.id), workspace].sort((a, b) =>
+        a.name.localeCompare(b.name),
+      ),
+    )
+    go(workspace.id, null)
+  }
+
+  const onCreated = (session) => {
+    setSessions((prev) => [session, ...prev.filter((item) => item.id !== session.id)])
+    setSessionsReadyFor(activeWorkspaceId)
+    go(session.workspaceId || activeWorkspaceId, session.id, { view: null })
+  }
+
+  const renameSession = async (id, name) => {
+    const { session } = await api.setSessionName(id, name)
+    setSessions(current => current.map(item => item.id === id ? { ...item, ...session } : item))
+    return session
+  }
+
+  const onSelectWorkspace = (id) => {
+    go(id, null)
+  }
+
+  const onSelectJob = (job) => {
+    go(job.workspaceId || activeWorkspaceId, job.id, { view: null })
+  }
+
+  const archiveSession = async (id, archived) => {
+    if (archiveBusy) return
+    setArchiveBusy(true)
+    setArchiveError(null)
+    try {
+      const { session } = await api.setSessionArchived(id, archived)
+      setSessions(current => current.map(item => item.id === id ? session : item))
+      if (archived && !showArchived && activeId === id) go(activeWorkspaceId, null, { replace: true })
+    } catch (error) { setArchiveError(error.message) }
+    finally { setArchiveBusy(false) }
+  }
+
+  const archiveOlderSessions = async (ids) => {
+    if (archiveBusy || !ids.length) return
+    setArchiveBusy(true)
+    setArchiveError(null)
+    try {
+      const results = await Promise.allSettled(ids.map(id => api.setSessionArchived(id, true)))
+      const archived = results.flatMap(result => result.status === 'fulfilled' ? [result.value.session] : [])
+      const failure = results.find(result => result.status === 'rejected')
+      if (archived.length) {
+        const byId = new Map(archived.map(session => [session.id, session]))
+        setSessions(current => current.map(item => byId.get(item.id) || item))
+        if (!showArchived && archived.some(session => session.id === activeId)) {
+          go(activeWorkspaceId, null, { replace: true })
+        }
+      }
+      if (failure) setArchiveError(failure.reason && failure.reason.message ? failure.reason.message : 'Failed to archive sessions')
+    } finally {
+      setArchiveBusy(false)
+    }
+  }
+
+  const pinSession = async (id, pinned) => {
+    if (pinBusy) return
+    setPinBusy(true)
+    setPinError(null)
+    try {
+      const { session } = await api.setSessionPinned(id, pinned)
+      setSessions(current => current.map(item => item.id === id ? session : item))
+    } catch (error) { setPinError(error.message) }
+    finally { setPinBusy(false) }
+  }
+
+  const workspace = workspaces.find((item) => item.id === activeWorkspaceId) || null
+  const workspaceSessions = sessionsReadyFor === activeWorkspaceId ? sessions : []
+  const activeSession = workspaceSessions.find((s) => s.id === activeId) || null
+
+  return (
+    <DevInspector enabled={import.meta.env.DEV} forms={harnessForms(activeWorkspaceId)} views={harnessViews}>
+      <DevScope id="hr7k2m9" state={{ workspace: activeWorkspaceId, session: activeId, view: editorOpen || terminalOpen || gitOpen || analyticsOpen || codeStatsOpen ? view : 'sessions', file, term, running: runningJobs.filter(ACTIVE_JOB).length }}>
+        {analyticsOpen ? (
+          <AnalyticsView
+            devId="moxixrf"
+            workspaces={workspaces}
+            providers={providers}
+            onBack={() => go(activeWorkspaceId, activeId, { view: null })}
+            onOpenSession={(run) => go(run.workspaceId || activeWorkspaceId, run.sessionId, { view: null })}
+          />
+        ) : editorOpen ? (
+          <EditorView
+            devId="7ix0b98"
+            workspaces={workspaces}
+            workspace={workspace}
+            workspaceId={activeWorkspaceId}
+            file={file}
+            onFileChange={onFileChange}
+            onSelectWorkspace={(id) => go(id, null)}
+            onBack={() => go(activeWorkspaceId, activeId, { view: null })}
+          />
+        ) : terminalOpen ? (
+          <TerminalView
+            devId="5vznodc"
+            workspaces={workspaces}
+            workspace={workspace}
+            workspaceId={activeWorkspaceId}
+            term={term}
+            onTermChange={onTermChange}
+            onSelectWorkspace={onTerminalWorkspace}
+            onBack={() => go(activeWorkspaceId, activeId, { view: null, term: null })}
+          />
+        ) : gitOpen ? (
+          <GitView
+            devId="6v4w7zs"
+            workspaces={workspaces}
+            workspace={workspace}
+            workspaceId={activeWorkspaceId}
+            file={file}
+            onFileChange={onFileChange}
+            onSelectWorkspace={(id) => go(id, null)}
+            onOpenFile={(path) => go(activeWorkspaceId, activeId, { view: EDITOR_VIEW, file: path })}
+            onBack={() => go(activeWorkspaceId, activeId, { view: null, file: null })}
+          />
+        ) : (
+          <div className="app">
+            <SplitPane
+              direction="horizontal"
+              defaultSize={320}
+              minSize={260}
+              maxSize={500}
+              storageKey="harness.sidebar.width"
+              devId="w1n6c4y"
+            >
+              <SessionsSidebar
+                devId="hr5r1c6"
+                workspaces={workspaces}
+                workspace={workspace}
+                sessions={workspaceSessions.filter(session => showArchived || !session.archived)}
+                showArchived={showArchived}
+                onShowArchived={(value) => {
+                  setShowArchived(value)
+                  if (!value && activeSession?.archived) go(activeWorkspaceId, null, { replace: true })
+                }}
+                onArchive={archiveSession}
+                onArchiveOlder={archiveOlderSessions}
+                archiveBusy={archiveBusy}
+                archiveError={archiveError}
+                onPin={pinSession}
+                pinBusy={pinBusy}
+                pinError={pinError}
+                providers={providers}
+                activeId={activeId}
+                onSelectWorkspace={onSelectWorkspace}
+                onSelect={(id) => go(activeWorkspaceId, id, { view: null })}
+                onRename={renameSession}
+                onWorkspaceCreated={onWorkspaceCreated}
+                onDeleteWorkspace={deleteWorkspace}
+                onCreated={onCreated}
+                onOpenEditor={() => go(activeWorkspaceId, activeId, { view: EDITOR_VIEW })}
+                onOpenTerminal={() => go(activeWorkspaceId, activeId, { view: TERMINAL_VIEW })}
+                onOpenGit={() => go(activeWorkspaceId, activeId, { view: GIT_VIEW, file: null })}
+                onOpenAnalytics={() => go(activeWorkspaceId, activeId, { view: ANALYTICS_VIEW })}
+                codeStatsOpen={codeStatsOpen}
+                onToggleCodeStats={() => go(activeWorkspaceId, activeId, { view: codeStatsOpen ? null : CODE_STATS_VIEW })}
+                transcriptFontSize={transcriptFontSize}
+                onTranscriptFontSize={changeTranscriptFontSize}
+                settingsError={settingsError}
+              />
+              <div className="app__content">
+                <SplitPane
+                  className="app__jobs-split"
+                  direction="horizontal"
+                  primary="second"
+                  defaultSize={280}
+                  minSize={200}
+                  maxSize={520}
+                  fixedSize={jobsCollapsed ? 38 : null}
+                  storageKey="harness.jobs.width"
+                  devId="hr8j5p1"
+                >
+                  <main className="app__main">
+                    {codeStatsOpen ? (
+                      <CodeStatsView
+                        devId="k3w8n5v"
+                        workspace={workspace}
+                        providers={providers}
+                        onCreated={onCreated}
+                        onClose={() => go(activeWorkspaceId, activeId, { view: null })}
+                        onOpenFile={(path) => go(activeWorkspaceId, activeId, { view: EDITOR_VIEW, file: path })}
+                      />
+                    ) : activeId ? (
+                      <SessionView
+                        key={activeId}
+                        devId="hr2f3k7"
+                        sessionId={activeId}
+                        initialSession={activeSession}
+                        providers={providers}
+                        workspaces={workspaces}
+                        onCreated={onCreated}
+                        transcriptFontSize={transcriptFontSize}
+                        onChanged={() => {
+                          loadSessions()
+                          loadRunningJobs()
+                        }}
+                      />
+                    ) : (
+                      <AppPlaceholder
+                        workspace={workspace}
+                        workspaces={workspaces}
+                        sessions={workspaceSessions}
+                        providers={providers}
+                        onCreated={onCreated}
+                        onWorkspaceCreated={onWorkspaceCreated}
+                        onOpenEditor={() => go(activeWorkspaceId, activeId, { view: EDITOR_VIEW })}
+                      />
+                    )}
+                  </main>
+                  <RunningJobsNav
+                    devId="hr3v8p2"
+                    jobs={runningJobs}
+                    workspaces={workspaces}
+                    activeId={activeId}
+                    onSelect={onSelectJob}
+                    collapsed={jobsCollapsed}
+                    onCollapsedChange={setJobsCollapsed}
+                  />
+                </SplitPane>
+              </div>
+            </SplitPane>
+          </div>
+        )}
+      </DevScope>
+    </DevInspector>
+  )
+}
+
+export default App

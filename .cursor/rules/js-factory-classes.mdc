@@ -1,0 +1,30 @@
+---
+description: Factory function pattern for reusable objects ("classes") in javascript
+globs: **/*.js
+alwaysApply: false
+---
+
+# Javascript "classes"
+
+No `class` keyword. Reusable objects are factory arrow functions: private state in a local `data` object, methods as inner arrow functions, return an object literal exposing the public API.
+
+```javascript
+const Prompt = ({ prompt }) => {
+  const data = Object.create(null)
+  data.prompt = prompt
+
+  const expand = () => {
+    // expansion logic
+  }
+
+  const toString = () => {
+    return data.prompt
+  }
+
+  return {
+    expand,
+    toString,
+    getPrompt: () => data.prompt
+  }
+}
+```

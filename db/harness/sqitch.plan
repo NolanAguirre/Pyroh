@@ -1,0 +1,5 @@
+%syntax-version=1.0.0
+%project=harness
+
+v1.000.0 2026-10-17T01:36:30Z Toolkit <toolkit@localhost> # initial database
+v1.001.0 [v1.000.0] 2026-10-17T01:46:00Z Toolkit <toolkit@localhost> # session index

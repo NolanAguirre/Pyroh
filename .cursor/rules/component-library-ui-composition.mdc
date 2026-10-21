@@ -1,0 +1,14 @@
+---
+description: Prefer component-library composition for reusable UI behavior
+globs: component-library/**
+alwaysApply: false
+---
+
+# Component Library UI Composition
+
+Search `component-library` for existing primitives before adding generic UI. Compose (`Popup` + `ViewSwitch` + `Media`, etc.) rather than building domain mega-components.
+
+- Follow library idioms: HOC state/display split, children cloning, namespaced injected props.
+- Exception: data-template iterators (`Grid`, `VirtualGrid`, `Masonry`, `Map`) inject the datum as top-level `item`/`index` so one card template works under any of them. Controller contracts (`fold`, `mediaLightbox`, `tabs`, `viewSwitch`) stay namespaced.
+- Cross-app reusable compositions → small library wrappers with slots/children for domain content.
+- Domain workflows (rename, delete, crop, variants, notes, entity links) stay in the owning app.

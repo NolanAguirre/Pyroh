@@ -1,0 +1,61 @@
+#!/bin/sh
+
+mkdir -p .cursor
+mkdir -p .cursor/rules
+mkdir -p .cursor/plans
+mkdir -p .cursor/plans/old
+mkdir -p .cursor/plans/todo
+
+mkdir -p db
+mkdir -p infrastructure
+mkdir -p scripts
+mkdir -p services
+mkdir -p ui
+
+mkdir -p services/nginx
+
+base_dir=$(pwd)
+
+create_named() {
+    name=$1
+
+    if [ -d "services/$name" ]; then
+        echo "services/$name already exists" >&2
+        return 0
+    fi
+
+    mkdir -p "services/$name"
+
+    (
+        cd "services/$name" || exit 1
+        mkdir -p "env-dir"
+        mkdir -p "env-dir/default"
+        mkdir -p "env-dir/production"
+        touch Makefile
+        npm init -y >/dev/null
+        npm pkg set \
+            name="$name" \
+            version="0.1.0" \
+            description="$name service" \
+            main="index.js" \
+            license="UNLICENSED"
+        npm pkg set private=true --json
+    )
+
+    (
+        cd "ui" || exit 1
+        echo "pwd: $(pwd)"
+        npm create vite@latest "$name" -- --template react
+        cd "$name" || exit 1
+        npm install
+        touch Makefile
+    )
+    cd "$base_dir" || exit 1
+}
+
+if [ -n "$1" ]; then
+    create_named "$1"
+fi
+
+
+create_named "auth"

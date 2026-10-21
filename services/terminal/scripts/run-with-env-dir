@@ -1,0 +1,43 @@
+#!/bin/sh
+# Load env-dir/default, then overlay env-dir/$USER if present, then exec.
+# Usage: scripts/run-with-env-dir <env-dir> <command> [args...]
+# Each regular file becomes VAR=<file contents> where VAR is the file name.
+# A leading ~/ (or a lone ~) in a value expands to $HOME.
+
+set -e
+
+env_dir=$1
+if [ -z "$env_dir" ]; then
+    echo "usage: run-with-env-dir <env-dir> <command> [args...]" >&2
+    exit 2
+fi
+shift
+
+if [ ! -d "$env_dir" ]; then
+    echo "env-dir not found: $env_dir" >&2
+    exit 2
+fi
+
+load_dir() {
+    dir=$1
+    [ -d "$dir" ] || return 0
+    for f in "$dir"/*; do
+        [ -f "$f" ] || continue
+        name=$(basename "$f")
+        value=$(cat "$f")
+        case "$value" in
+            "~") value="${HOME}" ;;
+            "~/"*) value="${HOME}/${value#??}" ;;
+        esac
+        export "$name=$value"
+    done
+}
+
+load_dir "$env_dir/default"
+user_name="${ENV_USER:-${USER}}"
+user_dir="$env_dir/${user_name}"
+if [ -n "$user_name" ] && [ "$user_dir" != "$env_dir/default" ]; then
+    load_dir "$user_dir"
+fi
+
+exec "$@"

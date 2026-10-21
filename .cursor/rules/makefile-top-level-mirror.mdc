@@ -1,0 +1,18 @@
+---
+description: Mirror lower-level Makefile targets at the top-level Makefile
+globs: **/Makefile
+alwaysApply: false
+---
+
+# Mirror lower-level targets at the top level
+
+When adding a target to a lower-level Makefile, also expose it in the root `Makefile` as `<dir>.<name>.<target>`:
+
+1. Add to `.PHONY`
+2. Add a help line
+3. Add an explicit forward target (no `%` — see makefile-no-wildcard-targets)
+
+```make
+services.vpr.ingest-ram:
+	$(MAKE) -C services/vpr ingest-ram
+```

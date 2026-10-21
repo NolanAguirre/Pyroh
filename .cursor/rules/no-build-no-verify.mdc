@@ -1,0 +1,10 @@
+---
+description: Write code only - do not build, run, test, or otherwise verify changes
+alwaysApply: true
+---
+
+# Write the code, do not verify it
+
+Make the requested changes and stop. The user builds, runs, and verifies.
+
+No builds, servers, tests, linters, migrations, curl checks, or verification scripts unless the user asks in that message. 

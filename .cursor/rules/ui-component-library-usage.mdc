@@ -1,0 +1,15 @@
+---
+description: Prefer component-library; put only domain behavior in ui app wrappers
+globs: ui/**
+alwaysApply: false
+---
+
+# UI Component Library Usage
+
+Reach for `component-library` first. Do not re-implement equivalents in the app.
+
+- **Generic** (state, hooks, keyboard, composition, presentation unrelated to schema/API/domain) → change `component-library`.
+- **App-specific** (schema, API, routes, domain entities, workflows) → thin app wrapper that composes the library primitive.
+- Mixed features: push generic parts into the library; keep domain in the wrapper.
+
+Inspect `component-library/src` / `src/index.js` for existing components before adding app-local ones.

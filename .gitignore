@@ -1,0 +1,9 @@
+# dotenv
+.env
+.env.*
+!.env.example
+
+# personal env-dir overlays stay local; default is committed
+**/env-dir/*
+!**/env-dir/default/
+!**/env-dir/default/**

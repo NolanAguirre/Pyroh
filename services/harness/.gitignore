@@ -1,0 +1,10 @@
+node_modules
+.harness-data
+*.log
+
+.env
+.env.*
+!.env.example
+env-dir/*
+!env-dir/default/
+!env-dir/default/**

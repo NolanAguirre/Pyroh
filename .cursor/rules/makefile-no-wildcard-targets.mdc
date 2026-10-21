@@ -1,0 +1,25 @@
+---
+description: Makefile target naming - no % wildcards to hide targets
+globs: **/Makefile
+alwaysApply: false
+---
+
+# No wildcard targets that hide commands
+
+Do not use `%` pattern rules to forward or broadcast targets. Spell every target out so the file is self-documenting.
+
+`%` is only allowed when the stem is a program argument (`$*`), not a hidden target name.
+
+```make
+# BAD
+services.vpr.%:
+	$(MAKE) -C services/vpr $*
+
+# GOOD
+services.vpr.start:
+	$(MAKE) -C services/vpr start
+
+# GOOD - % is an argument
+kill-port.%:
+	./scripts/kill-port $*
+```

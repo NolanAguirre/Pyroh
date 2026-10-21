@@ -1,0 +1,6 @@
+---
+Description: Subagent usage and exploration
+alwaysApply: true
+---
+
+Use grok 4.7 subagents for code exploration.

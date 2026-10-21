@@ -1,0 +1,16 @@
+{
+  "name": "terminal",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "src/server/index.js",
+  "scripts": {
+    "start": "node src/server/index.js"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "express": "5.2.1",
+    "node-pty": "1.0.0",
+    "ws": "8.18.0"
+  }
+}

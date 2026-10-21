@@ -1,0 +1,536 @@
+{
+  "cursor": [
+    {
+      "id": "grok-4.7",
+      "displayName": "Grok 4.7"
+    },
+    {
+      "id": "grok-4.6",
+      "displayName": "Grok 4.6"
+    },
+    {
+      "id": "gpt-6.1-sol",
+      "displayName": "GPT 6.1 Sol"
+    },
+    {
+      "id": "claude-opus-4-8",
+      "displayName": "Opus 4.8"
+    },
+    {
+      "id": "claude-opus-5",
+      "displayName": "Opus 5"
+    },
+    {
+      "id": "claude-opus-5-5",
+      "displayName": "Opus 5.5"
+    },
+    {
+      "id": "claude-fable-5",
+      "displayName": "Fable 5"
+    },
+    {
+      "id": "claude-fable-5-1",
+      "displayName": "Fable 5.1"
+    },
+    {
+      "id": "gemini-3.8-flash",
+      "displayName": "Gemini 3.8"
+    },
+    {
+      "id": "gemini-3.7-flash",
+      "displayName": "Gemini 3.7"
+    }
+  ],
+  "claude": [
+    {
+      "id": "default",
+      "displayName": "Default (recommended)",
+      "description": "Opus 5.5 · Best for everyday, complex tasks",
+      "isDefault": true,
+      "defaultReasoningEffort": null,
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "low"
+        },
+        {
+          "reasoningEffort": "medium"
+        },
+        {
+          "reasoningEffort": "high"
+        },
+        {
+          "reasoningEffort": "xhigh"
+        },
+        {
+          "reasoningEffort": "max"
+        }
+      ]
+    },
+    {
+      "id": "opus",
+      "displayName": "Opus 5.5",
+      "description": "For complex work and everyday tasks",
+      "isDefault": false,
+      "defaultReasoningEffort": null,
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "low"
+        },
+        {
+          "reasoningEffort": "medium"
+        },
+        {
+          "reasoningEffort": "high"
+        },
+        {
+          "reasoningEffort": "xhigh"
+        },
+        {
+          "reasoningEffort": "max"
+        }
+      ]
+    },
+    {
+      "id": "claude-fable-5-1",
+      "displayName": "Fable 5.1",
+      "description": "For your toughest challenges",
+      "isDefault": false,
+      "defaultReasoningEffort": null,
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "low"
+        },
+        {
+          "reasoningEffort": "medium"
+        },
+        {
+          "reasoningEffort": "high"
+        },
+        {
+          "reasoningEffort": "xhigh"
+        },
+        {
+          "reasoningEffort": "max"
+        }
+      ]
+    },
+    {
+      "id": "haiku",
+      "displayName": "Haiku 4.5",
+      "description": "Fastest for quick answers",
+      "isDefault": false,
+      "defaultReasoningEffort": null,
+      "supportedReasoningEfforts": []
+    },
+    {
+      "id": "sonnet",
+      "displayName": "Sonnet 5",
+      "description": "Efficient for routine tasks",
+      "isDefault": false,
+      "defaultReasoningEffort": null,
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "low"
+        },
+        {
+          "reasoningEffort": "medium"
+        },
+        {
+          "reasoningEffort": "high"
+        },
+        {
+          "reasoningEffort": "xhigh"
+        },
+        {
+          "reasoningEffort": "max"
+        }
+      ]
+    },
+    {
+      "id": "claude-opus-5",
+      "displayName": "Opus 5",
+      "description": "Best for everyday, complex tasks",
+      "isDefault": false,
+      "defaultReasoningEffort": null,
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "low"
+        },
+        {
+          "reasoningEffort": "medium"
+        },
+        {
+          "reasoningEffort": "high"
+        },
+        {
+          "reasoningEffort": "xhigh"
+        },
+        {
+          "reasoningEffort": "max"
+        }
+      ]
+    },
+    {
+      "id": "claude-fable-5",
+      "displayName": "Fable 5",
+      "description": "Most capable for your hardest and longest-running tasks",
+      "isDefault": false,
+      "defaultReasoningEffort": null,
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "low"
+        },
+        {
+          "reasoningEffort": "medium"
+        },
+        {
+          "reasoningEffort": "high"
+        },
+        {
+          "reasoningEffort": "xhigh"
+        },
+        {
+          "reasoningEffort": "max"
+        }
+      ]
+    },
+    {
+      "id": "claude-opus-4-8",
+      "displayName": "Opus 4.8",
+      "description": "Best for everyday, complex tasks",
+      "isDefault": false,
+      "defaultReasoningEffort": null,
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "low"
+        },
+        {
+          "reasoningEffort": "medium"
+        },
+        {
+          "reasoningEffort": "high"
+        },
+        {
+          "reasoningEffort": "xhigh"
+        },
+        {
+          "reasoningEffort": "max"
+        }
+      ]
+    },
+    {
+      "id": "claude-opus-4-7",
+      "displayName": "Opus 4.7",
+      "description": "Best for everyday, complex tasks",
+      "isDefault": false,
+      "defaultReasoningEffort": null,
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "low"
+        },
+        {
+          "reasoningEffort": "medium"
+        },
+        {
+          "reasoningEffort": "high"
+        },
+        {
+          "reasoningEffort": "xhigh"
+        },
+        {
+          "reasoningEffort": "max"
+        }
+      ]
+    },
+    {
+      "id": "claude-opus-4-6",
+      "displayName": "Opus 4.6",
+      "description": "Best for everyday, complex tasks",
+      "isDefault": false,
+      "defaultReasoningEffort": null,
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "low"
+        },
+        {
+          "reasoningEffort": "medium"
+        },
+        {
+          "reasoningEffort": "high"
+        },
+        {
+          "reasoningEffort": "max"
+        }
+      ]
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "displayName": "Sonnet 4.6",
+      "description": "Efficient for routine tasks",
+      "isDefault": false,
+      "defaultReasoningEffort": null,
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "low"
+        },
+        {
+          "reasoningEffort": "medium"
+        },
+        {
+          "reasoningEffort": "high"
+        },
+        {
+          "reasoningEffort": "max"
+        }
+      ]
+    }
+  ],
+  "codex": [
+    {
+      "id": "gpt-6-astra",
+      "displayName": "GPT-6-Astra",
+      "isDefault": true,
+      "defaultReasoningEffort": "medium",
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "reasoningEffort": "medium",
+          "description": "Balances speed and reasoning depth for everyday tasks"
+        },
+        {
+          "reasoningEffort": "high",
+          "description": "Greater reasoning depth for complex problems"
+        },
+        {
+          "reasoningEffort": "xhigh",
+          "description": "Extra high reasoning depth for complex problems"
+        },
+        {
+          "reasoningEffort": "max",
+          "description": "Maximum reasoning depth for the hardest problems"
+        },
+        {
+          "reasoningEffort": "ultra",
+          "description": "Maximum reasoning with automatic task delegation"
+        }
+      ]
+    },
+    {
+      "id": "gpt-5.6-sol",
+      "displayName": "GPT-5.6-Sol",
+      "isDefault": false,
+      "defaultReasoningEffort": "low",
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "reasoningEffort": "medium",
+          "description": "Balances speed and reasoning depth for everyday tasks"
+        },
+        {
+          "reasoningEffort": "high",
+          "description": "Greater reasoning depth for complex problems"
+        },
+        {
+          "reasoningEffort": "xhigh",
+          "description": "Extra high reasoning depth for complex problems"
+        },
+        {
+          "reasoningEffort": "max",
+          "description": "Maximum reasoning depth for the hardest problems"
+        },
+        {
+          "reasoningEffort": "ultra",
+          "description": "Maximum reasoning with automatic task delegation"
+        }
+      ]
+    },
+    {
+      "id": "gpt-5.6-terra",
+      "displayName": "GPT-5.6-Terra",
+      "isDefault": false,
+      "defaultReasoningEffort": "medium",
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "reasoningEffort": "medium",
+          "description": "Balances speed and reasoning depth for everyday tasks"
+        },
+        {
+          "reasoningEffort": "high",
+          "description": "Greater reasoning depth for complex problems"
+        },
+        {
+          "reasoningEffort": "xhigh",
+          "description": "Extra high reasoning depth for complex problems"
+        },
+        {
+          "reasoningEffort": "max",
+          "description": "Maximum reasoning depth for the hardest problems"
+        },
+        {
+          "reasoningEffort": "ultra",
+          "description": "Maximum reasoning with automatic task delegation"
+        }
+      ]
+    },
+    {
+      "id": "gpt-5.6-luna",
+      "displayName": "GPT-5.6-Luna",
+      "isDefault": false,
+      "defaultReasoningEffort": "medium",
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "reasoningEffort": "medium",
+          "description": "Balances speed and reasoning depth for everyday tasks"
+        },
+        {
+          "reasoningEffort": "high",
+          "description": "Greater reasoning depth for complex problems"
+        },
+        {
+          "reasoningEffort": "xhigh",
+          "description": "Extra high reasoning depth for complex problems"
+        },
+        {
+          "reasoningEffort": "max",
+          "description": "Maximum reasoning depth for the hardest problems"
+        }
+      ]
+    },
+    {
+      "id": "gpt-6.1-sol",
+      "displayName": "GPT 6.1 Sol",
+      "isDefault": false,
+      "defaultReasoningEffort": "medium",
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "reasoningEffort": "medium",
+          "description": "Balances speed and reasoning depth for everyday tasks"
+        },
+        {
+          "reasoningEffort": "high",
+          "description": "Greater reasoning depth for complex problems"
+        },
+        {
+          "reasoningEffort": "xhigh",
+          "description": "Extra high reasoning depth for complex problems"
+        },
+        {
+          "reasoningEffort": "max",
+          "description": "Maximum reasoning depth for the hardest problems"
+        }
+      ]
+    }
+  ],
+  "grok": [
+    {
+      "id": "grok-4.7",
+      "displayName": "Grok 4.7",
+      "isDefault": true,
+      "defaultReasoningEffort": "high",
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "xhigh",
+          "description": "Maximum reasoning for the hardest tasks."
+        },
+        {
+          "reasoningEffort": "high",
+          "description": "Thorough reasoning and quality. Recommended."
+        },
+        {
+          "reasoningEffort": "medium",
+          "description": "Strong quality with a faster turnaround."
+        },
+        {
+          "reasoningEffort": "low",
+          "description": "Fastest responses. Best for simple tasks."
+        }
+      ]
+    },
+    {
+      "id": "grok-4.7-build-fast",
+      "displayName": "Grok 4.7 Fast",
+      "isDefault": false,
+      "defaultReasoningEffort": "high",
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "xhigh",
+          "description": "Maximum reasoning for the hardest tasks."
+        },
+        {
+          "reasoningEffort": "high",
+          "description": "Thorough reasoning and quality. Recommended."
+        },
+        {
+          "reasoningEffort": "medium",
+          "description": "Strong quality with a faster turnaround."
+        },
+        {
+          "reasoningEffort": "low",
+          "description": "Fastest responses. Best for simple tasks."
+        }
+      ]
+    },
+    {
+      "id": "grok-4.6",
+      "displayName": "Grok 4.6",
+      "isDefault": false,
+      "defaultReasoningEffort": "high",
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "xhigh",
+          "description": "Highest effort and reasoning level"
+        },
+        {
+          "reasoningEffort": "high",
+          "description": "Higher implementation quality with extensive reasoning"
+        },
+        {
+          "reasoningEffort": "medium",
+          "description": "Balanced effort with standard implementation and testing"
+        },
+        {
+          "reasoningEffort": "low",
+          "description": "Quick, fast implementations"
+        }
+      ]
+    },
+    {
+      "id": "grok-4.5",
+      "displayName": "Grok 4.5",
+      "isDefault": false,
+      "defaultReasoningEffort": "high",
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "high",
+          "description": "Highest implementation quality with extensive reasoning"
+        },
+        {
+          "reasoningEffort": "medium",
+          "description": "Balanced effort with standard implementation and testing"
+        },
+        {
+          "reasoningEffort": "low",
+          "description": "Quick, fast implementations"
+        }
+      ]
+    }
+  ]
+}

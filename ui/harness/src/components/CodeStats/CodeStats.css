@@ -1,0 +1,161 @@
+.code-stats {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg);
+  color: var(--text);
+  --bar-chart-text: var(--text);
+  --bar-chart-label: var(--text-dim);
+  --bar-chart-axis: var(--border);
+  --matrix-border: var(--border);
+  --matrix-header-background: var(--bg-elev);
+}
+
+.code-stats__topbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 6px 12px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.code-stats__title {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.code-stats__root {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.code-stats__filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.code-stats__select {
+  min-width: 110px;
+  max-width: 220px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.code-stats__body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.code-stats__body .card__section {
+  padding: 8px 12px;
+}
+
+.code-stats__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.code-stats__card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.code-stats__card-header > :last-child {
+  margin-left: auto;
+}
+
+.code-stats__stat-val {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.code-stats__stat-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.code-stats__error {
+  color: var(--danger);
+  margin: 0;
+}
+
+.code-stats__table {
+  max-height: 420px;
+  font-size: 12px;
+}
+
+.code-stats__table--page {
+  max-height: none;
+  overflow: visible;
+}
+
+.code-stats__table .matrix__table th,
+.code-stats__table .matrix__table td {
+  min-width: 0;
+  padding: 6px 10px;
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+.code-stats__table .matrix__table tr > th:first-child {
+  min-width: 120px;
+  max-width: 420px;
+  text-align: left;
+}
+
+.code-stats__share {
+  min-width: 140px;
+  font-size: 11px;
+}
+
+.code-stats__path {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.code-stats__agent-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.code-stats__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.code-stats__link:hover {
+  text-decoration: underline;
+}
+
+.code-stats__link--active {
+  font-weight: 700;
+}
