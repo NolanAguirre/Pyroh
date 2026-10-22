@@ -1,0 +1,5 @@
+BEGIN;
+
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS mode text;
+
+COMMIT;

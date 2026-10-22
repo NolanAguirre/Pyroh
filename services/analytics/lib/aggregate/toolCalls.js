@@ -8,6 +8,7 @@ const BUCKETS = ['hour', 'day', 'week']
 const GROUPS = ['workspace', 'provider', 'model', 'session']
 const UNITS = { m: 60e3, h: 3600e3, d: 86400e3, w: 7 * 86400e3 }
 const TARGET_LIMIT = 200
+const READ_ONLY_MODES = ['plan', 'ask']
 
 const parseTime = (value, now = Date.now()) => {
   if (value === undefined || value === null || value === '') return null
@@ -283,6 +284,7 @@ const summarize = (calls, { bucket = 'day', by = null, top = 10, since = null, u
         workspaceName: call.workspaceName,
         provider: call.provider,
         step: call.step,
+        mode: call.mode,
         firstTs: call.ts,
         count: 0,
         tokens: splitUsage(call.usage),
@@ -312,6 +314,7 @@ const summarize = (calls, { bucket = 'day', by = null, top = 10, since = null, u
     p90: percentile(runCounts, 0.9),
     max: runCounts.length ? runCounts[runCounts.length - 1] : 0,
     tokens: sumUsage(tokenRunList.map((run) => run.tokens)),
+    buildTokens: sumUsage(tokenRunList.filter((run) => !READ_ONLY_MODES.includes(run.mode)).map((run) => run.tokens)),
     top: runList.sort((a, b) => b.count - a.count).slice(0, top),
   }
 
@@ -447,7 +450,7 @@ const loadCalls = async (options) => {
     `SELECT c.session_id, c.run_id, ${epochMs('c.ts')} AS ts, c.name, c.subagent_type, c.phase, c.step,
             c.target_kind, c.target, c.signature,
             s.name AS session_name, s.workspace_id, w.name AS workspace_name, s.provider, s.model,
-            r.input, r.output, r.cache_read, r.cache_write, r.reasoning, r.total
+            r.mode, r.input, r.output, r.cache_read, r.cache_write, r.reasoning, r.total
      FROM tool_calls c
      JOIN sessions s ON s.id = c.session_id
      LEFT JOIN workspaces w ON w.id = s.workspace_id
@@ -467,6 +470,7 @@ const loadCalls = async (options) => {
     model: row.model,
     phase: row.phase,
     step: row.step,
+    mode: row.mode,
     name: row.name,
     subagentType: row.subagent_type,
     usage: usageOf(row),
@@ -485,7 +489,7 @@ const loadRuns = async (options) => {
     'r.input IS NOT NULL',
   ]
   const { rows } = await db.query(
-    `SELECT r.session_id, r.run_id, ${epochMs('r.started_at')} AS started_at, r.step,
+    `SELECT r.session_id, r.run_id, ${epochMs('r.started_at')} AS started_at, r.step, r.mode,
             r.input, r.output, r.cache_read, r.cache_write, r.reasoning, r.total,
             s.workspace_id, w.name AS workspace_name, s.provider
      FROM runs r
@@ -502,6 +506,7 @@ const loadRuns = async (options) => {
     workspaceName: row.workspace_name,
     provider: row.provider,
     step: row.step,
+    mode: row.mode,
     firstTs: row.started_at,
     usage: usageOf(row),
   }))

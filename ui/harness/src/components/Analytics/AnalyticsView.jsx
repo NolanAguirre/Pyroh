@@ -493,7 +493,7 @@ const AnalyticsView = ({ devId, workspaces = [], providers = [], onBack, onOpenS
                   </DevScope>
                 )}
 
-                <DevScope id="xvkcchh" state={{ runs: perRun.runs, inOut: perRun.tokens.inputPerOutput }}>
+                <DevScope id="xvkcchh" state={{ runs: perRun.runs, inOut: perRun.tokens.inputPerOutput, buildInOut: perRun.buildTokens?.inputPerOutput }}>
                   <Card>
                     <CardHeader>Per run</CardHeader>
                     <CardRow>
@@ -505,6 +505,7 @@ const AnalyticsView = ({ devId, workspaces = [], providers = [], onBack, onOpenS
                     <CardRow>
                       <Stat label="Cache vs new reads" value={vsText(perRun.tokens.reads)} sub={vsDetail(perRun.tokens.reads)} />
                       <Stat label="Input : output" value={ioText(perRun.tokens)} sub={ioDetail(perRun.tokens)} />
+                      <Stat label="Input : output (no plan/ask)" value={ioText(perRun.buildTokens)} sub={ioDetail(perRun.buildTokens)} />
                     </CardRow>
                     <CardSection>
                       <CardLabel>Busiest runs</CardLabel>

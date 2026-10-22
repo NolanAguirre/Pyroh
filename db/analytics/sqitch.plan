@@ -2,3 +2,4 @@
 %project=analytics
 
 v1.000.0 2026-10-17T00:27:57Z Toolkit <toolkit@localhost> # initial database
+v1.001.0 [v1.000.0] 2026-10-22T06:20:00Z Toolkit <toolkit@localhost> # run mode

@@ -51,6 +51,7 @@ const listRunUsageAsync = async (sessionId, sessionDir) => {
   const [runs, usage] = await Promise.all([runRecords(sessionId, sessionDir), jsonRecords(path.join(sessionDir, 'usage'))])
   const entries = new Map(runs.map(({ record }) => [record.id, {
     runId: record.id, startedAt: record.startedAt, step: record.step ?? null, usage: record.usage, durationMs: record.durationMs,
+    mode: record.plugin?.base ?? record.mode ?? null,
   }]))
   for (const { file, record } of usage) {
     if (!record?.runId) continue
@@ -59,6 +60,7 @@ const listRunUsageAsync = async (sessionId, sessionDir) => {
       runId: record.runId,
       startedAt: run?.startedAt ?? (await fs.promises.stat(file)).mtimeMs,
       step: run?.step ?? null,
+      mode: run?.mode ?? null,
       usage: record.usage,
       durationMs: record.durationMs,
     })

@@ -10,6 +10,7 @@ const compute = async (session) => {
     runId: entry.runId,
     startedAt: Number.isFinite(entry.startedAt) ? entry.startedAt : null,
     step: entry.step == null ? null : String(entry.step),
+    mode: entry.mode == null ? null : String(entry.mode),
     durationMs: Number.isFinite(entry.durationMs) ? Math.round(entry.durationMs) : null,
     usage: normalizeUsage(entry.usage, session.provider),
   }))
@@ -36,14 +37,15 @@ const store = async (client, session, result) => {
   const { runs } = result
   if (!runs.length) return
   await client.query(
-    `INSERT INTO runs (session_id, run_id, started_at, step, duration_ms, input, output, cache_read, cache_write, reasoning, total)
-     SELECT $1, * FROM unnest($2::text[], $3::timestamptz[], $4::text[], $5::bigint[], $6::bigint[], $7::bigint[],
-                              $8::bigint[], $9::bigint[], $10::bigint[], $11::bigint[])`,
+    `INSERT INTO runs (session_id, run_id, started_at, step, mode, duration_ms, input, output, cache_read, cache_write, reasoning, total)
+     SELECT $1, * FROM unnest($2::text[], $3::timestamptz[], $4::text[], $5::text[], $6::bigint[], $7::bigint[], $8::bigint[],
+                              $9::bigint[], $10::bigint[], $11::bigint[], $12::bigint[])`,
     [
       session.id,
       column(runs, (run) => run.runId),
       column(runs, (run) => iso(run.startedAt)),
       column(runs, (run) => run.step),
+      column(runs, (run) => run.mode),
       column(runs, (run) => run.durationMs),
       ...TOKEN_KEYS.map((key) => usageColumn(runs, key)),
     ],
@@ -52,4 +54,4 @@ const store = async (client, session, result) => {
 
 const summary = (result) => result.totals
 
-module.exports = { name: 'run-usage', version: 1, compute, store, summary }
+module.exports = { name: 'run-usage', version: 2, compute, store, summary }
