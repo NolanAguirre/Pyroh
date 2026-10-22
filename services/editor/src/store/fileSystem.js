@@ -258,6 +258,7 @@ const runRg = (root, query) => new Promise((resolve, reject) => {
     '--json',
     '-F',
     '-S',
+    '--follow',
     '--glob', '!**/node_modules/**',
     '--glob', '!**/.git/**',
     '--max-filesize', '1M',
