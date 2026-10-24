@@ -195,7 +195,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, transcriptFile
 
   const resolveModel = (model) => model || CURSOR_MODELS[0].id
 
-  const create = async ({ model, cwd, mode, tools } = {}) => {
+  const create = async ({ model, cwd, mode, tools, name } = {}) => {
     selectedModel = resolveModel(model)
     const { Agent } = ensureSdk()
     const includeCustom = !(Array.isArray(tools) && tools.length === 0)
@@ -206,6 +206,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, transcriptFile
       local,
       ...modeOptions(mode),
     }
+    if (name) opts.name = name
     if (apiKey) opts.apiKey = apiKey
     if (tools !== undefined) opts.tools = tools
     agent = await Agent.create(opts)

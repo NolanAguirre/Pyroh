@@ -1,4 +1,5 @@
 const { createDriver } = require('../agents/driver')
+const tokenWaste = require('../modes/tokenWaste')
 const workspaceStore = require('../store/workspaceStore')
 const paths = require('../store/paths')
 const sessionStore = require('../store/sessionStore')
@@ -75,7 +76,10 @@ const runOneTurn = async ({
     if (session.providerAgentId && !fresh) {
       await driver.resume(session.providerAgentId, settings)
     } else {
-      await driver.create(settings)
+      const named = session.provider === 'cursor' && session.mode === tokenWaste.MODE
+        ? { ...settings, name: tokenWaste.NAME }
+        : settings
+      await driver.create(named)
     }
     let providerAgentId = driver.providerAgentId()
     if (typeof onCreated === 'function') onCreated(providerAgentId)

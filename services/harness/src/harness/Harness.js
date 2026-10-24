@@ -120,7 +120,7 @@ const createTokenWasteSession = (sourceSessionId, { prompt: focus } = {}) => {
   const workspaceId = source.workspaceId || workspaceStore.findWorkspaceByCwd(source.cwd, config.writeDir)?.id
   const created = createSession({ workspaceId, provider: source.provider, model: source.model, codex: source.codex, grok: source.grok, claude: source.claude })
   const session = sessionStore.updateSession(created.id, {
-    mode: tokenWaste.MODE, sourceSessionId,
+    mode: tokenWaste.MODE, sourceSessionId, name: tokenWaste.NAME,
   }, config.writeDir)
   return { session, prompt }
 }

@@ -3,6 +3,7 @@ const path = require('path')
 const paths = require('../store/paths')
 
 const MODE = 'token-waste'
+const NAME = 'Token waste'
 
 const transcriptDirectories = (sessionId, writeDir) => {
   const directories = []
@@ -32,4 +33,4 @@ Lead with the highest-impact concrete recommendation. Cite run IDs or transcript
 ${focus ? `\nAdditional focus from the operator: ${focus}\n` : ''}`
 }
 
-module.exports = { MODE, buildPrompt, transcriptDirectories }
+module.exports = { MODE, NAME, buildPrompt, transcriptDirectories }
