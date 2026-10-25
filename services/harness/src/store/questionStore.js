@@ -79,6 +79,17 @@ const listQuestionsAsync = async (sessionId, writeDir) => {
   return questions
 }
 
+const findPending = (sessionId, runId, text, writeDir) =>
+  listQuestions(sessionId, writeDir).find((q) =>
+    q.status === 'pending' && q.runId === runId && q.question === text) || null
+
+const cancelPending = (sessionId, runId, writeDir) => {
+  for (const q of listQuestions(sessionId, writeDir)) {
+    if (q.status !== 'pending' || q.runId !== runId) continue
+    writeJson(paths.questionFile(sessionId, q.id, writeDir), { ...q, status: 'cancelled' })
+  }
+}
+
 // Called by the API/CLI: record the answer file and mark the question answered.
 const answer = (sessionId, qid, answerValue, writeDir) => {
   const q = loadQuestion(sessionId, qid, writeDir)
@@ -164,6 +175,8 @@ module.exports = {
   loadQuestion,
   listQuestions,
   listQuestionsAsync,
+  findPending,
+  cancelPending,
   answer,
   awaitAnswer,
 }

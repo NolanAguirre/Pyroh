@@ -261,7 +261,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const [prompt, setPromptState] = useState(() => loadComposer(sessionId).prompt)
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
-  const [sideOpen, setSideOpen] = useState(true)
+  const [sideOpen, setSideOpen] = useState(false)
   const [handoffRunId, setHandoffRunId] = useState(null)
   const [spawnProvider, setSpawnProvider] = useState(session?.provider || '')
   const [spawnModel, setSpawnModel] = useState(session?.model || '')

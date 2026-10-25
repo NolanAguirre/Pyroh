@@ -110,10 +110,14 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
 
   // ask_user callback surfaced to the driver's custom tool.
   const askUser = async (question, { signal } = {}) => {
-    const q = { ...question, runId }
+    // Provider stream resumes replay the pending tool call; reuse its question.
+    const existing = questionStore.findPending(sessionId, runId, question.question, writeDir)
+    const q = existing || { ...question, runId }
     const segmentSignal = questionAbort.signal
-    questionStore.writeQuestion(sessionId, q, writeDir)
-    eventLog.append(sessionId, { type: 'question', ...q }, writeDir)
+    if (!existing) {
+      questionStore.writeQuestion(sessionId, q, writeDir)
+      eventLog.append(sessionId, { type: 'question', ...q }, writeDir)
+    }
     sessionStore.updateSession(sessionId, { status: 'awaiting_input' }, writeDir)
     logLine(`awaiting answer for question ${q.id}`)
     let answer
@@ -139,6 +143,7 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
     exiting = true
     try {
       sessionStore.updateRun(sessionId, runId, { endedAt: Date.now(), ...patch }, writeDir)
+      questionStore.cancelPending(sessionId, runId, writeDir)
       if (sessionStatus) {
         sessionStore.updateSession(sessionId, { status: sessionStatus, ...sessionExtra }, writeDir)
       }
