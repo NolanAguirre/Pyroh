@@ -23,10 +23,11 @@ const useSessionEvents = (sessionId) => {
     sourceRef.current = source
 
     source.addEventListener('event', (e) => {
-      const event = JSON.parse(e.data)
+      const raw = JSON.parse(e.data)
+      const event = raw.session ? { ...raw, session: api.adoptSession(sessionId, raw.session) } : raw
       setEvents((prev) => [...prev, event])
     })
-    source.addEventListener('session', (e) => setSession(JSON.parse(e.data)))
+    source.addEventListener('session', (e) => setSession(api.adoptSession(sessionId, JSON.parse(e.data))))
     source.addEventListener('runs', (e) => setRuns(JSON.parse(e.data)))
     source.addEventListener('questions', (e) => setQuestions(JSON.parse(e.data)))
     source.addEventListener('ready', () => setConnected(true))

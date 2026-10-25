@@ -1,3 +1,6 @@
 logs/
 tmp/
 nginx.pid
+machines.json
+machines.conf
+machines.public.json

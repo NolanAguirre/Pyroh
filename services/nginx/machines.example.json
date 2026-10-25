@@ -1,0 +1,9 @@
+{
+  "self": "desk",
+  "resolver": "10.10.10.166",
+  "machines": [
+    { "name": "desk", "host": "127.0.0.1:6060" },
+    { "name": "laptop", "host": "laptop.lan:6060" },
+    { "name": "pi", "host": "10.10.10.166:6060" }
+  ]
+}

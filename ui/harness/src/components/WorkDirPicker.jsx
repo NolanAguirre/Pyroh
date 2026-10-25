@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react'
 import { Button, DevScope, FolderIcon } from 'component-library'
 import api from '../api'
 
-const WorkDirPicker = ({ devId, onChange }) => {
+const WorkDirPicker = ({ devId, machine = null, onChange }) => {
   const [listing, setListing] = useState(null)
   const [error, setError] = useState(null)
 
   const load = (path) => {
     api
-      .listWorkDir(path)
+      .listWorkDir(path, machine)
       .then((data) => {
         setError(null)
         setListing(data)
@@ -18,8 +18,9 @@ const WorkDirPicker = ({ devId, onChange }) => {
   }
 
   useEffect(() => {
+    setListing(null)
     load()
-  }, [])
+  }, [machine])
 
   const atBase = !listing || listing.parent === null
   const segments = listing?.path ? listing.path.split('/').filter(Boolean) : []

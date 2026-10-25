@@ -5,7 +5,7 @@
 	services.categorizer.install services.categorizer.install.js services.categorizer.install.python services.categorizer.install.model services.categorizer.start services.categorizer.consumer \
 	services.analytics.install services.analytics.build services.analytics.start services.analytics.sync services.analytics.backfill \
 	ui.harness.install ui.harness.dev ui.harness.build ui.harness.lint ui.harness.preview \
-	services.nginx.start services.nginx.stop services.nginx.reload services.nginx.status services.nginx.test
+	services.nginx.start services.nginx.stop services.nginx.reload services.nginx.status services.nginx.test services.nginx.render
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_.-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-32s %s\n", $$1, $$2}'
@@ -93,6 +93,9 @@ services.nginx.status: ## Show whether nginx is running
 
 services.nginx.test: ## Validate the nginx config
 	$(MAKE) -C services/nginx test
+
+services.nginx.render: ## Render machines.json into nginx machine routing
+	$(MAKE) -C services/nginx render
 
 services.terminal.install: ## terminal: Install dependencies
 	$(MAKE) -C services/terminal install
