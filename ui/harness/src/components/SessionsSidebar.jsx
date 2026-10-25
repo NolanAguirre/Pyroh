@@ -215,9 +215,14 @@ const SessionRow = ({ session, active, onSelect, onRename, onArchive, archiveBus
 
         <DevScope id="z4n0t7u" state={{ provider: session.provider, model: session.model || '' }}>
           <div className="session-row__info">
-            <span className="session-row__provider">
-              {session.provider}
-              {session.model ? ` · ${session.model}` : ''}
+            <span className="session-row__identity">
+              <span className="session-row__provider">
+                {session.provider}
+                {session.model ? ` · ${session.model}` : ''}
+              </span>
+              {session.id && (
+                <span className="session-row__id" title={session.id}>{session.id}</span>
+              )}
             </span>
             <div className="session-row__meta">
               <span>{formatCompactNumber(tokenTotal)} tok</span>
