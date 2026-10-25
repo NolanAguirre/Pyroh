@@ -110,7 +110,12 @@ export const HarnessFields = ({ form, inspector, preferredWorkspaceId }) => {
     </select>
     <label className="form__label" htmlFor="harness-prompt">Prompt</label>
     <textarea id="harness-prompt" className="form__textarea" rows={5} value={form.values.prompt}
-      disabled={form.isSubmitting} onChange={event => form.setValue('prompt', event.target.value)} />
+      disabled={form.isSubmitting} onChange={event => form.setValue('prompt', event.target.value)}
+      onKeyDown={event => {
+        if (event.key !== 'Enter' || !event.ctrlKey) return
+        event.preventDefault()
+        form.submit()
+      }} />
     {Object.entries(form.errors).map(([name, fieldError]) => form.touched[name] && fieldError
       ? <p key={name} role="alert">{fieldError}</p> : null)}
   </>

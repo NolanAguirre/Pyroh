@@ -427,9 +427,10 @@ const SessionsSidebar = ({
                     defaultValue={workspace?.id || ''}
                     options={workspaceOptions}
                     change={onSelectWorkspace}
+                    filter
                   >
-                    <DropdownTypeaheadTrigger />
-                    <DropdownTypeaheadMenu />
+                    <DropdownTypeaheadTrigger placeholder="Select a workspace…" />
+                    <DropdownTypeaheadMenu filterPlaceholder="Find a workspace…" />
                   </DropdownTypeahead>
                 </div>
               </DevScope>
