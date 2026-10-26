@@ -28,8 +28,10 @@ module.exports = {
   workBase: resolveWorkBase(),
   host: process.env.HOST || '127.0.0.1',
   port,
-  // Unset disables automatic terminal naming.
-  categorizerUrl: (process.env.HARNESS_CATEGORIZER_URL || '').trim().replace(/\/+$/, '') || null,
+  // Unset, or HARNESS_CATEGORIZER_ENABLED=0, disables automatic terminal naming.
+  categorizerUrl: process.env.HARNESS_CATEGORIZER_ENABLED === '0'
+    ? null
+    : (process.env.HARNESS_CATEGORIZER_URL || '').trim().replace(/\/+$/, '') || null,
   // Base URL the categorizer uses to call back into this API.
   publicUrl: (process.env.HARNESS_PUBLIC_URL || '').trim().replace(/\/+$/, '') || `http://127.0.0.1:${port}`,
 }
