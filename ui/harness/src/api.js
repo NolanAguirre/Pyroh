@@ -36,7 +36,7 @@ const post = (url, body) => send('POST', url, body).then(json)
 let machinesRequest = null
 const loadMachines = () => {
   if (!machinesRequest) {
-    machinesRequest = fetch('/machines.json', { cache: 'no-store' })
+    machinesRequest = fetch(at(null, '/machines.json'), { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : {}))
       .catch(() => ({}))
       .then((data) => ({
@@ -56,7 +56,10 @@ const splitId = (value) => {
 
 const tagId = (id, machine) => (machine && id ? `${id}@${machine}` : id)
 
-const at = (machine, path) => (machine ? `/m/${encodeURIComponent(machine)}${path}` : path)
+// Vite's base, so the app also works behind a path prefix such as /harness/.
+const base = import.meta.env.BASE_URL.replace(/\/$/, '')
+
+const at = (machine, path) => `${base}${machine ? `/m/${encodeURIComponent(machine)}` : ''}${path}`
 
 const tagWorkspace = (workspace, machine) => (machine && workspace ? {
   ...workspace,
@@ -156,9 +159,9 @@ const api = {
   machineOf: (id) => splitId(id).machine,
   // Tags a record streamed from `sessionId`'s machine (SSE payloads).
   adoptSession: (sessionId, session) => tagSession(session, splitId(sessionId).machine),
-  getProviders: () => fetch('/api/providers').then(json),
-  getUiSettings: () => fetch('/api/ui').then(json),
-  setUiSettings: (patch) => send('PATCH', '/api/ui', patch).then(json),
+  getProviders: () => fetch(at(null, '/api/providers')).then(json),
+  getUiSettings: () => fetch(at(null, '/api/ui')).then(json),
+  setUiSettings: (patch) => send('PATCH', at(null, '/api/ui'), patch).then(json),
   listWorkDir: (path, machine = null) =>
     fetch(at(machine, `/api/workdir${path ? `?path=${encodeURIComponent(path)}` : ''}`)).then(json),
   listWorkspaces: async () => {
@@ -227,7 +230,7 @@ const api = {
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') query.set(key, String(value))
     })
-    return fetch(`/api/analytics/tool-calls?${query}`, { signal }).then(json)
+    return fetch(at(null, `/api/analytics/tool-calls?${query}`), { signal }).then(json)
   },
   getCodeStats: (workspace, { signal } = {}) => {
     const target = fsTarget(workspace)
@@ -300,8 +303,8 @@ const api = {
     const { id, machine } = splitId(terminalId)
     return fetch(at(machine, `/api/terminal/${encodeURIComponent(id)}`), { method: 'DELETE' }).then(empty)
   },
-  getTerminalStartup: () => fetch('/api/terminal/startup', { cache: 'no-store' }).then(json),
-  saveTerminalStartup: (text) => send('PUT', '/api/terminal/startup', { text }).then(json),
+  getTerminalStartup: () => fetch(at(null, '/api/terminal/startup'), { cache: 'no-store' }).then(json),
+  saveTerminalStartup: (text) => send('PUT', at(null, '/api/terminal/startup'), { text }).then(json),
   gitStatus: (workspace, { signal } = {}) => {
     const target = fsTarget(workspace)
     return fetch(at(target.machine, `/api/git/status?${target.query({})}`), { signal }).then(json)
