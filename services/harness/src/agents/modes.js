@@ -8,8 +8,6 @@ const ASK_PROMPT = 'This is a question, do not change code, do not run commands 
 
 const TERSE_PROMPT = 'Respond tersely and use simple language when responding to the user.'
 
-const TERSE_MODES = ['agent', 'plan', 'ask', 'token-waste']
-
 const withAskPrompt = (prompt) => `${ASK_PROMPT}\n\n${prompt}`
 
 // `terse` is the first prompt of a session. Ask and plugin instructions are
@@ -24,4 +22,4 @@ const composePrompt = (prompt, { mode, terse = false, instructions } = {}) => {
   return `${parts.join('\n\n')}\n\n${text}`
 }
 
-module.exports = { AGENT_MODES, ASK_PROMPT, TERSE_PROMPT, TERSE_MODES, withAskPrompt, composePrompt }
+module.exports = { AGENT_MODES, ASK_PROMPT, TERSE_PROMPT, withAskPrompt, composePrompt }

@@ -8,7 +8,10 @@ const { snapshotIfGitRepo } = require('../store/gitSnapshot')
 const workspaceStore = require('../store/workspaceStore')
 const tokenWaste = require('../modes/tokenWaste')
 const newChat = require('../modes/newChat')
-const plugins = require('../modes/plugins')
+const registry = require('../registry')
+
+// Kinds this command runs in the foreground; others go through Harness.run.
+const FOREGROUND_KINDS = ['turn', 'token-waste', 'new-chat']
 
 const DEFAULT_RESUME_PROMPT = 'Continue where you left off'
 
@@ -18,7 +21,7 @@ Commands:
   workspace create [--name n] [--cwd dir]                 Create a workspace
   workspace list                                          List workspaces
   workspace show <wid>                                    Show a workspace
-  workspace modes <wid>                                   List the workspace's plugin modes
+  workspace modes <wid>                                   List the workspace's allowed modes
   session create --workspace <wid> [--provider p] [--model m]
                                                           Create a session in a workspace
   plan <sid> --prompt <text> [--detach]                   Run a plan-mode turn
@@ -107,11 +110,19 @@ const fail = (msg, code = 2) => {
 // with --detach it re-spawns itself detached and prints the run id.
 const handleTurn = async (action, sessionId, flags) => {
   if (!sessionId) return fail(`${action}: missing <sid>`)
-  if (action === 'run' && flags.mode && !flags['run-id'] && !plugins.RUN_MODES.includes(flags.mode)) {
+  if (action === 'run' && flags.mode && !flags['run-id'] && !FOREGROUND_KINDS.includes(registry.builtinMode(flags.mode)?.kind)) {
     try {
       return print(await Harness.run(sessionId, {
         mode: flags.mode, prompt: flags.prompt, provider: flags.provider, model: flags.model,
       }))
+    } catch (err) {
+      return fail(`${action}: ${err && err.message}`)
+    }
+  }
+  if (!flags['run-id']) {
+    const source = sessionStore.loadSession(sessionId, config.writeDir)
+    try {
+      if (source) registry.requireMode(registry.sessionWorkspace(source), action === 'plan' ? 'plan' : flags.mode || 'agent', { provider: source.provider })
     } catch (err) {
       return fail(`${action}: ${err && err.message}`)
     }
@@ -162,7 +173,8 @@ const handleTurn = async (action, sessionId, flags) => {
   const { runDaemon, attachLog } = require('../harness/daemon')
   attachLog(sessionId, config.writeDir)
   try {
-    if (![tokenWaste.MODE, newChat.MODE, 'ask'].includes(run.plugin ? run.plugin.base : run.mode)) {
+    const entry = run.plugin ? null : registry.builtinMode(run.mode)
+    if (run.plugin ? run.plugin.base !== 'ask' : entry ? entry.snapshot : true) {
       const cwd = workspaceStore.resolveSessionCwd(session, config.writeDir)
       const snap = snapshotIfGitRepo(cwd, {
         message: `harness: snapshot before ${action} ${run.id}`,
@@ -291,7 +303,7 @@ const main = async (argv) => {
         if (!id) return fail('usage: harness workspace modes <wid>')
         const workspace = await Harness.getWorkspace(id)
         if (!workspace) return fail(`workspace not found: ${id}`)
-        return print(plugins.describeModes(workspace))
+        return print(registry.listAllowed(workspace).modes)
       }
       if (sub !== 'create') {
         return fail('usage: harness workspace create [--name n] [--cwd dir]')

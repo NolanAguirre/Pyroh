@@ -11,11 +11,10 @@ const { listProviders } = require('../agents/driver')
 const sessionLock = require('../store/sessionLock')
 const tokenWaste = require('../modes/tokenWaste')
 const newChat = require('../modes/newChat')
-const plugins = require('../modes/plugins')
+const registry = require('../registry')
 const { requestChatName } = require('../categorizer')
 
 const DEFAULT_RESUME_PROMPT = 'Continue where you left off'
-const AUTO_NAME_MODES = ['agent', 'plan', 'ask']
 
 const isDecomposeResume = (session) =>
   session &&
@@ -24,7 +23,7 @@ const isDecomposeResume = (session) =>
   session.currentStep !== 'done'
 
 // Launch a detached daemon for a freshly created run. Returns the run record.
-// autoName marks prompts typed by the user, which may name an unnamed session.
+// autoName marks prompts typed by the user, in modes that may name an unnamed session.
 const resolveNewChatTarget = (source, target = {}) => {
   const provider = target.provider || source.provider
   if (!listProviders().includes(provider)) {
@@ -47,7 +46,7 @@ const spawnRun = (sessionId, action, { mode, prompt, autoName = false, handoff, 
     const run = sessionStore.createRun(sessionId, { mode, prompt, handoff, plugin })
     sessionStore.updateSession(sessionId, { status: 'running' }, config.writeDir)
     const pid = proc.spawnHarness([action, sessionId, '--run-id', run.id], lock.spawnOptions())
-    if (autoName && firstUnnamedRun && AUTO_NAME_MODES.includes(mode)) requestChatName(sessionId, prompt)
+    if (autoName && firstUnnamedRun) requestChatName(sessionId, prompt)
     return { ...run, daemonPid: pid }
   } catch (err) {
     sessionStore.recoverSession(sessionId, config.writeDir)
@@ -111,16 +110,16 @@ const updateWorkspace = (workspaceId, patch) =>
 const createSession = ({ workspaceId, provider, model, codex, grok, claude }) =>
   sessionStore.createSession({ workspaceId, provider, model, codex, grok, claude }, config.writeDir)
 
-const plan = (sessionId, { prompt }) => spawnRun(sessionId, 'plan', { mode: 'plan', prompt, autoName: true })
 
 const createTokenWasteSession = (sourceSessionId, { prompt: focus } = {}) => {
+  const entry = registry.builtinMode(tokenWaste.MODE)
   const source = sessionStore.loadSession(sourceSessionId, config.writeDir)
   if (!source) throw Object.assign(new Error(`session not found: ${sourceSessionId}`), { status: 404 })
   const prompt = tokenWaste.buildPrompt(sourceSessionId, focus, config.writeDir)
   const workspaceId = source.workspaceId || workspaceStore.findWorkspaceByCwd(source.cwd, config.writeDir)?.id
   const created = createSession({ workspaceId, provider: source.provider, model: source.model, codex: source.codex, grok: source.grok, claude: source.claude })
   const session = sessionStore.updateSession(created.id, {
-    mode: tokenWaste.MODE, sourceSessionId, name: tokenWaste.NAME,
+    mode: entry.id, sourceSessionId, name: entry.sessionName,
   }, config.writeDir)
   return { session, prompt }
 }
@@ -142,21 +141,15 @@ const continueInNewChat = (sourceSessionId, prompt, target) => {
   return { session, run }
 }
 
-// Plugin modes come from the session's workspace. A fresh sibling session
-// gets the run when the mode asks for one, as token-waste does.
-const runPlugin = async (sessionId, { prompt, mode, provider, model }) => {
-  const source = sessionStore.loadSession(sessionId, config.writeDir)
-  if (!source) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
-  const workspace = plugins.sessionWorkspace(source)
-  const harness = workspace && plugins.makeHarnessApi(workspace, source)
-  const plugin = workspace && plugins.findMode(workspace, mode, harness)
-  if (!plugin) throw Object.assign(new Error(`unknown run mode: ${mode}`), { status: 400 })
+// Plugin modes come from the session's workspace or global plugins. A fresh
+// sibling session gets the run when the mode asks for one, as token-waste does.
+const runPlugin = async (source, plugin, harness, { prompt, provider, model }) => {
   let session = source
   if (plugin.newSession) {
     const created = harness.createSession({ provider, model })
-    session = sessionStore.updateSession(created.id, { mode: plugin.id, sourceSessionId: sessionId }, config.writeDir)
+    session = sessionStore.updateSession(created.id, { mode: plugin.id, sourceSessionId: source.id }, config.writeDir)
   }
-  const ctx = { workspace, session, runId: null, prompt: prompt || '' }
+  const ctx = { workspace: harness.workspace, session, runId: null, prompt: prompt || '' }
   const text = await plugin.buildPrompt(ctx, harness)
   if (typeof text !== 'string' || !text.trim()) {
     throw Object.assign(new Error(`${plugin.id}: buildPrompt returned no prompt`), { status: 400 })
@@ -165,25 +158,10 @@ const runPlugin = async (sessionId, { prompt, mode, provider, model }) => {
     ? await plugin.instructions(ctx, harness)
     : plugin.instructions
   return spawnRun(session.id, 'run', {
-    mode,
+    mode: plugin.id,
     prompt: text,
     plugin: { id: plugin.id, base: plugin.base, terse: plugin.terse, instructions: instructions ? String(instructions) : null },
   })
-}
-
-const run = (sessionId, { prompt, mode = 'agent', provider, model } = {}) => {
-  if (!plugins.RUN_MODES.includes(mode)) return runPlugin(sessionId, { prompt, mode, provider, model })
-  if (mode === tokenWaste.MODE) {
-    const analysis = createTokenWasteSession(sessionId, { prompt })
-    return spawnRun(analysis.session.id, 'run', { mode, prompt: analysis.prompt })
-  }
-  if (mode === newChat.MODE) {
-    const source = sessionStore.loadSession(sessionId, config.writeDir)
-    if (!source) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
-    const handoff = resolveNewChatTarget(source, { provider, model })
-    return spawnRun(sessionId, 'run', { mode, prompt: newChat.buildPrompt(prompt), handoff })
-  }
-  return spawnRun(sessionId, 'run', { mode, prompt, autoName: true })
 }
 
 const decompose = (sessionId, { prompt }) => {
@@ -192,6 +170,34 @@ const decompose = (sessionId, { prompt }) => {
   if (!session) throw new Error(`session not found: ${sessionId}`)
   return spawnDecompose(sessionId, { resume: false, prompt })
 }
+
+// Every mode is looked up in the registry, which also enforces deny rules.
+const run = async (sessionId, { prompt, mode = 'agent', provider, model } = {}) => {
+  const source = sessionStore.loadSession(sessionId, config.writeDir)
+  if (!source) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
+  const workspace = registry.sessionWorkspace(source)
+  const harness = workspace ? registry.makeHarnessApi(workspace, source) : undefined
+  const entry = registry.requireMode(workspace, mode, { harness, provider: source.provider })
+  switch (entry.kind) {
+    case 'plugin':
+      if (!harness) throw Object.assign(new Error(`${entry.id}: plugin modes need a workspace`), { status: 400 })
+      return runPlugin(source, entry, harness, { prompt, provider, model })
+    case 'token-waste': {
+      const analysis = createTokenWasteSession(sessionId, { prompt })
+      return spawnRun(analysis.session.id, 'run', { mode, prompt: analysis.prompt })
+    }
+    case 'new-chat': {
+      const handoff = resolveNewChatTarget(source, { provider, model })
+      return spawnRun(sessionId, 'run', { mode, prompt: newChat.buildPrompt(prompt), handoff })
+    }
+    case 'decompose':
+      return decompose(sessionId, { prompt })
+    default:
+      return spawnRun(sessionId, entry.id === 'plan' ? 'plan' : 'run', { mode, prompt, autoName: entry.autoName })
+  }
+}
+
+const plan = (sessionId, { prompt }) => run(sessionId, { mode: 'plan', prompt })
 
 // A run that lost the network before its agent started never delivered its
 // prompt, so resuming must resend it rather than "continue".
@@ -229,8 +235,8 @@ const answer = (sessionId, qid, value) =>
 const steer = (sessionId, text) => {
   const session = sessionStore.loadSession(sessionId, config.writeDir)
   if (!session) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
-  if (session.mode === 'decompose') {
-    throw Object.assign(new Error('decompose sessions cannot be steered'), { status: 409 })
+  if (registry.builtinMode(session.mode)?.steerable === false) {
+    throw Object.assign(new Error(`${session.mode} sessions cannot be steered`), { status: 409 })
   }
   if (!daemonPidOf(sessionId) || !['running', 'awaiting_input'].includes(session.status)) {
     throw Object.assign(new Error('session has no running agent to steer'), { status: 409 })

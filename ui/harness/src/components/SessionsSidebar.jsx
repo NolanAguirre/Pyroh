@@ -44,6 +44,15 @@ const ICONS = {
   archive: 'M1.5 2.5h13v2.5h-13zM2.5 5v8.5h11V5M6 8.5h4',
 }
 
+// Header buttons come from registry panels; these are their DevScope ids.
+const PANEL_DEV_IDS = {
+  editor: 'f2a6rat',
+  terminal: 'gh4tt4y',
+  git: '7vr4nuz',
+  'code-stats': 'c7q2x9a',
+  analytics: 'vqx75km',
+}
+
 const Icon = ({ d }) => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d={d} />
@@ -254,12 +263,9 @@ const SessionsSidebar = ({
   onWorkspaceCreated,
   onDeleteWorkspace,
   onCreated,
-  onOpenEditor,
-  onOpenTerminal,
-  onOpenGit,
-  onOpenAnalytics,
-  codeStatsOpen,
-  onToggleCodeStats,
+  panels = [],
+  view,
+  onOpenPanel,
   showArchived,
   onShowArchived,
   onArchive,
@@ -342,61 +348,26 @@ const SessionsSidebar = ({
                   <Icon d={ICONS.settings} />
                 </Button>
               </Popup>
-              <Button
-                variant="secondary"
-                size="sm"
-                devId="f2a6rat"
-                title="Open the file editor for this workspace"
-                aria-label="Editor"
-                onClick={onOpenEditor}
-                disabled={!workspace}
-              >
-                <Icon d={ICONS.editor} />
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                devId="gh4tt4y"
-                title="Open a terminal for this workspace"
-                aria-label="Terminal"
-                onClick={onOpenTerminal}
-                disabled={!workspace}
-              >
-                <Icon d={ICONS.terminal} />
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                devId="7vr4nuz"
-                title="Open git for this workspace"
-                aria-label="Git"
-                onClick={onOpenGit}
-                disabled={!workspace}
-              >
-                <Icon d={ICONS.git} />
-              </Button>
-              <Button
-                variant={codeStatsOpen ? 'primary' : 'secondary'}
-                size="sm"
-                devId="c7q2x9a"
-                title="Show file length stats for this workspace"
-                aria-label="Code stats"
-                aria-pressed={Boolean(codeStatsOpen)}
-                onClick={onToggleCodeStats}
-                disabled={!workspace}
-              >
-                <Icon d={ICONS.codeStats} />
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                devId="vqx75km"
-                title="Open tool-call analytics"
-                aria-label="Analytics"
-                onClick={onOpenAnalytics}
-              >
-                <Icon d={ICONS.analytics} />
-              </Button>
+              {panels.map((panel) => {
+                // `main` panels toggle inside the layout; `page` panels replace it.
+                const toggle = panel.placement === 'main'
+                const open = view === panel.id
+                return (
+                  <Button
+                    key={panel.id}
+                    variant={toggle && open ? 'primary' : 'secondary'}
+                    size="sm"
+                    devId={PANEL_DEV_IDS[panel.id]}
+                    title={panel.title || panel.label}
+                    aria-label={panel.label}
+                    aria-pressed={toggle ? open : undefined}
+                    onClick={() => onOpenPanel?.(panel.id)}
+                    disabled={panel.needsWorkspace && !workspace}
+                  >
+                    {ICONS[panel.icon] ? <Icon d={ICONS[panel.icon]} /> : panel.label.slice(0, 2)}
+                  </Button>
+                )
+              })}
               <Popup devId="hr8v4j2" panelClassName="new-session-panel">
                 <NewWorkspaceForm devId="hr0k6t2" onCreated={onWorkspaceCreated} />
                 <Button variant="secondary" size="sm" devId="hr2p9x5" title="Create a new workspace" aria-label="New workspace">

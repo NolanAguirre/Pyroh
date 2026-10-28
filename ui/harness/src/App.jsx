@@ -46,11 +46,12 @@ const SESSION_PARAM = 'session'
 const VIEW_PARAM = 'view'
 const FILE_PARAM = 'file'
 const TERM_PARAM = 'term'
-const EDITOR_VIEW = 'editor'
-const TERMINAL_VIEW = 'terminal'
-const GIT_VIEW = 'git'
-const ANALYTICS_VIEW = 'analytics'
-const CODE_STATS_VIEW = 'code-stats'
+// Panels come from the registry; `?view=` holds the open panel id.
+const EDITOR_PANEL = 'editor'
+// Extra URL changes when a panel opens or closes.
+const PANEL_OPEN_PARAMS = { git: { file: null } }
+const PANEL_CLOSE_PARAMS = { terminal: { term: null }, git: { file: null } }
+const MODE_ICONS = { agent: '▶', ask: '?', plan: '◇', decompose: '⑂', 'token-waste': '⚙', 'new-chat': '↪' }
 const ACTIVE_JOB = (session) => session.status === 'running' || session.status === 'awaiting_input'
 const JOB_LIST_LIMIT = 20
 const MOBILE_QUERY = '(max-width: 768px)'
@@ -97,7 +98,7 @@ if (!new URL(window.location.href).searchParams.get(WORKSPACE_PARAM)) {
   }
 }
 
-const AppPlaceholder = ({ workspace, workspaces = [], sessions = [], providers = [], onCreated, onWorkspaceCreated, onOpenEditor }) => (
+const AppPlaceholder = ({ workspace, workspaces = [], sessions = [], providers = [], modes = [], onCreated, onWorkspaceCreated, onOpenEditor }) => (
   <DevScope id="hr3n8w4" state={{ workspace: workspace?.id, sessionCount: sessions.length }}>
     <div className="app__placeholder-hero">
       <div className="app__placeholder-content">
@@ -106,7 +107,7 @@ const AppPlaceholder = ({ workspace, workspaces = [], sessions = [], providers =
         </div>
         <h1 className="app__hero-title">Multi-Agent Development Environment</h1>
         <p className="app__hero-desc">
-          Run interactive turns with Plan, Execute, Decompose, and Token-waste modes.
+          {modes.length ? `Run interactive turns with ${modes.map((mode) => mode.label).join(', ')} modes.` : 'Run interactive agent turns.'}
         </p>
 
         {workspace ? (
@@ -138,9 +139,11 @@ const AppPlaceholder = ({ workspace, workspaces = [], sessions = [], providers =
                       + Start Session
                     </Button>
                   </Popup>
-                  <Button variant="secondary" size="sm" onClick={onOpenEditor} devId="n8k3w7f">
-                    Open File Editor
-                  </Button>
+                  {onOpenEditor && (
+                    <Button variant="secondary" size="sm" onClick={onOpenEditor} devId="n8k3w7f">
+                      Open File Editor
+                    </Button>
+                  )}
                 </div>
               </CardSection>
             </CardRow>
@@ -163,26 +166,13 @@ const AppPlaceholder = ({ workspace, workspaces = [], sessions = [], providers =
         )}
 
         <div className="app__capabilities-grid">
-          <div className="app__cap-tile">
-            <span className="app__cap-icon">◇</span>
-            <strong>Plan Mode</strong>
-            <p className="hint">Architectural overview and turn breakdown without touching files.</p>
-          </div>
-          <div className="app__cap-tile">
-            <span className="app__cap-icon">▶</span>
-            <strong>Execute Mode</strong>
-            <p className="hint">Autonomous agent execution with full workspace tool calling and terminal runs.</p>
-          </div>
-          <div className="app__cap-tile">
-            <span className="app__cap-icon">⑂</span>
-            <strong>Decompose Mode</strong>
-            <p className="hint">Multi-phase recursive task breakdown and execution tracking.</p>
-          </div>
-          <div className="app__cap-tile">
-            <span className="app__cap-icon">⚙</span>
-            <strong>Token Waste</strong>
-            <p className="hint">Deep analysis of transcript tokens to highlight efficiency gains.</p>
-          </div>
+          {modes.map((mode) => (
+            <div key={mode.id} className="app__cap-tile">
+              <span className="app__cap-icon">{MODE_ICONS[mode.id] || '◇'}</span>
+              <strong>{mode.label}</strong>
+              <p className="hint">{mode.hint}</p>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -192,11 +182,6 @@ const AppPlaceholder = ({ workspace, workspaces = [], sessions = [], providers =
 const App = () => {
   const { url, navigate } = useBrowserLocation()
   const { workspaceId: activeWorkspaceId, sessionId: activeId, view, file, term } = selectionFromUrl(url)
-  const editorOpen = view === EDITOR_VIEW
-  const terminalOpen = view === TERMINAL_VIEW
-  const gitOpen = view === GIT_VIEW
-  const analyticsOpen = view === ANALYTICS_VIEW
-  const codeStatsOpen = view === CODE_STATS_VIEW
   const mobile = useMediaQuery(MOBILE_QUERY)
   const [mobilePane, setMobilePane] = useState(() => (activeId ? MOBILE_CHAT : MOBILE_SESSIONS))
   const showChat = () => setMobilePane(MOBILE_CHAT)
@@ -214,6 +199,7 @@ const App = () => {
   const [jobsCollapsed, setJobsCollapsed] = useState(false)
   const [transcriptFontSize, setTranscriptFontSize] = useState(13)
   const [settingsError, setSettingsError] = useState('')
+  const [registry, setRegistry] = useState({ modes: [], panels: [] })
   const transcriptFontTouched = useRef(false)
   const fontSaveTimer = useRef(null)
 
@@ -328,6 +314,22 @@ const App = () => {
   useEffect(() => {
     loadSessions()
   }, [loadSessions])
+
+  // Modes and panels allowed for the active workspace.
+  useEffect(() => {
+    let cancelled = false
+    api
+      .getRegistry(activeWorkspaceId)
+      .then((data) => {
+        if (cancelled) return
+        setRegistry({
+          modes: Array.isArray(data.modes) ? data.modes : [],
+          panels: Array.isArray(data.panels) ? data.panels : [],
+        })
+      })
+      .catch(() => { if (!cancelled) setRegistry({ modes: [], panels: [] }) })
+    return () => { cancelled = true }
+  }, [activeWorkspaceId])
 
   useEffect(() => {
     loadRunningJobs()
@@ -449,6 +451,88 @@ const App = () => {
   const workspaceSessions = sessionsReadyFor === activeWorkspaceId ? sessions : []
   const activeSession = workspaceSessions.find((s) => s.id === activeId) || null
   const runningCount = runningJobs.filter(ACTIVE_JOB).length
+  const panelAllowed = (id) => registry.panels.some((panel) => panel.id === id)
+  const openEditor = panelAllowed(EDITOR_PANEL)
+    ? (path) => go(activeWorkspaceId, activeId, { view: EDITOR_PANEL, ...(path ? { file: path } : {}) })
+    : undefined
+
+  const closePanel = (id) => go(activeWorkspaceId, activeId, { view: null, ...(PANEL_CLOSE_PARAMS[id] || {}) })
+
+  const openPanel = (id) => {
+    const panel = registry.panels.find((item) => item.id === id)
+    if (!panel) return
+    if (panel.placement === 'main') {
+      const open = view === id
+      go(activeWorkspaceId, activeId, { view: open ? null : id })
+      if (!open) showChat()
+      return
+    }
+    go(activeWorkspaceId, activeId, { view: id, ...(PANEL_OPEN_PARAMS[id] || {}) })
+  }
+
+  // Registry panel id -> component. Panels without an entry here are ignored.
+  const PANEL_COMPONENTS = {
+    analytics: () => (
+      <AnalyticsView
+        devId="moxixrf"
+        workspaces={workspaces}
+        providers={providers}
+        onBack={() => closePanel('analytics')}
+        onOpenSession={(run) => {
+          go(run.workspaceId || activeWorkspaceId, run.sessionId, { view: null })
+          showChat()
+        }}
+      />
+    ),
+    editor: () => (
+      <EditorView
+        devId="7ix0b98"
+        workspaces={workspaces}
+        workspace={workspace}
+        workspaceId={activeWorkspaceId}
+        file={file}
+        onFileChange={onFileChange}
+        onSelectWorkspace={(id) => go(id, null)}
+        onBack={() => closePanel('editor')}
+      />
+    ),
+    terminal: () => (
+      <TerminalView
+        devId="5vznodc"
+        workspaces={workspaces}
+        workspace={workspace}
+        workspaceId={activeWorkspaceId}
+        term={term}
+        onTermChange={onTermChange}
+        onSelectWorkspace={onTerminalWorkspace}
+        onBack={() => closePanel('terminal')}
+      />
+    ),
+    git: () => (
+      <GitView
+        devId="6v4w7zs"
+        workspaces={workspaces}
+        workspace={workspace}
+        workspaceId={activeWorkspaceId}
+        file={file}
+        onFileChange={onFileChange}
+        onSelectWorkspace={(id) => go(id, null)}
+        onOpenFile={openEditor}
+        onBack={() => closePanel('git')}
+      />
+    ),
+    'code-stats': () => (
+      <CodeStatsView
+        devId="k3w8n5v"
+        workspace={workspace}
+        providers={providers}
+        onCreated={onCreated}
+        onClose={() => closePanel('code-stats')}
+        onOpenFile={openEditor}
+      />
+    ),
+  }
+  const activePanel = registry.panels.find((panel) => panel.id === view && PANEL_COMPONENTS[panel.id]) || null
 
   const sidebar = (
     <SessionsSidebar
@@ -479,15 +563,9 @@ const App = () => {
       onWorkspaceCreated={onWorkspaceCreated}
       onDeleteWorkspace={deleteWorkspace}
       onCreated={onCreated}
-      onOpenEditor={() => go(activeWorkspaceId, activeId, { view: EDITOR_VIEW })}
-      onOpenTerminal={() => go(activeWorkspaceId, activeId, { view: TERMINAL_VIEW })}
-      onOpenGit={() => go(activeWorkspaceId, activeId, { view: GIT_VIEW, file: null })}
-      onOpenAnalytics={() => go(activeWorkspaceId, activeId, { view: ANALYTICS_VIEW })}
-      codeStatsOpen={codeStatsOpen}
-      onToggleCodeStats={() => {
-        go(activeWorkspaceId, activeId, { view: codeStatsOpen ? null : CODE_STATS_VIEW })
-        if (!codeStatsOpen) showChat()
-      }}
+      panels={registry.panels}
+      view={activePanel ? view : null}
+      onOpenPanel={openPanel}
       transcriptFontSize={transcriptFontSize}
       onTranscriptFontSize={changeTranscriptFontSize}
       settingsError={settingsError}
@@ -496,15 +574,8 @@ const App = () => {
 
   const mainPane = (
     <main className="app__main">
-      {codeStatsOpen ? (
-        <CodeStatsView
-          devId="k3w8n5v"
-          workspace={workspace}
-          providers={providers}
-          onCreated={onCreated}
-          onClose={() => go(activeWorkspaceId, activeId, { view: null })}
-          onOpenFile={(path) => go(activeWorkspaceId, activeId, { view: EDITOR_VIEW, file: path })}
-        />
+      {activePanel?.placement === 'main' ? (
+        PANEL_COMPONENTS[activePanel.id]()
       ) : activeId ? (
         <SessionView
           key={activeId}
@@ -513,6 +584,7 @@ const App = () => {
           initialSession={activeSession}
           providers={providers}
           workspaces={workspaces}
+          modes={registry.modes}
           onCreated={onCreated}
           transcriptFontSize={transcriptFontSize}
           onChanged={() => {
@@ -526,9 +598,10 @@ const App = () => {
           workspaces={workspaces}
           sessions={workspaceSessions}
           providers={providers}
+          modes={registry.modes}
           onCreated={onCreated}
           onWorkspaceCreated={onWorkspaceCreated}
-          onOpenEditor={() => go(activeWorkspaceId, activeId, { view: EDITOR_VIEW })}
+          onOpenEditor={openEditor && (() => openEditor())}
         />
       )}
     </main>
@@ -548,52 +621,9 @@ const App = () => {
 
   return (
     <DevInspector enabled={import.meta.env.DEV} forms={harnessForms(activeWorkspaceId)} views={harnessViews}>
-      <DevScope id="hr7k2m9" state={{ workspace: activeWorkspaceId, session: activeId, view: editorOpen || terminalOpen || gitOpen || analyticsOpen || codeStatsOpen ? view : 'sessions', file, term, running: runningCount, mobile }}>
-        {analyticsOpen ? (
-          <AnalyticsView
-            devId="moxixrf"
-            workspaces={workspaces}
-            providers={providers}
-            onBack={() => go(activeWorkspaceId, activeId, { view: null })}
-            onOpenSession={(run) => {
-              go(run.workspaceId || activeWorkspaceId, run.sessionId, { view: null })
-              showChat()
-            }}
-          />
-        ) : editorOpen ? (
-          <EditorView
-            devId="7ix0b98"
-            workspaces={workspaces}
-            workspace={workspace}
-            workspaceId={activeWorkspaceId}
-            file={file}
-            onFileChange={onFileChange}
-            onSelectWorkspace={(id) => go(id, null)}
-            onBack={() => go(activeWorkspaceId, activeId, { view: null })}
-          />
-        ) : terminalOpen ? (
-          <TerminalView
-            devId="5vznodc"
-            workspaces={workspaces}
-            workspace={workspace}
-            workspaceId={activeWorkspaceId}
-            term={term}
-            onTermChange={onTermChange}
-            onSelectWorkspace={onTerminalWorkspace}
-            onBack={() => go(activeWorkspaceId, activeId, { view: null, term: null })}
-          />
-        ) : gitOpen ? (
-          <GitView
-            devId="6v4w7zs"
-            workspaces={workspaces}
-            workspace={workspace}
-            workspaceId={activeWorkspaceId}
-            file={file}
-            onFileChange={onFileChange}
-            onSelectWorkspace={(id) => go(id, null)}
-            onOpenFile={(path) => go(activeWorkspaceId, activeId, { view: EDITOR_VIEW, file: path })}
-            onBack={() => go(activeWorkspaceId, activeId, { view: null, file: null })}
-          />
+      <DevScope id="hr7k2m9" state={{ workspace: activeWorkspaceId, session: activeId, view: activePanel ? view : 'sessions', file, term, running: runningCount, mobile }}>
+        {activePanel?.placement === 'page' ? (
+          PANEL_COMPONENTS[activePanel.id]()
         ) : mobile ? (
           <DevScope id="m4q8z2t" state={{ pane: mobilePane }}>
             <div className="app app--mobile">

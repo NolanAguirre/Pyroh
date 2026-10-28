@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Badge, Button, DevScope, DropdownTypeahead, DropdownTypeaheadMenu, DropdownTypeaheadTrigger, FolderIcon, Popup, ProgressBar, Tabs, TabList, Tab, TabPanel, useSpeechRecognition } from 'component-library'
 import useSessionEvents from '../useSessionEvents'
 import api from '../api'
@@ -33,33 +33,21 @@ const Icon = ({ d }) => (
   </svg>
 )
 
-const MODES = [
-  { id: 'agent', label: 'Execute', scopeId: 'hr0m6j9' },
-  { id: 'ask', label: 'Ask', scopeId: 'k3w9a5t' },
-  { id: 'plan', label: 'Plan', scopeId: 'hr4n8d2' },
-  { id: 'decompose', label: 'Decompose', scopeId: 'hr5k1w7' },
-  { id: 'token-waste', label: 'Token waste', devId: 'q7m2z9k' },
-  { id: 'new-chat', label: 'New chat', devId: 'n4c8x2e' },
-]
+// Modes come from the registry. These DevScope ids belong to built-in mode
+// buttons; plugin modes share pm6t3qz.
+const MODE_SCOPES = { agent: 'hr0m6j9', ask: 'k3w9a5t', plan: 'hr4n8d2', decompose: 'hr5k1w7' }
+const MODE_DEV_IDS = { 'token-waste': 'q7m2z9k', 'new-chat': 'n4c8x2e' }
 
-const OPTIONAL_PROMPT_MODES = ['token-waste', 'new-chat']
-
-const SEND_LABELS = {
-  decompose: 'Decompose',
-  ask: 'Ask',
-  plan: 'Plan',
-  'token-waste': 'Analyze transcript',
-  'new-chat': 'Continue in new chat',
-}
-
-const MODE_HINTS = {
-  agent: 'Agent executes commands, edits files, and runs tools.',
-  ask: 'Answers a question by exploring the code without changing anything.',
-  plan: 'Read-only analysis and architectural planning without modifying files.',
-  decompose: 'Recursively decomposes high-level goals into phased steps.',
-  'token-waste': 'Analyzes transcript tokens and highlights waste or redundancy.',
-  'new-chat': 'Summarizes this chat into a handoff prompt and continues it in a new session with the provider and model you choose.',
-}
+// Shown until the registry loads.
+const FALLBACK_MODES = [{
+  id: 'agent',
+  label: 'Execute',
+  scope: 'builtin',
+  kind: 'turn',
+  hint: '',
+  sendLabel: 'Send',
+  placeholder: 'Ask the agent to do something (⌘↵ to send)…',
+}]
 
 const DRAFTS_KEY = 'harness.composerDrafts'
 
@@ -80,7 +68,8 @@ const writeDrafts = (drafts) => {
   }
 }
 
-const isMode = (value) => MODES.some((item) => item.id === value)
+// Plugin modes load later, so any mode id is kept until the registry says otherwise.
+const isMode = (value) => typeof value === 'string' && /^[a-z0-9][a-z0-9-]*$/.test(value)
 
 const sharedPrompt = (entry, mode) => {
   if (!entry) return ''
@@ -89,11 +78,7 @@ const sharedPrompt = (entry, mode) => {
   if (!prompts) return ''
   const current = prompts[mode]
   if (typeof current === 'string' && current) return current
-  for (const item of MODES) {
-    const text = prompts[item.id]
-    if (typeof text === 'string' && text) return text
-  }
-  return ''
+  return Object.values(prompts).find((text) => typeof text === 'string' && text) || ''
 }
 
 const loadComposer = (sessionId) => {
@@ -171,14 +156,14 @@ const ModeToggle = ({ modes, mode, onChange, disabled }) => (
   <div className="mode-toggle" role="group" aria-label="Session mode">
     {modes.map((item) => {
       const isActive = mode === item.id
-      if (item.plugin) {
+      if (item.scope !== 'builtin') {
         return (
           <DevScope key={item.id} id="pm6t3qz" state={{ mode: item.id, active: isActive }}>
             <button
               type="button"
               className={`mode-toggle__btn${isActive ? ' mode-toggle__btn--active' : ''}`}
               aria-pressed={isActive}
-              title={item.plugin.hint || undefined}
+              title={item.hint || undefined}
               onClick={() => onChange(item.id)}
               disabled={disabled}
             >
@@ -187,9 +172,9 @@ const ModeToggle = ({ modes, mode, onChange, disabled }) => (
           </DevScope>
         )
       }
-      if (item.scopeId) {
+      if (MODE_SCOPES[item.id]) {
         return (
-          <DevScope key={item.id} id={item.scopeId} state={{ active: isActive }}>
+          <DevScope key={item.id} id={MODE_SCOPES[item.id]} state={{ active: isActive }}>
             <button
               type="button"
               className={`mode-toggle__btn${isActive ? ' mode-toggle__btn--active' : ''}`}
@@ -205,7 +190,7 @@ const ModeToggle = ({ modes, mode, onChange, disabled }) => (
       return (
         <Button
           key={item.id}
-          devId={item.devId}
+          devId={MODE_DEV_IDS[item.id]}
           variant={isActive ? 'primary' : 'ghost'}
           size="sm"
           aria-pressed={isActive}
@@ -254,7 +239,7 @@ const DecomposeProgress = ({ session }) => {
   )
 }
 
-const SessionView = ({ devId, sessionId, initialSession, providers = [], workspaces = [], onChanged, onCreated, transcriptFontSize }) => {
+const SessionView = ({ devId, sessionId, initialSession, providers = [], workspaces = [], modes: registryModes, onChanged, onCreated, transcriptFontSize }) => {
   const { events, session: liveSession, runs, pendingQuestions } = useSessionEvents(sessionId)
   const session = liveSession || initialSession
   const [mode, setMode] = useState(() => loadComposer(sessionId).mode)
@@ -265,8 +250,6 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const [handoffRunId, setHandoffRunId] = useState(null)
   const [spawnProvider, setSpawnProvider] = useState(session?.provider || '')
   const [spawnModel, setSpawnModel] = useState(session?.model || '')
-  const [pluginModes, setPluginModes] = useState([])
-  const workspaceId = session?.workspaceId
   const setPrompt = (value) => {
     setPromptState((prev) => {
       const next = typeof value === 'function' ? value(prev) : value
@@ -288,37 +271,28 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
     saveComposer(sessionId, mode, prompt)
   }, [sessionId, mode, prompt])
 
-  // Workspace plugin modes are listed after the built-ins.
-  useEffect(() => {
-    if (!workspaceId) {
-      setPluginModes([])
-      return undefined
-    }
-    let cancelled = false
-    api.listModes(workspaceId)
-      .then((result) => { if (!cancelled) setPluginModes(Array.isArray(result.modes) ? result.modes : []) })
-      .catch(() => { if (!cancelled) setPluginModes([]) })
-    return () => { cancelled = true }
-  }, [workspaceId])
+  const modes = registryModes?.length ? registryModes : FALLBACK_MODES
+  const active = modes.find((item) => item.id === mode) || null
+  const isDecompose = active?.kind === 'decompose'
+  const isNewChat = active?.kind === 'new-chat'
 
-  const modes = useMemo(() => [
-    ...MODES,
-    ...pluginModes.map((plugin) => ({ id: plugin.id, label: plugin.label, plugin })),
-  ], [pluginModes])
-  const activePlugin = pluginModes.find((plugin) => plugin.id === mode) || null
+  // A saved mode that this workspace no longer has falls back to agent.
+  useEffect(() => {
+    if (registryModes?.length && !registryModes.some((item) => item.id === mode)) setMode('agent')
+  }, [registryModes, mode])
 
   const status = session?.status || 'idle'
   const isBusy = status === 'running' || status === 'awaiting_input'
   const disconnected = status === 'disconnected'
   const latestRun = runs[runs.length - 1]
   const hasFailure = Boolean(session?.lastError?.message || latestRun?.error || latestRun?.transcriptError)
-  const promptRequired = activePlugin ? !activePlugin.promptOptional : !OPTIONAL_PROMPT_MODES.includes(mode)
-  const spawnsSession = mode === 'token-waste' || Boolean(activePlugin?.newSession)
+  const promptRequired = !active?.promptOptional
+  const spawnsSession = Boolean(active?.newSession)
   const blocksWhileBusy = !spawnsSession
-  const steering = isBusy && mode !== 'decompose' && !spawnsSession
+  const steering = isBusy && active?.steerable !== false && !spawnsSession
   const spawnEntry = providers.find((item) => item.id === spawnProvider)
   const spawnModelId = spawnModel || spawnEntry?.models?.[0]?.id || null
-  const spawnBlocked = mode === 'new-chat' && Boolean(spawnEntry) && (spawnEntry.implemented === false || spawnEntry.error)
+  const spawnBlocked = isNewChat && Boolean(spawnEntry) && (spawnEntry.implemented === false || spawnEntry.error)
   const sendDisabled = steering
     ? !prompt.trim()
     : (blocksWhileBusy && isBusy) || (promptRequired && !prompt.trim()) || spawnBlocked
@@ -342,16 +316,15 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
     setActionError('')
     try {
       if (steering) await api.steer(sessionId, prompt)
-      else if (mode === 'decompose') await api.decompose(sessionId, prompt)
-      else if (mode === 'plan') await api.plan(sessionId, prompt)
+      else if (isDecompose) await api.decompose(sessionId, prompt)
       else {
-        const result = await api.run(sessionId, mode === 'new-chat'
+        const result = await api.run(sessionId, isNewChat
           ? { prompt, mode, provider: spawnProvider || session.provider, model: spawnModelId }
           : { prompt, mode })
         if (result.session) onCreated?.(result.session)
-        if (mode === 'new-chat') setHandoffRunId(result.run.id)
+        if (isNewChat) setHandoffRunId(result.run.id)
       }
-      if (mode !== 'decompose') setPrompt('')
+      if (!isDecompose) setPrompt('')
       refresh()
     } catch (err) {
       setActionError(err && err.message ? err.message : String(err))
@@ -569,12 +542,12 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
         </div>
 
         <DevScope id="hr7a5x3" state={{ mode }}>
-          <footer className={`composer${mode === 'decompose' ? ' composer--decompose' : ''}`}>
+          <footer className={`composer${isDecompose ? ' composer--decompose' : ''}`}>
             <div className="composer__toolbar">
               <ModeToggle modes={modes} mode={mode} onChange={changeMode} disabled={busy} />
-              <span className="composer__mode-hint">{activePlugin ? activePlugin.hint : MODE_HINTS[mode]}</span>
+              <span className="composer__mode-hint">{active?.hint}</span>
             </div>
-            {mode === 'new-chat' && (
+            {isNewChat && (
               <NewChatTarget
                 providers={providers}
                 provider={spawnProvider || session.provider}
@@ -586,30 +559,18 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
             <div className="composer__input-wrapper">
               <DevScope id="hr8r3c4">
                 <textarea
-                  className={`composer__input${mode === 'decompose' ? ' composer__input--plan' : ''}`}
+                  className={`composer__input${isDecompose ? ' composer__input--plan' : ''}`}
                   placeholder={
                     steering
                       ? 'Steer the running agent (⌘↵ to interrupt and send)…'
-                      : activePlugin
-                      ? `${activePlugin.promptOptional ? 'Optional prompt' : 'Prompt'} for ${activePlugin.label}…`
-                      : mode === 'decompose'
-                      ? 'Paste a high-level plan to decompose into sub-phases…'
-                      : mode === 'ask'
-                      ? 'Ask a question about the code…'
-                      : mode === 'plan'
-                        ? 'Describe what you want to plan (read-only)…'
-                        : mode === 'token-waste'
-                          ? 'Optional focus or instructions for token-waste analysis…'
-                          : mode === 'new-chat'
-                            ? 'Optional focus for the handoff summary…'
-                            : 'Ask the agent to do something (⌘↵ to send)…'
+                      : active?.placeholder || 'Prompt…'
                   }
                   value={speech.interim ? `${prompt} ${speech.interim}` : prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send()
                   }}
-                  rows={mode === 'decompose' ? 8 : 3}
+                  rows={isDecompose ? 8 : 3}
                 />
               </DevScope>
               <div className="composer__actions">
@@ -636,7 +597,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                   disabled={sendDisabled}
                   devId="hr2t9h5"
                 >
-                  {steering ? 'Steer' : activePlugin ? activePlugin.label : SEND_LABELS[mode] || 'Send'}
+                  {steering ? 'Steer' : active?.sendLabel || 'Send'}
                 </Button>
               </div>
             </div>

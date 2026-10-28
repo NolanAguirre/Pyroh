@@ -1,5 +1,5 @@
 const { createDriver } = require('../agents/driver')
-const tokenWaste = require('../modes/tokenWaste')
+const registry = require('../registry')
 const workspaceStore = require('../store/workspaceStore')
 const paths = require('../store/paths')
 const sessionStore = require('../store/sessionStore')
@@ -15,6 +15,15 @@ const addUsage = (total, usage) => {
   return sum
 }
 
+// Harness tools for the driver: `list` holds the allowed ids, and each tool's
+// callback is only present when it is allowed. Providers deliver them their own way.
+const driverTools = ({ askUser, harnessTools }) => {
+  const list = Array.isArray(harnessTools) ? harnessTools : typeof askUser === 'function' ? ['ask_user'] : []
+  const tools = { list }
+  if (list.includes('ask_user') && typeof askUser === 'function') tools.askUser = askUser
+  return tools
+}
+
 // One agent turn: create (or resume) a driver, send a prompt, stream events,
 // wait for the result, then close. Callers persist runs, plans, and session
 // status around this helper.
@@ -22,6 +31,9 @@ const addUsage = (total, usage) => {
 // steering: { watch(onSteer) => stop, take() => steers, onSteer? }. A steer
 // cancels the in-flight send; the steer text is then sent on the same
 // conversation, and the turn result covers every segment.
+//
+// harnessTools: registry tool ids allowed this turn. Omitted means every
+// harness tool with a callback here (ask_user when askUser is given).
 const runOneTurn = async ({
   session,
   runId,
@@ -35,6 +47,7 @@ const runOneTurn = async ({
   signal,
   onEvent,
   askUser,
+  harnessTools,
   onCreated,
   onInflight,
   onPromptRewrite,
@@ -65,7 +78,7 @@ const runOneTurn = async ({
     transcriptFile: session.provider === 'cursor' && runId
       ? paths.runTranscriptFile(session.id, runId, writeDir)
       : undefined,
-    tools: textOnly || typeof askUser !== 'function' ? {} : { askUser },
+    tools: textOnly ? {} : driverTools({ askUser, harnessTools }),
   })
   let driver = makeDriver()
   let usage = null
@@ -76,9 +89,8 @@ const runOneTurn = async ({
     if (session.providerAgentId && !fresh) {
       await driver.resume(session.providerAgentId, settings)
     } else {
-      const named = session.provider === 'cursor' && session.mode === tokenWaste.MODE
-        ? { ...settings, name: tokenWaste.NAME }
-        : settings
+      const sessionName = registry.builtinMode(session.mode)?.sessionName
+      const named = session.provider === 'cursor' && sessionName ? { ...settings, name: sessionName } : settings
       await driver.create(named)
     }
     let providerAgentId = driver.providerAgentId()

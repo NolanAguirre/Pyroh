@@ -344,6 +344,7 @@ const CodeStatsView = ({ devId, workspace, providers, onCreated, onClose, onOpen
                               title="Open in the text editor"
                               aria-label={`Open ${row.path} in the text editor`}
                               onClick={() => onOpenFile(row.path)}
+                              disabled={!onOpenFile}
                             >
                               <EditorIcon />
                             </Button>

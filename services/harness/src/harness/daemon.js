@@ -10,8 +10,7 @@ const steerStore = require('../store/steerStore')
 const { errorMessage, formatError } = require('../store/formatError')
 const { failureStatus } = require('../store/networkError')
 const { runOneTurn } = require('./runTurn')
-const newChat = require('../modes/newChat')
-const { TERSE_MODES } = require('../agents/modes')
+const registry = require('../registry')
 const analytics = require('../analytics/client')
 
 const attachedLogs = new Set()
@@ -62,8 +61,6 @@ const removePid = (sessionId, writeDir) => {
 // action: 'run' | 'plan' | 'resume'
 const runDaemon = async ({ sessionId, runId, action, mode }) => {
   const writeDir = config.writeDir
-  const handingOff = mode === newChat.MODE
-  const analyzing = mode === 'token-waste' || handingOff
   require('../store/sessionLock').acquire(sessionId, writeDir)
   const log = attachLog(sessionId, writeDir)
   const logLine = (msg) => process.stdout.write(`[${new Date().toISOString()}] ${msg}\n`)
@@ -97,9 +94,14 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
     process.exit(1)
   }
 
-  // Plugin runs carry their driver mode, terse flag, and instructions.
+  // Plugin runs carry their driver mode, terse flag, and instructions. Built-in
+  // modes come from the registry; unknown ones go to the driver as-is.
   const plugin = sessionStore.loadRun(sessionId, runId, writeDir)?.plugin || null
-  const driverMode = plugin ? plugin.base : analyzing ? 'plan' : mode
+  const entry = plugin ? null : registry.builtinMode(mode)
+  const driverMode = plugin ? plugin.base : entry ? entry.base : mode
+  const handingOff = entry?.kind === 'new-chat'
+  const workspace = registry.sessionWorkspace(session)
+  const harnessTools = registry.toolsFor(workspace, { mode: plugin ? plugin.id : mode, provider: session.provider })
 
   const startedAt = Date.now()
   const abortController = new AbortController()
@@ -196,10 +198,11 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
       action,
       mode: driverMode,
       prompt,
-      terse: !session.providerAgentId && (plugin ? plugin.terse : TERSE_MODES.includes(mode)),
+      terse: !session.providerAgentId && Boolean(plugin ? plugin.terse : entry?.terse),
       instructions: plugin?.instructions || undefined,
       onEvent,
       askUser,
+      harnessTools,
       signal: abortController.signal,
       steering: {
         watch: (onSteer) => steerStore.watch(sessionId, writeDir, onSteer),
@@ -251,7 +254,7 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
 
   const durationMs = result.durationMs || Date.now() - startedAt
 
-  if ((plugin ? plugin.base : mode) === 'plan' && result.result) {
+  if ((plugin ? plugin.base === 'plan' : entry?.savePlan) && result.result) {
     sessionStore.writePlan(sessionId, runId, String(result.result), writeDir)
   }
 
@@ -304,10 +307,8 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
   // Reload the plugin so onComplete sees the latest file.
   if (plugin) {
     try {
-      const plugins = require('../modes/plugins')
-      const workspace = plugins.sessionWorkspace(session)
-      const harness = workspace && plugins.makeHarnessApi(workspace, session)
-      const def = workspace && plugins.findMode(workspace, plugin.id, harness)
+      const harness = workspace && registry.makeHarnessApi(workspace, session)
+      const def = workspace && registry.findMode(workspace, plugin.id, { harness })
       if (!def) logLine(`plugin mode ${plugin.id} not found; skipping onComplete`)
       else if (def.onComplete) await def.onComplete({ workspace, session, runId, prompt }, result, harness)
     } catch (err) {

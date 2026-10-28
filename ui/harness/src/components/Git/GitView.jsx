@@ -243,7 +243,7 @@ const DiffPane = ({ workspaceId, selection, file, statusKey, busy, onStage, onUn
           <span className="git-diff__side">{selection.staged ? 'HEAD ↔ Index' : 'Index ↔ Working Tree'}</span>
           {loading && !diff && <span className="git-diff__loading">Loading…</span>}
           <div className="git-diff__actions">
-            <Button devId="8jocmb6" variant="ghost" size="sm" title="Open in editor" onClick={() => onOpenFile(selection.path)} disabled={Boolean(diff?.deleted)}>
+            <Button devId="8jocmb6" variant="ghost" size="sm" title="Open in editor" onClick={() => onOpenFile(selection.path)} disabled={!onOpenFile || Boolean(diff?.deleted)}>
               <Icon d={ICONS.open} />
             </Button>
             {file && (selection.staged ? (

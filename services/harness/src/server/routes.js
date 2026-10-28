@@ -10,7 +10,7 @@ const { resolveWorkDir, listWorkDirs } = require('../store/workDir')
 const { streamSession } = require('./sse')
 const { readJsonAsync } = require('../store/jsonFile')
 const { listProviders } = require('../agents/driver')
-const plugins = require('../modes/plugins')
+const registry = require('../registry')
 
 const router = express.Router()
 
@@ -114,10 +114,66 @@ router.patch('/workspaces/:id', (req, res) => {
   }
 })
 
+// Allowed modes for the workspace, built-ins included.
 router.get('/workspaces/:id/modes', async (req, res) => {
   const workspace = await Harness.getWorkspace(req.params.id)
   if (!workspace) return res.status(404).json({ error: 'workspace not found' })
-  res.json({ modes: plugins.describeModes(workspace) })
+  res.json({ modes: registry.listAllowed(workspace, { provider: req.query.provider }).modes })
+})
+
+// Registry: `GET` lists allowed modes and panels; `/explain` returns every
+// entry with its decision and the mode × tool matrix; `/rules` reads or
+// replaces the rule list. Without a workspace these use global scope.
+const providerQuery = (req) => (typeof req.query.provider === 'string' && req.query.provider) || undefined
+
+const sendError = (res, err) => res.status(err.status || 400).json({ error: err && err.message ? err.message : String(err) })
+
+router.get('/registry', (req, res) => {
+  res.json(registry.listAllowed(null, { provider: providerQuery(req) }))
+})
+
+router.get('/registry/explain', (req, res) => {
+  res.json(registry.explain(null, { provider: providerQuery(req) }))
+})
+
+router.get('/registry/rules', (_req, res) => {
+  res.json(registry.readRules(null))
+})
+
+router.put('/registry/rules', (req, res) => {
+  try {
+    res.json(registry.writeRules(null, (req.body || {}).rules))
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
+router.get('/workspaces/:id/registry', async (req, res) => {
+  const workspace = await Harness.getWorkspace(req.params.id)
+  if (!workspace) return res.status(404).json({ error: 'workspace not found' })
+  res.json(registry.listAllowed(workspace, { provider: providerQuery(req) }))
+})
+
+router.get('/workspaces/:id/registry/explain', async (req, res) => {
+  const workspace = await Harness.getWorkspace(req.params.id)
+  if (!workspace) return res.status(404).json({ error: 'workspace not found' })
+  res.json(registry.explain(workspace, { provider: providerQuery(req) }))
+})
+
+router.get('/workspaces/:id/registry/rules', async (req, res) => {
+  const workspace = await Harness.getWorkspace(req.params.id)
+  if (!workspace) return res.status(404).json({ error: 'workspace not found' })
+  res.json(registry.readRules(workspace))
+})
+
+router.put('/workspaces/:id/registry/rules', async (req, res) => {
+  const workspace = await Harness.getWorkspace(req.params.id)
+  if (!workspace) return res.status(404).json({ error: 'workspace not found' })
+  try {
+    res.json(registry.writeRules(workspace, (req.body || {}).rules))
+  } catch (err) {
+    sendError(res, err)
+  }
 })
 
 router.get('/workspaces/:id/sessions', async (req, res) => {
@@ -223,44 +279,37 @@ router.get('/sessions/:id', async (req, res) => {
   res.json(status)
 })
 
-router.post('/sessions/:id/plan', (req, res) => {
-  const { prompt } = req.body || {}
-  if (!prompt) return res.status(400).json({ error: 'prompt is required' })
-  res.status(202).json({ run: Harness.plan(req.params.id, { prompt }) })
-})
-
-router.post('/sessions/:id/run', async (req, res) => {
-  const { prompt, mode = 'agent', provider, model } = req.body || {}
-  let plugin = null
-  if (!plugins.RUN_MODES.includes(mode)) {
-    const session = sessionStore.loadSession(req.params.id, config.writeDir)
-    if (!session) return res.status(404).json({ error: 'session not found' })
-    const workspace = plugins.sessionWorkspace(session)
-    plugin = workspace && plugins.describeModes(workspace).find((item) => item.id === mode)
-    if (!plugin) return res.status(400).json({ error: 'unknown run mode' })
+// Validates the mode against the registry before running, so prompt rules and
+// deny decisions come from one place.
+const startRun = async (req, res, mode, { prompt, provider, model }) => {
+  const session = sessionStore.loadSession(req.params.id, config.writeDir)
+  if (!session) return res.status(404).json({ error: 'session not found' })
+  let entry
+  try {
+    entry = registry.requireMode(registry.sessionWorkspace(session), mode, { provider: session.provider })
+  } catch (err) {
+    return sendError(res, err)
   }
-  const promptOptional = plugin ? plugin.promptOptional : ['token-waste', 'new-chat'].includes(mode)
-  if (!prompt && !promptOptional) return res.status(400).json({ error: 'prompt is required' })
+  if (!prompt && !entry.promptOptional) return res.status(400).json({ error: 'prompt is required' })
   try {
     const run = await Harness.run(req.params.id, { prompt, mode, provider, model })
-    res.status(202).json({ run, ...(mode === 'token-waste' || plugin?.newSession
+    if (entry.kind === 'decompose') return res.status(202).json(run)
+    res.status(202).json({ run, ...(entry.newSession
       ? { session: sessionStore.loadSession(run.sessionId, config.writeDir) } : {}) })
   } catch (err) {
-    res.status(err.status || 400).json({ error: err.message })
+    const message = err && err.message ? err.message : String(err)
+    res.status(err.status || (message.includes('not found') ? 404 : 400)).json({ error: message })
   }
+}
+
+router.post('/sessions/:id/plan', (req, res) => startRun(req, res, 'plan', req.body || {}))
+
+router.post('/sessions/:id/run', (req, res) => {
+  const { mode = 'agent', ...body } = req.body || {}
+  return startRun(req, res, mode, body)
 })
 
-router.post('/sessions/:id/decompose', (req, res) => {
-  const { prompt } = req.body || {}
-  if (!prompt) return res.status(400).json({ error: 'prompt is required' })
-  try {
-    res.status(202).json(Harness.decompose(req.params.id, { prompt }))
-  } catch (err) {
-    const message = err && err.message ? err.message : String(err)
-    const code = message.includes('not found') ? 404 : 400
-    res.status(code).json({ error: message })
-  }
-})
+router.post('/sessions/:id/decompose', (req, res) => startRun(req, res, 'decompose', req.body || {}))
 
 router.post('/sessions/:id/resume', (req, res) => {
   const { prompt, mode } = req.body || {}

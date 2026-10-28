@@ -11,6 +11,7 @@ const workspaceStore = require('../../store/workspaceStore')
 const { runOneTurn } = require('../../harness/runTurn')
 const { attachLog, readControlIntent, clearControl, removePid } = require('../../harness/daemon')
 const analytics = require('../../analytics/client')
+const registry = require('../../registry')
 const {
   onceSteps,
   eachPhaseSteps,
@@ -288,6 +289,7 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
         signal: abortController.signal,
         onEvent,
         askUser,
+        harnessTools: registry.toolsFor(registry.sessionWorkspace(live), { mode: 'decompose', provider: live.provider }),
         onInflight: (next) => {
           inflight = next
           if (next) {

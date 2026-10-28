@@ -6,7 +6,10 @@
 // Driver shape:
 //   create({ model, cwd, mode, tools }) -> Promise<void>
 //     Start a fresh agent. `tools` is the SDK built-in tool list (`[]` = text-only).
-//     Driver-level callbacks such as askUser are passed to createDriver().
+//     Harness tools go to createDriver({ tools: { list, askUser? } }): `list` is
+//     the registry tool ids allowed this turn, and a tool's callback is only set
+//     when it is allowed. Drivers deliver each tool through their own mechanism
+//     (custom tool, dynamic tool, permission flow); the registry does the gating.
 //   resume(providerAgentId, { model, cwd, mode, tools }) -> Promise<void>
 //     Rehydrate an existing agent by its provider-specific id and restore settings.
 //   send(prompt, { mode, onEvent, outputSchema?, terse? }) -> Promise<{ cancel, wait }>

@@ -180,9 +180,11 @@ const api = {
       .then(json)
       .then((data) => ({ ...data, workspace: tagWorkspace(data.workspace, machine) }))
   },
-  listModes: (workspaceId) => {
+  // Allowed modes and panels; global scope when there is no workspace.
+  getRegistry: (workspaceId) => {
+    if (!workspaceId) return fetch(at(null, '/api/registry')).then(json)
     const { id, machine } = splitId(workspaceId)
-    return fetch(at(machine, `/api/workspaces/${encodeURIComponent(id)}/modes`)).then(json)
+    return fetch(at(machine, `/api/workspaces/${encodeURIComponent(id)}/registry`)).then(json)
   },
   listSessions: async (workspaceId, includeArchived = false, { orderBy, order, limit, active } = {}) => {
     const query = new URLSearchParams({ includeArchived: String(includeArchived) })
