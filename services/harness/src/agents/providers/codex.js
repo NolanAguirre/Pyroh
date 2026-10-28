@@ -23,8 +23,9 @@ const GPT_61_SOL = {
 
 const sandboxTypes = { 'read-only': 'readOnly', 'workspace-write': 'workspaceWrite', 'danger-full-access': 'dangerFullAccess' }
 const approvalTypes = { 'on-request': 'on-request', never: 'never', untrusted: 'untrusted' }
-const readOnlyModes = ['ask', 'plan']
-// Ask and plan run known-safe reads and request approval for everything else, which handleRequest declines.
+const readOnlyModes = ['ask']
+// Ask enforces read-only approvals. Native plan mode keeps the configured
+// approval policy so repository inspection is not automatically declined.
 const approvalFor = (mode, configured) => approvalTypes[readOnlyModes.includes(mode) ? 'untrusted' : configured]
 const askTool = {
   name: 'harness_ask_user',
