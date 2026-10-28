@@ -22,7 +22,10 @@ const GPT_61_SOL = {
 }
 
 const sandboxTypes = { 'read-only': 'readOnly', 'workspace-write': 'workspaceWrite', 'danger-full-access': 'dangerFullAccess' }
-const approvalTypes = { 'on-request': 'on-request', never: 'never' }
+const approvalTypes = { 'on-request': 'on-request', never: 'never', untrusted: 'untrusted' }
+const readOnlyModes = ['ask', 'plan']
+// Ask and plan run known-safe reads and request approval for everything else, which handleRequest declines.
+const approvalFor = (mode, configured) => approvalTypes[readOnlyModes.includes(mode) ? 'untrusted' : configured]
 const askTool = {
   name: 'harness_ask_user',
   description: 'Ask the human operator for a decision, clarification, or missing information and wait for their answer.',
@@ -195,7 +198,9 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
       const value = await ask(input, signal)
       return { success: true, contentItems: [{ type: 'inputText', text: typeof value === 'string' ? value : JSON.stringify(value) }] }
     }
+    const readOnly = readOnlyModes.includes(active?.mode)
     if (method === 'item/commandExecution/requestApproval' || method === 'item/fileChange/requestApproval') {
+      if (readOnly) return { decision: 'decline' }
       const choices = (params.availableDecisions || ['accept', 'decline', 'cancel'])
         .filter((value) => typeof value === 'string' && ['accept', 'acceptForSession', 'decline', 'cancel'].includes(value))
       const labels = { accept: 'Allow once', acceptForSession: 'Allow for session', decline: 'Decline', cancel: 'Cancel turn' }
@@ -211,6 +216,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
       return { decision }
     }
     if (method === 'item/permissions/requestApproval') {
+      if (readOnly) return { permissions: {}, scope: 'turn' }
       const value = await ask({ kind: 'approval', allowFreeText: false, question: params.reason || 'Grant these permissions for this turn?',
         details: { cwd: params.cwd, permissions: params.permissions }, options: ['Allow for this turn', 'Decline'] }, signal)
       return { permissions: value === 'Allow for this turn' ? params.permissions : {}, scope: 'turn' }
@@ -309,8 +315,8 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     threadOptions = settings
     cumulativeUsage = null
     const params = { model, cwd: settings.cwd,
-      sandbox: settings.mode === 'plan' ? 'read-only' : options.sandbox,
-      approvalPolicy: approvalTypes[settings.mode === 'plan' ? 'never' : options.approvalPolicy],
+      sandbox: options.sandbox,
+      approvalPolicy: approvalFor(settings.mode, options.approvalPolicy),
       approvalsReviewer: 'user',
       config: { web_search: options.webSearch },
       dynamicTools: typeof tools.askUser === 'function' ? [askTool] : [],
@@ -323,11 +329,12 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     if (!threadId) throw new Error('Codex thread not created')
     if (active && !active.done) throw new Error('Codex turn already running')
     const wait = new Promise((resolve) => {
-      active = { id: null, emit: onEvent || (() => {}), resolve, startedAt: Date.now(), done: false,
+      active = { id: null, emit: onEvent || (() => {}), resolve, mode, startedAt: Date.now(), done: false,
         messages: new Map(), items: new Map(), plan: '', usage: null, baseline: cumulativeUsage }
     })
-    const sandbox = mode === 'plan' ? 'read-only' : options.sandbox
-    // Codex has no ask collaboration mode; ask is the default mode plus an instruction.
+    const sandbox = options.sandbox
+    // Codex has no ask collaboration mode. Ask uses the default mode with enforced
+    // read-only approvals, plus an instruction explaining the denials.
     const text = composePrompt(prompt, { mode, terse, instructions })
     for (const message of diagnostics) emit({ type: 'status', status: `Codex diagnostic: ${message}` })
     try {
@@ -335,7 +342,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
         threadId, input: [{ type: 'text', text, text_elements: [] }],
         model: selectedModel, cwd: threadOptions.cwd,
         effort: selectedEffort,
-        approvalPolicy: approvalTypes[mode === 'plan' ? 'never' : options.approvalPolicy],
+        approvalPolicy: approvalFor(mode, options.approvalPolicy),
         sandboxPolicy: sandbox === 'workspace-write'
           ? { type: 'workspaceWrite', writableRoots: [threadOptions.cwd], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false }
           : { type: sandboxTypes[sandbox] },

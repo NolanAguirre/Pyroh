@@ -159,6 +159,10 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
       active.result = typeof toolInput.plan === 'string' ? toolInput.plan : JSON.stringify(toolInput)
       return deny('The harness recorded this plan. Stop now without implementing it.')
     }
+    // Claude auto-allows read-only tools and Bash, so anything reaching here in ask mode may change state.
+    if (active.mode === 'ask' && toolName !== 'AskUserQuestion') {
+      return deny('Ask mode is read-only. This tool call was denied.')
+    }
     if (typeof tools.askUser !== 'function') return deny('No operator is available to answer or approve this request.')
     try {
       if (toolName === 'AskUserQuestion') {
@@ -350,10 +354,16 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     const turn = active
     const grants = grantedOptions(granted)
     const configuredMode = options.permissionMode || 'bypassPermissions'
-    const permissionMode = mode === 'plan' ? 'plan'
+    const permissionMode = mode === 'plan' ? 'plan' : mode === 'ask' ? 'default'
       : configuredMode === 'default' ? grants.mode || 'default' : configuredMode
+    // Saved allow rules could auto-approve writes, so ask mode skips them.
+    const { allowedTools, ...grantsWithoutAllow } = grants.options
+    const grantOptions = mode === 'ask'
+      ? { ...grantsWithoutAllow, disallowedTools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] }
+      : grants.options
     input = createInput()
-    // Claude Code has no ask mode; ask is the default permission mode plus an instruction.
+    // Claude Code has no ask mode. Ask uses the default permission mode, blocks
+    // edit tools, and denies every approval request, plus an instruction.
     const content = composePrompt(prompt, { mode, terse, instructions })
     input.push({ type: 'user', message: { role: 'user', content }, parent_tool_use_id: null })
     const source = query({ prompt: input.iterable, options: {
@@ -364,7 +374,7 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
       permissionMode,
       ...(permissionMode === 'bypassPermissions' ? { allowDangerouslySkipPermissions: true } : {}),
       ...(options.reasoningEffort ? { effort: options.reasoningEffort } : {}),
-      ...grants.options,
+      ...grantOptions,
       ...(Array.isArray(settings.tools) ? { tools: [] } : {}),
       ...(outputSchema ? { outputFormat: { type: 'json_schema', schema: outputSchema } } : {}),
       includePartialMessages: true,

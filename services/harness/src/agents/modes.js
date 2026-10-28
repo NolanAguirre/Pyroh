@@ -1,5 +1,7 @@
 // Turn modes every provider driver accepts. Each driver maps these onto its
-// native modes, or emulates them where the provider has no equivalent.
+// native modes, or emulates them where the provider has no equivalent. Ask is
+// enforced read-only: drivers deny any approval request for non-read-only
+// work. ASK_PROMPT tells the model why those requests are denied.
 const AGENT_MODES = ['agent', 'plan', 'ask']
 
 const ASK_PROMPT = 'This is a question, do not change code, do not run commands that will change things, only explore what is required to answer the question.'

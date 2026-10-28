@@ -16,7 +16,9 @@ const normalizeUsage = (usage) => usage ? {
   totalTokens: usage.totalTokens ?? ((usage.inputTokens || 0) + (usage.outputTokens || 0)),
 } : null
 
-// Grok has no ask mode; ask runs in default mode with an injected instruction.
+// Grok has no ask mode. Ask runs in default mode, which runs read-only tools
+// without asking, and onPermission rejects everything else. If the user's Grok
+// config always approves or has allow rules covering edits, no request arrives.
 const grokMode = (mode) => mode === 'plan' ? 'plan' : 'default'
 
 const stopStatus = (reason) => reason === 'end_turn' ? 'completed' : reason === 'cancelled' ? 'cancelled' : 'error'
@@ -59,7 +61,7 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
     if (!active || active.done || params.sessionId !== sessionId) return CANCELLED
     const choices = params.options || []
     const selected = (choice) => ({ outcome: { outcome: 'selected', optionId: choice.optionId } })
-    if (typeof tools.askUser !== 'function') {
+    if (active.mode === 'ask' || typeof tools.askUser !== 'function') {
       const reject = choices.find((choice) => String(choice.kind || '').startsWith('reject'))
       return reject ? selected(reject) : CANCELLED
     }
@@ -168,7 +170,7 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
     if (active && !active.done) throw new Error('Grok turn already running')
     await applyMode(mode)
     const wait = new Promise((resolve) => {
-      active = { id: `grok_${crypto.randomBytes(8).toString('hex')}`, emit: onEvent || (() => {}), resolve,
+      active = { id: `grok_${crypto.randomBytes(8).toString('hex')}`, emit: onEvent || (() => {}), resolve, mode,
         startedAt: Date.now(), done: false, messages: [], message: -1, thought: -1, last: null, usage: null }
     })
     const turn = active
