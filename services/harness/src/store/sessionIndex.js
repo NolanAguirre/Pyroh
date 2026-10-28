@@ -112,7 +112,16 @@ const upsert = (session, mtimeMs, writeDir = config.writeDir) => {
   }
 }
 
-const query = ({ workspaceId, includeArchived = false, active, orderBy = 'createdAt', order = 'desc', limit } = {}) => {
+// Provider option blobs are only needed by the session detail view.
+const LIST_OMIT = ['codex', 'grok', 'claude']
+
+const listRow = (session) => {
+  const row = { ...session }
+  for (const key of LIST_OMIT) delete row[key]
+  return row
+}
+
+const query = ({ workspaceId, includeArchived = false, active, orderBy = 'createdAt', order = 'desc', limit, fields } = {}) => {
   const db = open()
   const where = []
   const params = {}
@@ -132,7 +141,8 @@ const query = ({ workspaceId, includeArchived = false, active, orderBy = 'create
     sql += ' LIMIT :limit'
     params.limit = limit
   }
-  return db.prepare(sql).all(params).map((row) => JSON.parse(row.data))
+  const sessions = db.prepare(sql).all(params).map((row) => JSON.parse(row.data))
+  return fields === 'list' ? sessions.map(listRow) : sessions
 }
 
 const statMtime = async (file) => {

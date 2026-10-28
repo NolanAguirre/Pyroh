@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Badge,
   Popup,
@@ -18,6 +18,7 @@ import UiSettingsForm from './UiSettingsForm'
 import { formatCompactNumber, formatDuration } from '../format'
 
 const LATEST_KEPT = 10
+const ARCHIVED_PAGE = 50
 
 const byLatest = (a, b) => (b.createdAt || 0) - (a.createdAt || 0) || String(a.id).localeCompare(String(b.id))
 
@@ -61,7 +62,7 @@ const Icon = ({ d }) => (
   </svg>
 )
 
-const SessionRow = ({ session, active, onSelect, onRename, onArchive, archiveBusy, onPin, pinBusy }) => {
+const SessionRow = memo(({ session, active, onSelect, onRename, onArchive, archiveBusy, onPin, pinBusy }) => {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(session.name || '')
   const [busy, setBusy] = useState(false)
@@ -178,6 +179,7 @@ const SessionRow = ({ session, active, onSelect, onRename, onArchive, archiveBus
               </DevScope>
               <DevScope id="w2s9f4j" state={{ named: Boolean(session.name) }}>
                 <ScrollingText
+                  animate="hover"
                   className={`session-row__name${session.name ? '' : ' session-row__name--empty'}`}
                   title={session.name || session.id}
                 >
@@ -250,7 +252,7 @@ const SessionRow = ({ session, active, onSelect, onRename, onArchive, archiveBus
       </div>
     </DevScope>
   )
-}
+})
 
 const SessionsSidebar = ({
   devId,
@@ -284,6 +286,21 @@ const SessionsSidebar = ({
   const [searchQuery, setSearchQuery] = useState('')
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [archivedLimit, setArchivedLimit] = useState(ARCHIVED_PAGE)
+
+  useEffect(() => {
+    setArchivedLimit(ARCHIVED_PAGE)
+  }, [showArchived, searchQuery, workspace?.id])
+
+  // Rows are memoized, so they get stable handlers that call the latest props.
+  const handlers = useRef(null)
+  handlers.current = { onSelect, onRename, onArchive, onPin }
+  const rowHandlers = useMemo(() => ({
+    onSelect: (...args) => handlers.current.onSelect(...args),
+    onRename: (...args) => handlers.current.onRename(...args),
+    onArchive: (...args) => handlers.current.onArchive(...args),
+    onPin: (...args) => handlers.current.onPin(...args),
+  }), [])
 
   const deleteWorkspace = async () => {
     if (!workspace || deleteBusy || !onDeleteWorkspace) return
@@ -316,6 +333,13 @@ const SessionsSidebar = ({
       : sessions
     return [...matched].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)))
   }, [sessions, searchQuery])
+
+  const { mainSessions, archivedSessions } = useMemo(() => ({
+    mainSessions: filteredSessions.filter(s => s.pinned || !s.archived),
+    archivedSessions: filteredSessions.filter(s => !s.pinned && s.archived),
+  }), [filteredSessions])
+  const shownSessions = [...mainSessions, ...archivedSessions.slice(0, archivedLimit)]
+  const hiddenArchived = Math.max(0, archivedSessions.length - archivedLimit)
 
   const sessionsToArchive = useMemo(() => {
     const unpinned = sessions
@@ -520,19 +544,32 @@ const SessionsSidebar = ({
                 <p className="hint sidebar__empty-hint">No sessions match &ldquo;{searchQuery}&rdquo;</p>
               </DevScope>
             )}
-            {filteredSessions.map((session) => (
+            {shownSessions.map((session) => (
               <SessionRow
                 key={session.id}
                 session={session}
                 active={session.id === activeId}
-                onSelect={onSelect}
-                onRename={onRename}
-                onArchive={onArchive}
+                onSelect={rowHandlers.onSelect}
+                onRename={rowHandlers.onRename}
+                onArchive={rowHandlers.onArchive}
                 archiveBusy={archiveBusy}
-                onPin={onPin}
+                onPin={rowHandlers.onPin}
                 pinBusy={pinBusy}
               />
             ))}
+            {hiddenArchived > 0 && (
+              <DevScope id="m4r8s2v" state={{ hidden: hiddenArchived }}>
+                <div className="sidebar__show-more">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setArchivedLimit(limit => limit + ARCHIVED_PAGE)}
+                  >
+                    Show more ({hiddenArchived} archived)
+                  </Button>
+                </div>
+              </DevScope>
+            )}
           </div>
         </DevScope>
       </aside>

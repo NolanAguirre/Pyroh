@@ -259,13 +259,13 @@ const status = async (sessionId) => {
 }
 
 // Busy rows are recovered first so their write-through updates are visible to the filtered query.
-const list = async (workspaceId, { includeArchived = false, orderBy = 'createdAt', order = 'desc', limit, active } = {}) => {
+const list = async (workspaceId, { includeArchived = false, orderBy = 'createdAt', order = 'desc', limit, active, fields } = {}) => {
   await sessionIndex.whenReady()
   const busy = sessionIndex.query({ workspaceId, includeArchived, active: true })
   await Promise.all(busy.map(async session => recoverDeadDaemon(session, await daemonPidOfAsync(session.id))))
   const workspaces = new Map((await workspaceStore.listWorkspacesAsync(config.writeDir))
     .map(workspace => [workspace.id, workspace]))
-  return sessionIndex.query({ workspaceId, includeArchived, active, orderBy, order, limit })
+  return sessionIndex.query({ workspaceId, includeArchived, active, orderBy, order, limit, fields })
     .map(session => {
       const workspace = session.workspaceId ? workspaces.get(session.workspaceId) : null
       return sessionStore.withCwd(session, workspace?.cwd || session.cwd || config.workBase, config.writeDir)

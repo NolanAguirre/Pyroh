@@ -36,6 +36,7 @@ const sendSessionList = async (req, res, workspaceId) => {
     orderBy,
     order,
     limit: limit === undefined ? undefined : Number(limit),
+    fields: 'list',
   }) })
 }
 

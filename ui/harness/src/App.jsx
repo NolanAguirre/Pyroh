@@ -55,6 +55,11 @@ const PANEL_CLOSE_PARAMS = { terminal: { term: null }, git: { file: null } }
 const MODE_ICONS = { agent: '▶', ask: '?', plan: '◇', decompose: '⑂', 'token-waste': '⚙', 'new-chat': '↪' }
 const ACTIVE_JOB = (session) => session.status === 'running' || session.status === 'awaiting_input'
 const JOB_LIST_LIMIT = 20
+const sameSessionRow = (a, b) => a.updatedAt === b.updatedAt
+  && a.status === b.status
+  && a.name === b.name
+  && Boolean(a.pinned) === Boolean(b.pinned)
+  && Boolean(a.archived) === Boolean(b.archived)
 const MOBILE_QUERY = '(max-width: 768px)'
 const MOBILE_SESSIONS = 0
 const MOBILE_CHAT = 1
@@ -191,6 +196,7 @@ const App = () => {
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false)
   const [sessions, setSessions] = useState([])
   const [sessionsReadyFor, setSessionsReadyFor] = useState(null)
+  const [sessionsHaveArchived, setSessionsHaveArchived] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
   const [archiveBusy, setArchiveBusy] = useState(false)
   const [archiveError, setArchiveError] = useState(null)
@@ -203,6 +209,7 @@ const App = () => {
   const [registry, setRegistry] = useState({ modes: [], panels: [] })
   const transcriptFontTouched = useRef(false)
   const fontSaveTimer = useRef(null)
+  const sessionsRequest = useRef(0)
 
   const go = useCallback((workspaceId, sessionId, { replace = false, view: nextView, file: nextFile, term: nextTerm } = {}) => {
     const workspaceChanged = workspaceId !== activeWorkspaceId
@@ -243,17 +250,27 @@ const App = () => {
       return
     }
     const workspaceId = activeWorkspaceId
+    const request = ++sessionsRequest.current
     api
-      .listSessions(workspaceId, true)
+      .listSessions(workspaceId, showArchived)
       .then(({ sessions: list }) => {
-        setSessions(list)
+        if (request !== sessionsRequest.current) return
+        setSessions(prev => {
+          const byId = new Map(prev.map(item => [item.id, item]))
+          return list.map(item => {
+            const old = byId.get(item.id)
+            return old && sameSessionRow(old, item) ? old : item
+          })
+        })
+        setSessionsHaveArchived(showArchived)
         setSessionsReadyFor(workspaceId)
       })
       .catch(() => {
+        if (request !== sessionsRequest.current) return
         setSessions([])
         setSessionsReadyFor(null)
       })
-  }, [activeWorkspaceId])
+  }, [activeWorkspaceId, showArchived])
 
   const loadRunningJobs = useCallback(() => {
     api
@@ -357,8 +374,13 @@ const App = () => {
   useEffect(() => {
     if (!activeId || sessionsReadyFor !== activeWorkspaceId) return
     if (sessions.some((item) => item.id === activeId)) return
+    // The list skips archived rows while the toggle is off; look there before leaving.
+    if (!sessionsHaveArchived) {
+      setShowArchived(true)
+      return
+    }
     go(activeWorkspaceId, null, { replace: true })
-  }, [activeId, activeWorkspaceId, sessions, sessionsReadyFor, go])
+  }, [activeId, activeWorkspaceId, sessions, sessionsReadyFor, sessionsHaveArchived, go])
 
   useEffect(() => {
     const timer = setInterval(() => {
