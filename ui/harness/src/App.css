@@ -459,6 +459,10 @@
   background: var(--bg-elev);
 }
 
+.session-row__pin-btn:hover {
+  color: var(--accent);
+}
+
 .session-row__pin-btn svg,
 .session-row__trash-btn svg,
 .session-row__restore-btn svg {
@@ -491,8 +495,6 @@
 .session-row__pin-btn--on {
   opacity: 1;
   color: var(--accent);
-  outline: 1px solid var(--accent);
-  outline-offset: 1px;
 }
 
 .session-row:hover .session-row__pin-btn:disabled,
