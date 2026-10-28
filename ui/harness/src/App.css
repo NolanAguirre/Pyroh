@@ -1207,11 +1207,26 @@
   margin-top: 8px;
 }
 
+.tx__markdown-wrap {
+  margin: 6px 0 0;
+}
+
+.tx__markdown-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.tx__markdown-raw {
+  margin: 0;
+}
+
 .tx__markdown {
   background: var(--bg-elev-2);
   padding: 12px 14px;
   border-radius: 6px;
-  margin: 6px 0 0;
+  margin: 0;
   line-height: 1.6;
   word-break: break-word;
 }
