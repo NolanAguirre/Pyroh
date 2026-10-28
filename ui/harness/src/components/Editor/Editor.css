@@ -6,6 +6,7 @@
   display: grid;
   grid-template-rows: auto 1fr auto;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: var(--editor-bg);
   color: var(--text);
@@ -471,4 +472,27 @@
   white-space: nowrap;
   vertical-align: bottom;
   font-family: monospace;
+}
+
+@media (max-width: 768px) {
+  .editor-topbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 6px 8px;
+  }
+
+  .editor-topbar__title {
+    flex-basis: 100%;
+    order: -1;
+  }
+
+  .editor-topbar__workspace {
+    flex: 1;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .editor-status__root {
+    display: none;
+  }
 }

@@ -12,7 +12,11 @@ import {
   FolderIcon,
   Popup,
   SplitPane,
+  Tab,
+  TabList,
+  TabsDisplay,
   useBrowserLocation,
+  useMediaQuery,
 } from 'component-library'
 import SessionsSidebar from './components/SessionsSidebar'
 import SessionView from './components/SessionView'
@@ -49,6 +53,10 @@ const ANALYTICS_VIEW = 'analytics'
 const CODE_STATS_VIEW = 'code-stats'
 const ACTIVE_JOB = (session) => session.status === 'running' || session.status === 'awaiting_input'
 const JOB_LIST_LIMIT = 20
+const MOBILE_QUERY = '(max-width: 768px)'
+const MOBILE_SESSIONS = 0
+const MOBILE_CHAT = 1
+const MOBILE_JOBS = 2
 
 const selectionFromUrl = (url) => ({
   workspaceId: url.searchParams.get(WORKSPACE_PARAM),
@@ -189,6 +197,9 @@ const App = () => {
   const gitOpen = view === GIT_VIEW
   const analyticsOpen = view === ANALYTICS_VIEW
   const codeStatsOpen = view === CODE_STATS_VIEW
+  const mobile = useMediaQuery(MOBILE_QUERY)
+  const [mobilePane, setMobilePane] = useState(() => (activeId ? MOBILE_CHAT : MOBILE_SESSIONS))
+  const showChat = () => setMobilePane(MOBILE_CHAT)
   const [providers, setProviders] = useState([])
   const [workspaces, setWorkspaces] = useState([])
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false)
@@ -372,6 +383,7 @@ const App = () => {
     setSessions((prev) => [session, ...prev.filter((item) => item.id !== session.id)])
     setSessionsReadyFor(activeWorkspaceId)
     go(session.workspaceId || activeWorkspaceId, session.id, { view: null })
+    showChat()
   }
 
   const renameSession = async (id, name) => {
@@ -386,6 +398,7 @@ const App = () => {
 
   const onSelectJob = (job) => {
     go(job.workspaceId || activeWorkspaceId, job.id, { view: null })
+    showChat()
   }
 
   const archiveSession = async (id, archived) => {
@@ -435,17 +448,117 @@ const App = () => {
   const workspace = workspaces.find((item) => item.id === activeWorkspaceId) || null
   const workspaceSessions = sessionsReadyFor === activeWorkspaceId ? sessions : []
   const activeSession = workspaceSessions.find((s) => s.id === activeId) || null
+  const runningCount = runningJobs.filter(ACTIVE_JOB).length
+
+  const sidebar = (
+    <SessionsSidebar
+      devId="hr5r1c6"
+      workspaces={workspaces}
+      workspace={workspace}
+      sessions={workspaceSessions.filter(session => showArchived || !session.archived)}
+      showArchived={showArchived}
+      onShowArchived={(value) => {
+        setShowArchived(value)
+        if (!value && activeSession?.archived) go(activeWorkspaceId, null, { replace: true })
+      }}
+      onArchive={archiveSession}
+      onArchiveOlder={archiveOlderSessions}
+      archiveBusy={archiveBusy}
+      archiveError={archiveError}
+      onPin={pinSession}
+      pinBusy={pinBusy}
+      pinError={pinError}
+      providers={providers}
+      activeId={activeId}
+      onSelectWorkspace={onSelectWorkspace}
+      onSelect={(id) => {
+        go(activeWorkspaceId, id, { view: null })
+        showChat()
+      }}
+      onRename={renameSession}
+      onWorkspaceCreated={onWorkspaceCreated}
+      onDeleteWorkspace={deleteWorkspace}
+      onCreated={onCreated}
+      onOpenEditor={() => go(activeWorkspaceId, activeId, { view: EDITOR_VIEW })}
+      onOpenTerminal={() => go(activeWorkspaceId, activeId, { view: TERMINAL_VIEW })}
+      onOpenGit={() => go(activeWorkspaceId, activeId, { view: GIT_VIEW, file: null })}
+      onOpenAnalytics={() => go(activeWorkspaceId, activeId, { view: ANALYTICS_VIEW })}
+      codeStatsOpen={codeStatsOpen}
+      onToggleCodeStats={() => {
+        go(activeWorkspaceId, activeId, { view: codeStatsOpen ? null : CODE_STATS_VIEW })
+        if (!codeStatsOpen) showChat()
+      }}
+      transcriptFontSize={transcriptFontSize}
+      onTranscriptFontSize={changeTranscriptFontSize}
+      settingsError={settingsError}
+    />
+  )
+
+  const mainPane = (
+    <main className="app__main">
+      {codeStatsOpen ? (
+        <CodeStatsView
+          devId="k3w8n5v"
+          workspace={workspace}
+          providers={providers}
+          onCreated={onCreated}
+          onClose={() => go(activeWorkspaceId, activeId, { view: null })}
+          onOpenFile={(path) => go(activeWorkspaceId, activeId, { view: EDITOR_VIEW, file: path })}
+        />
+      ) : activeId ? (
+        <SessionView
+          key={activeId}
+          devId="hr2f3k7"
+          sessionId={activeId}
+          initialSession={activeSession}
+          providers={providers}
+          workspaces={workspaces}
+          onCreated={onCreated}
+          transcriptFontSize={transcriptFontSize}
+          onChanged={() => {
+            loadSessions()
+            loadRunningJobs()
+          }}
+        />
+      ) : (
+        <AppPlaceholder
+          workspace={workspace}
+          workspaces={workspaces}
+          sessions={workspaceSessions}
+          providers={providers}
+          onCreated={onCreated}
+          onWorkspaceCreated={onWorkspaceCreated}
+          onOpenEditor={() => go(activeWorkspaceId, activeId, { view: EDITOR_VIEW })}
+        />
+      )}
+    </main>
+  )
+
+  const jobsNav = (
+    <RunningJobsNav
+      devId="hr3v8p2"
+      jobs={runningJobs}
+      workspaces={workspaces}
+      activeId={activeId}
+      onSelect={onSelectJob}
+      collapsed={mobile ? false : jobsCollapsed}
+      onCollapsedChange={setJobsCollapsed}
+    />
+  )
 
   return (
     <DevInspector enabled={import.meta.env.DEV} forms={harnessForms(activeWorkspaceId)} views={harnessViews}>
-      <DevScope id="hr7k2m9" state={{ workspace: activeWorkspaceId, session: activeId, view: editorOpen || terminalOpen || gitOpen || analyticsOpen || codeStatsOpen ? view : 'sessions', file, term, running: runningJobs.filter(ACTIVE_JOB).length }}>
+      <DevScope id="hr7k2m9" state={{ workspace: activeWorkspaceId, session: activeId, view: editorOpen || terminalOpen || gitOpen || analyticsOpen || codeStatsOpen ? view : 'sessions', file, term, running: runningCount, mobile }}>
         {analyticsOpen ? (
           <AnalyticsView
             devId="moxixrf"
             workspaces={workspaces}
             providers={providers}
             onBack={() => go(activeWorkspaceId, activeId, { view: null })}
-            onOpenSession={(run) => go(run.workspaceId || activeWorkspaceId, run.sessionId, { view: null })}
+            onOpenSession={(run) => {
+              go(run.workspaceId || activeWorkspaceId, run.sessionId, { view: null })
+              showChat()
+            }}
           />
         ) : editorOpen ? (
           <EditorView
@@ -481,6 +594,32 @@ const App = () => {
             onOpenFile={(path) => go(activeWorkspaceId, activeId, { view: EDITOR_VIEW, file: path })}
             onBack={() => go(activeWorkspaceId, activeId, { view: null, file: null })}
           />
+        ) : mobile ? (
+          <DevScope id="m4q8z2t" state={{ pane: mobilePane }}>
+            <div className="app app--mobile">
+              <div className={`app__mobile-pane${mobilePane === MOBILE_SESSIONS ? '' : ' app__mobile-pane--hidden'}`}>
+                {sidebar}
+              </div>
+              <div className={`app__mobile-pane${mobilePane === MOBILE_CHAT ? '' : ' app__mobile-pane--hidden'}`}>
+                {mainPane}
+              </div>
+              <div className={`app__mobile-pane${mobilePane === MOBILE_JOBS ? '' : ' app__mobile-pane--hidden'}`}>
+                {jobsNav}
+              </div>
+              <nav className="app__mobile-nav">
+                <TabsDisplay index={mobilePane} select={setMobilePane}>
+                  <TabList>
+                    <Tab>Sessions</Tab>
+                    <Tab>Chat</Tab>
+                    <Tab>
+                      Jobs
+                      {runningCount > 0 && <Badge size="small" variant="info" count={runningCount} />}
+                    </Tab>
+                  </TabList>
+                </TabsDisplay>
+              </nav>
+            </div>
+          </DevScope>
         ) : (
           <div className="app">
             <SplitPane
@@ -491,41 +630,7 @@ const App = () => {
               storageKey="harness.sidebar.width"
               devId="w1n6c4y"
             >
-              <SessionsSidebar
-                devId="hr5r1c6"
-                workspaces={workspaces}
-                workspace={workspace}
-                sessions={workspaceSessions.filter(session => showArchived || !session.archived)}
-                showArchived={showArchived}
-                onShowArchived={(value) => {
-                  setShowArchived(value)
-                  if (!value && activeSession?.archived) go(activeWorkspaceId, null, { replace: true })
-                }}
-                onArchive={archiveSession}
-                onArchiveOlder={archiveOlderSessions}
-                archiveBusy={archiveBusy}
-                archiveError={archiveError}
-                onPin={pinSession}
-                pinBusy={pinBusy}
-                pinError={pinError}
-                providers={providers}
-                activeId={activeId}
-                onSelectWorkspace={onSelectWorkspace}
-                onSelect={(id) => go(activeWorkspaceId, id, { view: null })}
-                onRename={renameSession}
-                onWorkspaceCreated={onWorkspaceCreated}
-                onDeleteWorkspace={deleteWorkspace}
-                onCreated={onCreated}
-                onOpenEditor={() => go(activeWorkspaceId, activeId, { view: EDITOR_VIEW })}
-                onOpenTerminal={() => go(activeWorkspaceId, activeId, { view: TERMINAL_VIEW })}
-                onOpenGit={() => go(activeWorkspaceId, activeId, { view: GIT_VIEW, file: null })}
-                onOpenAnalytics={() => go(activeWorkspaceId, activeId, { view: ANALYTICS_VIEW })}
-                codeStatsOpen={codeStatsOpen}
-                onToggleCodeStats={() => go(activeWorkspaceId, activeId, { view: codeStatsOpen ? null : CODE_STATS_VIEW })}
-                transcriptFontSize={transcriptFontSize}
-                onTranscriptFontSize={changeTranscriptFontSize}
-                settingsError={settingsError}
-              />
+              {sidebar}
               <div className="app__content">
                 <SplitPane
                   className="app__jobs-split"
@@ -538,52 +643,8 @@ const App = () => {
                   storageKey="harness.jobs.width"
                   devId="hr8j5p1"
                 >
-                  <main className="app__main">
-                    {codeStatsOpen ? (
-                      <CodeStatsView
-                        devId="k3w8n5v"
-                        workspace={workspace}
-                        providers={providers}
-                        onCreated={onCreated}
-                        onClose={() => go(activeWorkspaceId, activeId, { view: null })}
-                        onOpenFile={(path) => go(activeWorkspaceId, activeId, { view: EDITOR_VIEW, file: path })}
-                      />
-                    ) : activeId ? (
-                      <SessionView
-                        key={activeId}
-                        devId="hr2f3k7"
-                        sessionId={activeId}
-                        initialSession={activeSession}
-                        providers={providers}
-                        workspaces={workspaces}
-                        onCreated={onCreated}
-                        transcriptFontSize={transcriptFontSize}
-                        onChanged={() => {
-                          loadSessions()
-                          loadRunningJobs()
-                        }}
-                      />
-                    ) : (
-                      <AppPlaceholder
-                        workspace={workspace}
-                        workspaces={workspaces}
-                        sessions={workspaceSessions}
-                        providers={providers}
-                        onCreated={onCreated}
-                        onWorkspaceCreated={onWorkspaceCreated}
-                        onOpenEditor={() => go(activeWorkspaceId, activeId, { view: EDITOR_VIEW })}
-                      />
-                    )}
-                  </main>
-                  <RunningJobsNav
-                    devId="hr3v8p2"
-                    jobs={runningJobs}
-                    workspaces={workspaces}
-                    activeId={activeId}
-                    onSelect={onSelectJob}
-                    collapsed={jobsCollapsed}
-                    onCollapsedChange={setJobsCollapsed}
-                  />
+                  {mainPane}
+                  {jobsNav}
                 </SplitPane>
               </div>
             </SplitPane>

@@ -338,3 +338,15 @@
   font-size: 14px;
   color: var(--text);
 }
+
+@media (max-width: 768px) {
+  .git-topbar__branch,
+  .git-topbar__sync {
+    flex-shrink: 1;
+    min-width: 0;
+  }
+
+  .git-topbar__branch-select {
+    min-width: 0;
+  }
+}

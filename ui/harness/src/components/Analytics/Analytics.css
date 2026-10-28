@@ -53,7 +53,7 @@
 
 .analytics__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
   gap: 12px;
   align-items: start;
 }
@@ -252,4 +252,21 @@
 .analytics__table .matrix__table tr:has(.analytics__session-link) > td {
   background: var(--bg);
   font-weight: 400;
+}
+
+@media (max-width: 768px) {
+  .analytics__body {
+    padding: 10px;
+  }
+
+  .analytics__filters {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .analytics__select {
+    flex: 1;
+    min-width: 0;
+    max-width: none;
+  }
 }

@@ -327,6 +327,8 @@ const EditorView = ({ devId, workspaces = [], workspace, workspaceId, file = nul
             minSize={170}
             maxSize={640}
             storageKey="harness.editor.sidebarWidth"
+            stackBelow={768}
+            stackedSize="35%"
           >
             {sidebar}
             {main}

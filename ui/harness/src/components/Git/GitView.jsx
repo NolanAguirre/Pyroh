@@ -611,6 +611,7 @@ const GitView = ({ devId, workspaces = [], workspace, workspaceId, file = null, 
       minSize={220}
       maxSize={640}
       storageKey="harness.git.sidebarWidth"
+      stackBelow={768}
     >
       {sidebar}
       {main}
