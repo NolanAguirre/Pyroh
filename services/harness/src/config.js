@@ -17,8 +17,8 @@ const resolveWriteDir = () => {
   return path.resolve(process.cwd(), expandHome(raw))
 }
 
-// Machine-local base path the harness operates within. Work dirs are chosen
-// under this and never allowed to escape it.
+// Machine-local default work dir. Relative work dirs resolve against it; any
+// dir under the home dir is allowed.
 const resolveWorkBase = () => {
   const raw = process.env.HARNESS_BASE_PATH || path.join(os.homedir(), 'personal')
   return path.resolve(expandHome(raw))
