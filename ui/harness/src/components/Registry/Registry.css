@@ -55,6 +55,13 @@
   align-items: start;
 }
 
+.registry__flags {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
 .registry__table {
   width: 100%;
   font-size: 12px;
