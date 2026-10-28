@@ -460,10 +460,27 @@
 }
 
 .session-row__pin-btn svg,
-.session-row__trash-btn svg {
+.session-row__trash-btn svg,
+.session-row__restore-btn svg {
   width: 12px;
   height: 12px;
   display: block;
+}
+
+.session-row__trash-btn {
+  color: var(--danger);
+}
+
+.session-row__restore-btn {
+  color: var(--success);
+}
+
+.session-row__trash-btn:hover {
+  color: var(--danger);
+}
+
+.session-row__restore-btn:hover {
+  color: var(--success);
 }
 
 .session-row__pin-btn--on {
@@ -472,7 +489,8 @@
 }
 
 .session-row:hover .session-row__pin-btn:disabled,
-.session-row:hover .session-row__trash-btn:disabled {
+.session-row:hover .session-row__trash-btn:disabled,
+.session-row:hover .session-row__restore-btn:disabled {
   opacity: 0.4;
   cursor: default;
 }

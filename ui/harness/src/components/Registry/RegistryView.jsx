@@ -8,12 +8,18 @@ import {
   DevScope,
   Matrix,
   SelectDisplay,
+  Tab,
+  TabList,
+  TabsDisplay,
 } from 'component-library'
 import api from '../../api'
 import './Registry.css'
 
 const GLOBAL = '__global'
 const ANY = '__any'
+
+const SECTIONS = ['Overview', 'Flags']
+const FLAGS_TAB = SECTIONS.indexOf('Flags')
 
 const SCOPE_VARIANTS = { builtin: 'neutral', global: 'info', workspace: 'primary' }
 
@@ -65,16 +71,7 @@ const whereText = (where) => {
 
 const whatText = (what) => Object.entries(what || {}).map(([kind, id]) => `${kind} ${id}`).join(', ')
 
-const modeFlags = (mode) => [
-  mode.terse && 'terse',
-  mode.promptOptional && 'prompt optional',
-  mode.newSession && 'new session',
-  mode.autoName && 'auto name',
-  mode.snapshot && 'snapshot',
-  mode.savePlan && 'save plan',
-  mode.steerable === false && 'not steerable',
-  mode.instructions && 'instructions',
-].filter(Boolean)
+const modeFlags = (flags, mode) => flags.filter((flag) => flag.modes.includes(mode.id))
 
 const SourcesCard = ({ sources }) => (
   <Card>
@@ -162,7 +159,7 @@ const RulesCard = ({ ruleSets, policies }) => (
   </Card>
 )
 
-const ModesCard = ({ modes }) => (
+const ModesCard = ({ modes, flags, onFlags }) => (
   <Card>
     <CardHeader>Modes</CardHeader>
     <CardSection>
@@ -194,7 +191,11 @@ const ModesCard = ({ modes }) => (
           if (column.id === 'flags') {
             return (
               <span className="registry__chips">
-                {modeFlags(row).map((flag) => <Badge key={flag} size="small">{flag}</Badge>)}
+                {modeFlags(flags, row).map((flag) => (
+                  <button key={flag.id} type="button" className="registry__flag-link" title={flag.description} onClick={onFlags}>
+                    <Badge size="small">{flag.label}</Badge>
+                  </button>
+                ))}
               </span>
             )
           }
@@ -203,6 +204,40 @@ const ModesCard = ({ modes }) => (
       />
     </CardSection>
   </Card>
+)
+
+const FlagModes = ({ ids, modes }) => (ids.length ? (
+  <span className="registry__chips">
+    {ids.map((id) => <Badge key={id} size="small" variant="primary">{modes.find((mode) => mode.id === id)?.label || id}</Badge>)}
+  </span>
+) : <span className="hint">No modes.</span>)
+
+const FlagsView = ({ flags, modes }) => (
+  <DevScope id="r6f3x8k">
+    {flags.map((flag) => (
+      <Card key={flag.id}>
+        <CardHeader>
+          <strong>{flag.label}</strong> <code className="registry__id">{flag.id}</code>
+        </CardHeader>
+        <CardSection>
+          <p className="registry__flag-desc">{flag.description}</p>
+          {flag.text && <pre className="registry__prompt">{flag.text}</pre>}
+          {flag.id === 'instructions' && flag.modes.map((id) => {
+            const mode = modes.find((item) => item.id === id)
+            return (
+              <div key={id} className="registry__flag-instr">
+                <div className="registry__rules-head"><strong>{mode?.label || id}</strong> <Scope scope={mode?.scope} /></div>
+                <pre className="registry__prompt">{mode?.instructions === '(function)' ? 'Built by the plugin on each run.' : mode?.instructions}</pre>
+              </div>
+            )
+          })}
+          <div className="registry__flag-modes">
+            <span className="hint">Included in</span> <FlagModes ids={flag.modes} modes={modes} />
+          </div>
+        </CardSection>
+      </Card>
+    ))}
+  </DevScope>
 )
 
 const ToolsCard = ({ tools, modes }) => (
@@ -268,6 +303,7 @@ const PanelsCard = ({ panels }) => (
 const RegistryView = ({ devId, workspaces = [], providers = [], workspaceId = null, onBack }) => {
   const [scope, setScope] = useState(workspaceId || GLOBAL)
   const [provider, setProvider] = useState(ANY)
+  const [section, setSection] = useState(0)
   const { data, error, loading, refresh } = useExplain(scope === GLOBAL ? null : scope, provider === ANY ? null : provider)
 
   const scopeOptions = [
@@ -295,11 +331,19 @@ const RegistryView = ({ devId, workspaces = [], providers = [], workspaceId = nu
             </Button>
           </div>
         </header>
+        <nav className="registry__subnav">
+          <TabsDisplay index={section} select={setSection}>
+            <TabList>
+              {SECTIONS.map((name) => <Tab key={name}>{name}</Tab>)}
+            </TabList>
+          </TabsDisplay>
+        </nav>
 
         <main className="registry__body">
           {error && <p className="registry__error">{error}</p>}
           {!data && !error && <p className="hint">Loading registry…</p>}
-          {data && (
+          {data && section === FLAGS_TAB && <FlagsView flags={data.flags || []} modes={data.modes} />}
+          {data && section !== FLAGS_TAB && (
             <>
               {data.workspace && (
                 <p className="hint">
@@ -310,7 +354,7 @@ const RegistryView = ({ devId, workspaces = [], providers = [], workspaceId = nu
                 <SourcesCard sources={data.sources} />
                 <RulesCard ruleSets={data.rules} policies={data.policies} />
               </div>
-              <ModesCard modes={data.modes} />
+              <ModesCard modes={data.modes} flags={data.flags || []} onFlags={() => setSection(FLAGS_TAB)} />
               <ToolsCard tools={data.tools} modes={data.modes} />
               <PanelsCard panels={data.panels} />
               <p className="hint">Hover a decision to see what decided it.</p>
