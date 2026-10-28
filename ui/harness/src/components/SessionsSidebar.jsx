@@ -39,6 +39,7 @@ const ICONS = {
   git: 'M5 5v6M11 6c0 2.5-6 1.5-6 4.5M6.5 3.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zM6.5 12.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zM12.5 4.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z',
   codeStats: 'M2 3.5h12M2 6.5h8M2 9.5h10M2 12.5h5',
   analytics: 'M2 13.5V9M6 13.5V5M10 13.5V7.5M14 13.5V3M1.5 13.5h13',
+  registry: 'M2.5 2.5h4v4h-4zM9.5 2.5h4v4h-4zM2.5 9.5h4v4h-4zM9.5 9.5h4v4h-4z',
   workspace: 'M1.5 3.5a1 1 0 0 1 1-1h3.5l1.5 1.5h6a1 1 0 0 1 1 1v7.5a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1zM8 6.5v5M5.5 9h5',
   session: 'M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11zM8 5v6M5 8h6',
   archive: 'M1.5 2.5h13v2.5h-13zM2.5 5v8.5h11V5M6 8.5h4',
@@ -51,6 +52,7 @@ const PANEL_DEV_IDS = {
   git: '7vr4nuz',
   'code-stats': 'c7q2x9a',
   analytics: 'vqx75km',
+  registry: 'r3g8x2k',
 }
 
 const Icon = ({ d }) => (

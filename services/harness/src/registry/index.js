@@ -157,7 +157,7 @@ const listAllowed = (workspace, { provider } = {}) => {
 }
 
 // Everything, allowed or not, with a mode × tool matrix and the reason for
-// each cell. Backs the future Registry tab.
+// each cell. Backs the Registry panel.
 const explain = (workspace, { provider } = {}) => {
   const resolved = resolve(workspace)
   return {

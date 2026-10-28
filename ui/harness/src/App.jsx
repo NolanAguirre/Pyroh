@@ -26,6 +26,7 @@ import TerminalView from './components/Terminal/TerminalView'
 import GitView from './components/Git/GitView'
 import AnalyticsView from './components/Analytics/AnalyticsView'
 import CodeStatsView from './components/CodeStats/CodeStatsView'
+import RegistryView from './components/Registry/RegistryView'
 import NewSessionForm from './components/NewSessionForm'
 import NewWorkspaceForm from './components/NewWorkspaceForm'
 import api from './api'
@@ -529,6 +530,15 @@ const App = () => {
         onCreated={onCreated}
         onClose={() => closePanel('code-stats')}
         onOpenFile={openEditor}
+      />
+    ),
+    registry: () => (
+      <RegistryView
+        devId="r6g3x9v"
+        workspaces={workspaces}
+        providers={providers}
+        workspaceId={activeWorkspaceId}
+        onBack={() => closePanel('registry')}
       />
     ),
   }

@@ -102,9 +102,11 @@ const PANELS = [
   { id: 'git', label: 'Git', title: 'Open git for this workspace', icon: 'git', placement: 'page', needsWorkspace: true },
   { id: 'code-stats', label: 'Code stats', title: 'Show file length stats for this workspace', icon: 'codeStats', placement: 'main', needsWorkspace: true },
   { id: 'analytics', label: 'Analytics', title: 'Open tool-call analytics', icon: 'analytics', placement: 'page', needsWorkspace: false },
+  { id: 'registry', label: 'Registry', title: 'Show loaded plugins, rules, modes, tools, and panels', icon: 'registry', placement: 'page', needsWorkspace: false },
 ]
 
-// Rules cannot deny these; the harness needs somewhere to run a turn.
-const LOCKED = { mode: ['agent'], tool: [], panel: [] }
+// Rules cannot deny these; the harness needs somewhere to run a turn, and the
+// registry panel is how you see why something was denied.
+const LOCKED = { mode: ['agent'], tool: [], panel: ['registry'] }
 
 module.exports = { MODES, TOOLS, PANELS, LOCKED }

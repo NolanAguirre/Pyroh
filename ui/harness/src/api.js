@@ -186,6 +186,13 @@ const api = {
     const { id, machine } = splitId(workspaceId)
     return fetch(at(machine, `/api/workspaces/${encodeURIComponent(id)}/registry`)).then(json)
   },
+  // Every registry entry with its decision; global scope when there is no workspace.
+  explainRegistry: (workspaceId, { provider } = {}, { signal } = {}) => {
+    const query = provider ? `?${new URLSearchParams({ provider })}` : ''
+    if (!workspaceId) return fetch(at(null, `/api/registry/explain${query}`), { signal }).then(json)
+    const { id, machine } = splitId(workspaceId)
+    return fetch(at(machine, `/api/workspaces/${encodeURIComponent(id)}/registry/explain${query}`), { signal }).then(json)
+  },
   listSessions: async (workspaceId, includeArchived = false, { orderBy, order, limit, active } = {}) => {
     const query = new URLSearchParams({ includeArchived: String(includeArchived) })
     if (orderBy !== undefined) query.set('orderBy', orderBy)
