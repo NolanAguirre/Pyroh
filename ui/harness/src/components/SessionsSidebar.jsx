@@ -189,7 +189,7 @@ const SessionRow = memo(({ session, active, onSelect, onRename, onArchive, archi
               <DevScope id="i5a8p1o">
                 <button
                   type="button"
-                  className="session-row__edit-btn"
+                  className="session-row__edit-btn session-row__rename-btn"
                   title="Rename session"
                   aria-label="Rename session"
                   onClick={startEdit}

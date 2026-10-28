@@ -467,6 +467,11 @@
   display: block;
 }
 
+.session-row__rename-btn,
+.session-row__rename-btn:hover {
+  color: #c4783a;
+}
+
 .session-row__trash-btn {
   color: var(--danger);
 }
@@ -486,6 +491,8 @@
 .session-row__pin-btn--on {
   opacity: 1;
   color: var(--accent);
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .session-row:hover .session-row__pin-btn:disabled,
