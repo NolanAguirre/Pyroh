@@ -1092,6 +1092,27 @@
   color: var(--accent);
 }
 
+.tx__user-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+
+.tx__user-copy:hover,
+.tx__user-copy:focus-visible {
+  opacity: 1;
+}
+
 .tx__user-body {
   font-size: 1em;
   white-space: pre-wrap;
