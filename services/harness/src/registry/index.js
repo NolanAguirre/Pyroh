@@ -1,5 +1,6 @@
 const { formatError } = require('../store/formatError')
 const builtins = require('./builtins')
+const { describeFlags } = require('./flags')
 const { modeDefaults, normalizeMode } = require('./schema')
 const { loadPlugins } = require('./sources')
 const rules = require('./rules')
@@ -169,6 +170,7 @@ const explain = (workspace, { provider } = {}) => {
     })),
     policies: resolved.policies.map(({ scope, name, file }) => ({ scope, name, file })),
     modes: resolved.modes.map(withDecision(resolved, 'mode', provider)).map(describeMode),
+    flags: describeFlags(resolved.modes),
     panels: resolved.panels.map(withDecision(resolved, 'panel', provider)),
     tools: resolved.tools.map((tool) => ({
       ...tool,
