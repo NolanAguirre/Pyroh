@@ -40,7 +40,7 @@ Commands:
   memory <sid> [--prompt <focus>] [--detach]               Spawn a new session to extract memories via mcp-memory
   runs [--mode mode]                                      List indexed runs, metrics, and transcript paths
   token-waste-runs                                        Alias for runs --mode token-waste
-  new-chat <sid> [--prompt <focus>] [--provider p] [--model m] [--detach]
+  new-chat <sid> [--prompt <focus>] [--provider p] [--model m] [--target-mode agent|ask|plan] [--detach]
                                                           Summarize and continue in a new session
   decompose <sid> --prompt <text> [--plan-file path] [--detach]
                                                           Decompose a top-level plan
@@ -118,10 +118,12 @@ const fail = (msg, code = 2) => {
 // with --detach it re-spawns itself detached and prints the run id.
 const handleTurn = async (action, sessionId, flags) => {
   if (!sessionId) return fail(`${action}: missing <sid>`)
+  const current = flags['run-id'] ? null : sessionStore.loadSession(sessionId, config.writeDir)
+  if (current && action !== 'plan' && !flags.mode) flags = { ...flags, mode: Harness.replyMode(current) }
   if (action === 'run' && flags.mode && !flags['run-id'] && !FOREGROUND_KINDS.includes(registry.builtinMode(flags.mode)?.kind)) {
     try {
       return print(await Harness.run(sessionId, {
-        mode: flags.mode, prompt: flags.prompt, provider: flags.provider, model: flags.model,
+        mode: flags.mode, prompt: flags.prompt, provider: flags.provider, model: flags.model, targetMode: flags['target-mode'],
       }))
     } catch (err) {
       return fail(`${action}: ${err && err.message}`)
@@ -136,7 +138,7 @@ const handleTurn = async (action, sessionId, flags) => {
     }
   }
   const createSibling = SIBLING_MODES[flags.mode]
-  if (createSibling && !flags['run-id']) {
+  if (createSibling && current && !Harness.repliesInPlace(current, registry.builtinMode(flags.mode))) {
     let sibling
     try {
       sibling = createSibling(sessionId, flags)
@@ -166,6 +168,7 @@ const handleTurn = async (action, sessionId, flags) => {
         handoff = Harness.resolveNewChatTarget(session, {
           provider: flags.provider,
           model: flags.model,
+          mode: flags['target-mode'],
         })
       } catch (err) {
         return fail(`${action}: ${err && err.message}`)
@@ -174,6 +177,7 @@ const handleTurn = async (action, sessionId, flags) => {
     if (action === 'resume' && !prompt) prompt = DEFAULT_RESUME_PROMPT
     if (!prompt) return fail(`${action}: --prompt is required`)
     run = sessionStore.createRun(sessionId, { mode, prompt, handoff })
+    if (!session.mode && registry.builtinMode(mode)?.kind === 'turn') sessionStore.updateSession(sessionId, { mode }, config.writeDir)
   }
 
   if (flags.detach) {

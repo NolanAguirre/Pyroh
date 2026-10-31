@@ -313,20 +313,22 @@ router.get('/sessions/:id', async (req, res) => {
 
 // Validates the mode against the registry before running, so prompt rules and
 // deny decisions come from one place.
-const startRun = async (req, res, mode, { prompt, provider, model }) => {
+const startRun = async (req, res, requested, { prompt, provider, model, targetMode }) => {
   const session = sessionStore.loadSession(req.params.id, config.writeDir)
   if (!session) return res.status(404).json({ error: 'session not found' })
+  const mode = requested || Harness.replyMode(session)
   let entry
   try {
     entry = registry.requireMode(registry.sessionWorkspace(session), mode, { provider: session.provider })
   } catch (err) {
     return sendError(res, err)
   }
-  if (!prompt && !entry.promptOptional) return res.status(400).json({ error: 'prompt is required' })
+  const inPlace = Harness.repliesInPlace(session, entry)
+  if (!prompt && (inPlace || !entry.promptOptional)) return res.status(400).json({ error: 'prompt is required' })
   try {
-    const run = await Harness.run(req.params.id, { prompt, mode, provider, model })
+    const run = await Harness.run(req.params.id, { prompt, mode, provider, model, targetMode })
     if (entry.kind === 'decompose') return res.status(202).json(run)
-    res.status(202).json({ run, ...(entry.newSession
+    res.status(202).json({ run, ...(entry.newSession && !inPlace
       ? { session: sessionStore.loadSession(run.sessionId, config.writeDir) } : {}) })
   } catch (err) {
     const message = err && err.message ? err.message : String(err)
@@ -337,7 +339,7 @@ const startRun = async (req, res, mode, { prompt, provider, model }) => {
 router.post('/sessions/:id/plan', (req, res) => startRun(req, res, 'plan', req.body || {}))
 
 router.post('/sessions/:id/run', (req, res) => {
-  const { mode = 'agent', ...body } = req.body || {}
+  const { mode, ...body } = req.body || {}
   return startRun(req, res, mode, body)
 })
 

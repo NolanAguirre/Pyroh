@@ -23,8 +23,23 @@ const isDecomposeResume = (session) =>
   session.currentStep &&
   session.currentStep !== 'done'
 
+// session.mode is the mode the session was spawned in. Replies default to it,
+// except decompose, whose pipeline is not a reply.
+const replyMode = (session) =>
+  session?.mode && session.mode !== 'decompose' ? session.mode : 'agent'
+
+// A mode that spawns a sibling session (memories, token waste, newSession
+// plugins) runs as a plain turn when sent to a session already in that mode.
+const repliesInPlace = (session, entry) =>
+  Boolean(entry?.newSession) && session?.mode === entry.id
+
+const lastPluginRun = (sessionId, mode) =>
+  sessionStore.listRuns(sessionId, config.writeDir).findLast((item) => item.mode === mode && item.plugin)?.plugin
+
 // Launch a detached daemon for a freshly created run. Returns the run record.
 // autoName marks prompts typed by the user, in modes that may name an unnamed session.
+// The new chat records the mode picked for it, never new-chat itself. Only
+// turn modes fit, since the continuation prompt is an ordinary turn.
 const resolveNewChatTarget = (source, target = {}) => {
   const provider = target.provider || source.provider
   if (!listProviders().includes(provider)) {
@@ -34,7 +49,12 @@ const resolveNewChatTarget = (source, target = {}) => {
   const model = requested == null || requested === ''
     ? (provider === source.provider ? (source.model || null) : null)
     : requested
-  return { provider, model }
+  const mode = target.mode || 'agent'
+  const entry = registry.requireMode(registry.sessionWorkspace(source), mode, { provider })
+  if (entry.kind !== 'turn') {
+    throw Object.assign(new Error(`new chat cannot start in ${mode} mode`), { status: 400 })
+  }
+  return { provider, model, mode }
 }
 
 const spawnRun = (sessionId, action, { mode, prompt, autoName = false, handoff, plugin }) => {
@@ -148,8 +168,9 @@ const continueInNewChat = (sourceSessionId, prompt, target) => {
     model: next.model,
     ...(keepOptions ? { codex: source.codex, grok: source.grok, claude: source.claude } : {}),
   })
-  const session = sessionStore.updateSession(created.id, { sourceSessionId }, config.writeDir)
-  const run = spawnRun(session.id, 'run', { mode: 'agent', prompt })
+  const mode = target?.mode || 'agent'
+  const session = sessionStore.updateSession(created.id, { sourceSessionId, mode }, config.writeDir)
+  const run = spawnRun(session.id, mode === 'plan' ? 'plan' : 'run', { mode, prompt })
   return { session, run }
 }
 
@@ -184,12 +205,18 @@ const decompose = (sessionId, { prompt }) => {
 }
 
 // Every mode is looked up in the registry, which also enforces deny rules.
-const run = async (sessionId, { prompt, mode = 'agent', provider, model } = {}) => {
+const run = async (sessionId, { prompt, mode: requested, provider, model, targetMode } = {}) => {
   const source = sessionStore.loadSession(sessionId, config.writeDir)
   if (!source) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
+  const mode = requested || replyMode(source)
   const workspace = registry.sessionWorkspace(source)
   const harness = workspace ? registry.makeHarnessApi(workspace, source) : undefined
   const entry = registry.requireMode(workspace, mode, { harness, provider: source.provider })
+  if (repliesInPlace(source, entry)) {
+    const plugin = entry.kind === 'plugin' ? lastPluginRun(sessionId, entry.id) : undefined
+    return spawnRun(sessionId, 'run', { mode, prompt: prompt || DEFAULT_RESUME_PROMPT, plugin })
+  }
+  if (entry.kind === 'turn' && !source.mode) sessionStore.updateSession(sessionId, { mode: entry.id }, config.writeDir)
   switch (entry.kind) {
     case 'plugin':
       if (!harness) throw Object.assign(new Error(`${entry.id}: plugin modes need a workspace`), { status: 400 })
@@ -203,7 +230,7 @@ const run = async (sessionId, { prompt, mode = 'agent', provider, model } = {}) 
       return spawnRun(extraction.session.id, 'run', { mode, prompt: extraction.prompt })
     }
     case 'new-chat': {
-      const handoff = resolveNewChatTarget(source, { provider, model })
+      const handoff = resolveNewChatTarget(source, { provider, model, mode: targetMode })
       return spawnRun(sessionId, 'run', { mode, prompt: newChat.buildPrompt(prompt), handoff })
     }
     case 'decompose':
@@ -223,12 +250,13 @@ const undeliveredRun = (sessionId, session) => {
   return last && last.status === 'disconnected' && !last.providerAgentId && last.prompt ? last : null
 }
 
-const resume = (sessionId, { prompt, mode = 'agent' } = {}) => {
+const resume = (sessionId, { prompt, mode: requested } = {}) => {
   const session = sessionStore.loadSession(sessionId, config.writeDir)
   if (isDecomposeResume(session)) return spawnDecompose(sessionId, { resume: true })
   const retry = !prompt && undeliveredRun(sessionId, session)
   if (retry) return spawnRun(sessionId, 'resume', { mode: retry.mode, prompt: retry.prompt, handoff: retry.handoff, plugin: retry.plugin })
-  return spawnRun(sessionId, 'resume', { mode, prompt: prompt || DEFAULT_RESUME_PROMPT })
+  const mode = requested || replyMode(session)
+  return spawnRun(sessionId, 'resume', { mode, prompt: prompt || DEFAULT_RESUME_PROMPT, plugin: lastPluginRun(sessionId, mode) })
 }
 
 const terminate = (sessionId, intent) => {
@@ -298,6 +326,8 @@ module.exports = {
   createMemorySession,
   resolveNewChatTarget,
   continueInNewChat,
+  replyMode,
+  repliesInPlace,
   plan,
   run,
   decompose,
