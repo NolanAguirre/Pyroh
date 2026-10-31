@@ -1,4 +1,4 @@
-const prompts = require('./prompts')
+const prompts = require('../../prompts')
 
 const STEPS = [
   {
@@ -39,16 +39,7 @@ const onceSteps = () => STEPS.filter((step) => step.when === 'once')
 
 const eachPhaseSteps = () => STEPS.filter((step) => step.when === 'eachPhase')
 
-const renderPrompt = (template, vars = {}) =>
-  String(template || '').replace(/\{\{(\w+)\}\}/g, (_, key) =>
-    vars[key] == null ? '' : String(vars[key]),
-  )
-
-const promptFor = (step, vars) => {
-  const template = prompts[step.promptKey]
-  if (!template) throw new Error(`decompose: missing prompt ${step.promptKey}`)
-  return renderPrompt(template, vars)
-}
+const promptFor = (step, vars) => prompts.render(step.promptKey, vars)
 
 const parsePhaseCount = (text) => {
   let raw = String(text || '').trim()
@@ -119,7 +110,6 @@ module.exports = {
   STEPS,
   onceSteps,
   eachPhaseSteps,
-  renderPrompt,
   promptFor,
   parsePhaseCount,
   parseStepOutput,

@@ -147,6 +147,29 @@
   word-break: break-word;
 }
 
+.registry__var {
+  background: none;
+  color: var(--accent, #3b82f6);
+  font-weight: 600;
+}
+
+.registry__vars {
+  margin-bottom: 8px;
+}
+
+.registry__prompt-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.registry__group-title {
+  margin: 0;
+  font-size: 12px;
+  text-transform: capitalize;
+  color: var(--text-dim);
+}
+
 .registry__flag-instr {
   margin-bottom: 8px;
 }

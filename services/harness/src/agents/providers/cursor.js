@@ -4,6 +4,7 @@ const path = require('path')
 const config = require('../../config')
 const { errorMessage } = require('../../store/formatError')
 const { composePrompt } = require('../modes')
+const prompts = require('../../prompts')
 
 // Lazily require the SDK so that provider listing does not hard-fail when the
 // dependency is not installed yet.
@@ -206,12 +207,12 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, transcriptFile
   const subagents = () => ({
     generalPurpose: {
       description: 'General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks.',
-      prompt: 'You are a general-purpose coding agent. Complete the delegated task autonomously and report back concisely.',
+      prompt: prompts.text('subagentGeneralPurpose'),
       model: SUBAGENT_MODEL,
     },
     explore: {
       description: 'Fast agent for exploring codebases: finding files, searching code, and answering questions about the codebase.',
-      prompt: 'You are a codebase exploration agent. Search and read code to answer the question. Do not edit files. Report findings concisely with file paths.',
+      prompt: prompts.text('subagentExplore'),
       model: SUBAGENT_MODEL,
     },
   })

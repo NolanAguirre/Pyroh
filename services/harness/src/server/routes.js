@@ -11,6 +11,7 @@ const { streamSession } = require('./sse')
 const { readJsonAsync } = require('../store/jsonFile')
 const { listProviders } = require('../agents/driver')
 const registry = require('../registry')
+const prompts = require('../prompts')
 
 const router = express.Router()
 
@@ -161,6 +162,10 @@ router.get('/registry', (req, res) => {
 
 router.get('/registry/explain', (req, res) => {
   res.json(registry.explain(null, { provider: providerQuery(req) }))
+})
+
+router.get('/prompts', (req, res) => {
+  res.json({ prompts: prompts.list() })
 })
 
 router.get('/registry/rules', (_req, res) => {

@@ -192,6 +192,9 @@ const api = {
     const { id, machine } = splitId(workspaceId)
     return fetch(at(machine, `/api/workspaces/${encodeURIComponent(id)}/registry`)).then(json)
   },
+  // Built-in prompt templates with the vars each one interpolates.
+  listPrompts: ({ signal } = {}) => fetch(at(null, '/api/prompts'), { signal }).then(json),
+
   // Every registry entry with its decision; global scope when there is no workspace.
   explainRegistry: (workspaceId, { provider } = {}, { signal } = {}) => {
     const query = provider ? `?${new URLSearchParams({ provider })}` : ''

@@ -2,11 +2,13 @@
 // native modes, or emulates them where the provider has no equivalent. Ask is
 // enforced read-only: drivers deny any approval request for non-read-only
 // work. ASK_PROMPT tells the model why those requests are denied.
+const prompts = require('../prompts')
+
 const AGENT_MODES = ['agent', 'plan', 'ask']
 
-const ASK_PROMPT = 'This is a question, do not change code, do not run commands that will change things, only explore what is required to answer the question.'
+const ASK_PROMPT = prompts.text('ask')
 
-const TERSE_PROMPT = 'Respond tersely and use simple language when responding to the user.'
+const TERSE_PROMPT = prompts.text('terse')
 
 const withAskPrompt = (prompt) => `${ASK_PROMPT}\n\n${prompt}`
 

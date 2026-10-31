@@ -18,8 +18,9 @@ import './Registry.css'
 const GLOBAL = '__global'
 const ANY = '__any'
 
-const SECTIONS = ['Overview', 'Flags']
+const SECTIONS = ['Overview', 'Flags', 'Prompts']
 const FLAGS_TAB = SECTIONS.indexOf('Flags')
+const PROMPTS_TAB = SECTIONS.indexOf('Prompts')
 
 const SCOPE_VARIANTS = { builtin: 'neutral', global: 'info', workspace: 'primary' }
 
@@ -242,6 +243,75 @@ const FlagsView = ({ flags, modes }) => (
   </DevScope>
 )
 
+const usePrompts = () => {
+  const [state, setState] = useState({ prompts: null, error: null })
+
+  useEffect(() => {
+    const controller = new AbortController()
+    api
+      .listPrompts({ signal: controller.signal })
+      .then((data) => setState({ prompts: data.prompts || [], error: null }))
+      .catch((err) => {
+        if (err.name === 'AbortError') return
+        setState({ prompts: null, error: err.message })
+      })
+    return () => controller.abort()
+  }, [])
+
+  return state
+}
+
+const Template = ({ template }) => (
+  <pre className="registry__prompt">
+    {template.split(/(\{\{\w+\}\})/g).map((part, index) => (
+      index % 2 ? <mark key={index} className="registry__var">{part}</mark> : part
+    ))}
+  </pre>
+)
+
+const PromptCard = ({ prompt }) => (
+  <Card>
+    <CardHeader>
+      <strong>{prompt.name}</strong> <code className="registry__id">{prompt.id}</code>
+    </CardHeader>
+    <CardSection>
+      <p className="registry__flag-desc">{prompt.description}</p>
+      {prompt.vars.length ? (
+        <ul className="registry__list registry__vars">
+          {prompt.vars.map((item) => (
+            <li key={item.name}><code>{`{{${item.name}}}`}</code> {item.description}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="hint">No variables.</p>
+      )}
+      <Template template={prompt.template} />
+      <div className="registry__flag-modes">
+        <span className="hint">Used by</span> {prompt.usedBy.join(', ')}
+      </div>
+    </CardSection>
+  </Card>
+)
+
+const PromptsView = () => {
+  const { prompts, error } = usePrompts()
+  if (error) return <p className="registry__error">{error}</p>
+  if (!prompts) return <p className="hint">Loading prompts…</p>
+  const groups = [...new Set(prompts.map((prompt) => prompt.group))]
+  return (
+    <DevScope id="r8q4w1v">
+      {groups.map((group) => (
+        <section key={group} className="registry__prompt-group">
+          <h3 className="registry__group-title">{group}</h3>
+          <div className="registry__flags">
+            {prompts.filter((prompt) => prompt.group === group).map((prompt) => <PromptCard key={prompt.id} prompt={prompt} />)}
+          </div>
+        </section>
+      ))}
+    </DevScope>
+  )
+}
+
 const ToolsCard = ({ tools, modes }) => (
   <Card>
     <CardHeader>Tools by mode</CardHeader>
@@ -342,10 +412,11 @@ const RegistryView = ({ devId, workspaces = [], providers = [], workspaceId = nu
         </nav>
 
         <main className="registry__body">
-          {error && <p className="registry__error">{error}</p>}
-          {!data && !error && <p className="hint">Loading registry…</p>}
+          {section === PROMPTS_TAB && <PromptsView />}
+          {section !== PROMPTS_TAB && error && <p className="registry__error">{error}</p>}
+          {section !== PROMPTS_TAB && !data && !error && <p className="hint">Loading registry…</p>}
           {data && section === FLAGS_TAB && <FlagsView flags={data.flags || []} modes={data.modes} />}
-          {data && section !== FLAGS_TAB && (
+          {data && section !== FLAGS_TAB && section !== PROMPTS_TAB && (
             <>
               {data.workspace && (
                 <p className="hint">
