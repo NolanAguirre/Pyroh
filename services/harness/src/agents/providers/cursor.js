@@ -195,6 +195,22 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, transcriptFile
 
   const resolveModel = (model) => model || CURSOR_MODELS[0].id
 
+  // Custom definitions keyed by Task subagent_type. Built-in types otherwise
+  // fall back to Cursor's runtime default model, not the parent's.
+  const SUBAGENT_MODEL = { id: 'grok-4.7' }
+  const subagents = () => ({
+    generalPurpose: {
+      description: 'General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks.',
+      prompt: 'You are a general-purpose coding agent. Complete the delegated task autonomously and report back concisely.',
+      model: SUBAGENT_MODEL,
+    },
+    explore: {
+      description: 'Fast agent for exploring codebases: finding files, searching code, and answering questions about the codebase.',
+      prompt: 'You are a codebase exploration agent. Search and read code to answer the question. Do not edit files. Report findings concisely with file paths.',
+      model: SUBAGENT_MODEL,
+    },
+  })
+
   const create = async ({ model, cwd, mode, tools, name } = {}) => {
     selectedModel = resolveModel(model)
     const { Agent } = ensureSdk()
@@ -204,6 +220,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, transcriptFile
       model: { id: selectedModel },
       mode: sdkMode(mode),
       local,
+      agents: subagents(),
       ...modeOptions(mode),
     }
     if (name) opts.name = name
@@ -218,7 +235,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, transcriptFile
     selectedModel = resolveModel(model)
     const { Agent } = ensureSdk()
     const includeCustom = !(Array.isArray(tools) && tools.length === 0)
-    const opts = { local: { ...localOptions({ includeCustom }), ...(cwd ? { cwd } : {}) }, mode: sdkMode(mode), ...modeOptions(mode) }
+    const opts = { local: { ...localOptions({ includeCustom }), ...(cwd ? { cwd } : {}) }, mode: sdkMode(mode), agents: subagents(), ...modeOptions(mode) }
     if (tools !== undefined) opts.tools = tools
     if (apiKey) opts.apiKey = apiKey
     agent = await Agent.resume(providerAgentId, opts)
