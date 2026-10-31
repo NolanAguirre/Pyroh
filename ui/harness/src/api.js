@@ -174,6 +174,12 @@ const api = {
   createWorkspace: ({ machine = null, ...payload }) =>
     post(at(machine, '/api/workspaces'), payload)
       .then((data) => ({ ...data, workspace: tagWorkspace(data.workspace, machine) })),
+  updateWorkspace: (workspaceId, { name, cwd }) => {
+    const { id, machine } = splitId(workspaceId)
+    return send('PATCH', at(machine, `/api/workspaces/${encodeURIComponent(id)}`), { name, cwd })
+      .then(json)
+      .then((data) => ({ ...data, workspace: tagWorkspace(data.workspace, machine) }))
+  },
   setWorkspaceDeleted: (workspaceId, deleted) => {
     const { id, machine } = splitId(workspaceId)
     return send('PATCH', at(machine, `/api/workspaces/${encodeURIComponent(id)}`), { deleted })

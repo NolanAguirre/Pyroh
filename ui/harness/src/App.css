@@ -240,6 +240,25 @@
 
 .sidebar__workspace-selector {
   width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sidebar__workspace-selector .form-dropdown {
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar__workspace-selector .button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.sidebar__workspace-selector .button__label {
+  display: inline-flex;
 }
 
 .sidebar__cwd {
@@ -1668,6 +1687,16 @@
   min-width: 320px;
 }
 
+.edit-workspace-panel {
+  min-width: 440px;
+  max-width: 560px;
+}
+
+.text-input--path {
+  font-family: monospace;
+  font-size: 12px;
+}
+
 .new-session {
   display: flex;
   flex-direction: column;
@@ -1949,6 +1978,7 @@
   }
 
   .new-session-panel,
+  .edit-workspace-panel,
   .ui-settings-panel {
     min-width: 0;
     width: calc(100vw - 16px);

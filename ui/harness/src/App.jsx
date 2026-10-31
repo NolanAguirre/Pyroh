@@ -404,6 +404,14 @@ const App = () => {
     go(workspace.id, null)
   }
 
+  const onWorkspaceUpdated = (workspace) => {
+    setWorkspaces((prev) =>
+      [...prev.filter((item) => item.id !== workspace.id), workspace].sort((a, b) =>
+        a.name.localeCompare(b.name),
+      ),
+    )
+  }
+
   const onCreated = (session) => {
     setSessions((prev) => [session, ...prev.filter((item) => item.id !== session.id)])
     setSessionsReadyFor(activeWorkspaceId)
@@ -593,6 +601,7 @@ const App = () => {
       }}
       onRename={renameSession}
       onWorkspaceCreated={onWorkspaceCreated}
+      onWorkspaceUpdated={onWorkspaceUpdated}
       onDeleteWorkspace={deleteWorkspace}
       onCreated={onCreated}
       panels={registry.panels}

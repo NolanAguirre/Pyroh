@@ -14,6 +14,7 @@ import {
 } from 'component-library'
 import NewSessionForm from './NewSessionForm'
 import NewWorkspaceForm from './NewWorkspaceForm'
+import EditWorkspaceForm from './EditWorkspaceForm'
 import UiSettingsForm from './UiSettingsForm'
 import { formatCompactNumber, formatDuration } from '../format'
 
@@ -272,6 +273,7 @@ const SessionsSidebar = ({
   onSelect,
   onRename,
   onWorkspaceCreated,
+  onWorkspaceUpdated,
   onDeleteWorkspace,
   onCreated,
   panels = [],
@@ -441,6 +443,18 @@ const SessionsSidebar = ({
                     <DropdownTypeaheadTrigger placeholder="Select a workspace…" />
                     <DropdownTypeaheadMenu filterPlaceholder="Find a workspace…" />
                   </DropdownTypeahead>
+                  {workspace && (
+                    <Popup devId="w8f2l5q" triggerDevId="n1d7x4m" panelClassName="new-session-panel edit-workspace-panel">
+                      <EditWorkspaceForm
+                        devId="m4q8w2n"
+                        workspace={workspace}
+                        onUpdated={onWorkspaceUpdated}
+                      />
+                      <Button variant="secondary" size="sm" type="button" title="Edit workspace" aria-label="Edit workspace">
+                        ✎
+                      </Button>
+                    </Popup>
+                  )}
                 </div>
               </DevScope>
               {workspace && (

@@ -6,7 +6,7 @@ const paths = require('../store/paths')
 const Harness = require('../harness/Harness')
 const sessionStore = require('../store/sessionStore')
 const uiSettings = require('../store/uiSettings')
-const { resolveWorkDir, listWorkDirs } = require('../store/workDir')
+const { resolveWorkDir, listWorkDirs, renameWorkDir } = require('../store/workDir')
 const { streamSession } = require('./sse')
 const { readJsonAsync } = require('../store/jsonFile')
 const { listProviders } = require('../agents/driver')
@@ -91,10 +91,36 @@ router.get('/workspaces/:id', async (req, res) => {
   res.json({ workspace })
 })
 
-router.patch('/workspaces/:id', (req, res) => {
+// A new cwd renames the repo folder, then stores the new path. A name-only
+// patch leaves the folder where it is.
+const saveWorkspacePatch = async (id, patch) => {
+  if (patch.cwd === undefined) return Harness.updateWorkspace(id, patch)
+  const current = await Harness.getWorkspace(id)
+  if (!current) throw Object.assign(new Error('workspace not found'), { status: 404 })
+  if (path.resolve(current.cwd) === patch.cwd) return Harness.updateWorkspace(id, patch)
+  const active = await Harness.list(id, { includeArchived: true, active: true, fields: 'list' })
+  if (active.length) {
+    throw Object.assign(new Error('Stop running sessions before renaming this directory'), { status: 409 })
+  }
+  const moved = renameWorkDir(current.cwd, patch.cwd)
+  try {
+    return Harness.updateWorkspace(id, patch)
+  } catch (err) {
+    if (moved) {
+      try { renameWorkDir(patch.cwd, current.cwd) } catch { /* keep the original error */ }
+    }
+    throw err
+  }
+}
+
+router.patch('/workspaces/:id', async (req, res) => {
   const { name, cwd, deleted } = req.body || {}
   const patch = {}
-  if (name !== undefined) patch.name = name
+  if (name !== undefined) {
+    const trimmed = String(name).trim()
+    if (!trimmed) return res.status(400).json({ error: 'name is required' })
+    patch.name = trimmed
+  }
   if (deleted !== undefined) {
     if (typeof deleted !== 'boolean') return res.status(400).json({ error: 'deleted must be a boolean' })
     patch.deleted = deleted
@@ -107,7 +133,7 @@ router.patch('/workspaces/:id', (req, res) => {
     }
   }
   try {
-    res.json({ workspace: Harness.updateWorkspace(req.params.id, patch) })
+    res.json({ workspace: await saveWorkspacePatch(req.params.id, patch) })
   } catch (err) {
     const message = err && err.message ? err.message : String(err)
     const code = err.status || (message.includes('not found') ? 404 : 400)
