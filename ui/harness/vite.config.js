@@ -9,6 +9,7 @@ const port = Number(process.env.PORT || 6001)
 const libRoot = realpathSync(fileURLToPath(new URL('../../component-library', import.meta.url)))
 
 export default defineConfig({
+  clearScreen: false,
   base: '/harness/',
   plugins: [react()],
   resolve: {
