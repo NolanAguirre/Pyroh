@@ -1,4 +1,5 @@
-const { createDriver } = require('../agents/driver')
+const config = require('../config')
+const { createDriver, MEMORY_SERVER_NAME } = require('../agents/driver')
 const registry = require('../registry')
 const workspaceStore = require('../store/workspaceStore')
 const paths = require('../store/paths')
@@ -15,12 +16,23 @@ const addUsage = (total, usage) => {
   return sum
 }
 
+// mcp-memory files memories by the URL path, so each extraction session gets
+// its own route under the source session it reads.
+const memoryServer = (session) => {
+  if (!config.memoryMcpUrl) throw new Error('create_memory needs HARNESS_MEMORY_MCP_URL (the mcp-memory service)')
+  if (!session.sourceSessionId) throw new Error('create_memory needs a session with a sourceSessionId')
+  const route = [session.sourceSessionId, session.id].map(encodeURIComponent).join('/')
+  return { name: MEMORY_SERVER_NAME, url: `${config.memoryMcpUrl}/mcp/${route}` }
+}
+
 // Harness tools for the driver: `list` holds the allowed ids, and each tool's
 // callback is only present when it is allowed. Providers deliver them their own way.
-const driverTools = ({ askUser, harnessTools }) => {
+// `mcpServers` ({ name, url }) holds the MCP-delivered tools.
+const driverTools = ({ askUser, harnessTools, session }) => {
   const list = Array.isArray(harnessTools) ? harnessTools : typeof askUser === 'function' ? ['ask_user'] : []
   const tools = { list }
   if (list.includes('ask_user') && typeof askUser === 'function') tools.askUser = askUser
+  if (list.includes('create_memory')) tools.mcpServers = [memoryServer(session)]
   return tools
 }
 
@@ -78,7 +90,7 @@ const runOneTurn = async ({
     transcriptFile: session.provider === 'cursor' && runId
       ? paths.runTranscriptFile(session.id, runId, writeDir)
       : undefined,
-    tools: textOnly ? {} : driverTools({ askUser, harnessTools }),
+    tools: textOnly ? {} : driverTools({ askUser, harnessTools, session }),
   })
   let driver = makeDriver()
   let usage = null

@@ -49,6 +49,8 @@ const normalizeUsage = (usage) => usage ? {
 
 const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {}) => {
   const options = normalizeCodexOptions(codex)
+  const harnessMcp = Array.isArray(tools.mcpServers) ? tools.mcpServers : []
+  const harnessMcpNames = harnessMcp.map((server) => server.name)
   let transport = null
   let threadId = null
   let threadOptions = {}
@@ -223,6 +225,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
       return { permissions: value === 'Allow for this turn' ? params.permissions : {}, scope: 'turn' }
     }
     if (method === 'mcpServer/elicitation/request') {
+      if (harnessMcpNames.includes(params.serverName)) return { action: 'accept', content: params.mode === 'url' ? null : {} }
       const choice = await ask({ kind: 'approval', allowFreeText: false, question: params.message,
         details: params.mode === 'url' ? { url: params.url } : { schema: params.requestedSchema },
         options: ['Continue', 'Decline', 'Cancel'] }, signal)
@@ -319,7 +322,10 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
       sandbox: options.sandbox,
       approvalPolicy: approvalFor(settings.mode, options.approvalPolicy),
       approvalsReviewer: 'user',
-      config: { web_search: options.webSearch },
+      config: {
+        web_search: options.webSearch,
+        ...(harnessMcp.length ? { mcp_servers: Object.fromEntries(harnessMcp.map((server) => [server.name, { url: server.url }])) } : {}),
+      },
       dynamicTools: typeof tools.askUser === 'function' ? [askTool] : [],
     }
     const response = await transport.request(id ? 'thread/resume' : 'thread/start', id ? { ...params, threadId: id } : params)

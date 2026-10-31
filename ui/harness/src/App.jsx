@@ -52,7 +52,7 @@ const EDITOR_PANEL = 'editor'
 // Extra URL changes when a panel opens or closes.
 const PANEL_OPEN_PARAMS = { git: { file: null } }
 const PANEL_CLOSE_PARAMS = { terminal: { term: null }, git: { file: null } }
-const MODE_ICONS = { agent: '▶', ask: '?', plan: '◇', decompose: '⑂', 'token-waste': '⚙', 'new-chat': '↪' }
+const MODE_ICONS = { agent: '▶', ask: '?', plan: '◇', decompose: '⑂', 'token-waste': '⚙', 'memory-extract': '✎', 'new-chat': '↪' }
 const ACTIVE_JOB = (session) => session.status === 'running' || session.status === 'awaiting_input'
 const JOB_LIST_LIMIT = 20
 const sameSessionRow = (a, b) => a.updatedAt === b.updatedAt

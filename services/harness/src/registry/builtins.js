@@ -4,6 +4,7 @@
 // Mode `kind` picks the code path that runs it:
 //   turn         one agent turn in the session
 //   token-waste  analysis turn in a new sibling session
+//   memory       memory extraction turn in a new sibling session
 //   new-chat     handoff summary, then a new session continues it
 //   decompose    multi-phase decompose pipeline
 //   plugin       plugin buildPrompt/instructions/onComplete
@@ -70,6 +71,21 @@ const MODES = [
     placeholder: 'Optional focus or instructions for token-waste analysis…',
   },
   {
+    id: 'memory-extract',
+    label: 'Memories',
+    hint: 'Reads the transcript and records proposed memories through the memory MCP.',
+    base: 'plan',
+    kind: 'memory',
+    terse: true,
+    promptOptional: true,
+    newSession: true,
+    snapshot: false,
+    tools: ['create_memory'],
+    sessionName: 'Memories',
+    sendLabel: 'Extract memories',
+    placeholder: 'Optional focus for memory extraction…',
+  },
+  {
     id: 'new-chat',
     label: 'New chat',
     hint: 'Summarizes this chat into a handoff prompt and continues it in a new session with the provider and model you choose.',
@@ -91,6 +107,13 @@ const TOOLS = [
     hint: 'Lets the agent ask the operator a question and wait for the answer.',
     modes: ['*'],
     delivery: { cursor: 'custom tool ask_user', codex: 'dynamic tool harness_ask_user', claude: 'AskUserQuestion and approvals', grok: 'permission requests' },
+  },
+  {
+    id: 'create_memory',
+    label: 'Create memory',
+    hint: 'Writes a proposed memory through the mcp-memory service.',
+    modes: ['memory-extract'],
+    delivery: { cursor: 'MCP harness_memory', codex: 'MCP harness_memory', claude: 'MCP harness_memory', grok: 'MCP harness_memory' },
   },
 ]
 

@@ -1,7 +1,7 @@
 {
   "name": "mcp-memory",
   "version": "1.0.0",
-  "description": "",
+  "description": "HTTP MCP server that writes proposed memories to disk",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",

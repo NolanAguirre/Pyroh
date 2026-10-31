@@ -66,6 +66,8 @@ const config = {
   categorizerUrl: (process.env.HARNESS_CATEGORIZER_URL || '').trim().replace(/\/+$/, '') || null,
   // Unset disables analytics (tool-stats and run notifications).
   analyticsUrl: (process.env.HARNESS_ANALYTICS_URL || '').trim().replace(/\/+$/, '') || null,
+  // mcp-memory base URL. Unset disables the create_memory tool.
+  memoryMcpUrl: (process.env.HARNESS_MEMORY_MCP_URL || '').trim().replace(/\/+$/, '') || null,
   // Base URL the categorizer uses to call back into this API.
   publicUrl: (process.env.HARNESS_PUBLIC_URL || '').trim().replace(/\/+$/, '') || `http://localhost:${port}`,
 }

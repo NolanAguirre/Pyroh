@@ -6,10 +6,12 @@
 // Driver shape:
 //   create({ model, cwd, mode, tools }) -> Promise<void>
 //     Start a fresh agent. `tools` is the SDK built-in tool list (`[]` = text-only).
-//     Harness tools go to createDriver({ tools: { list, askUser? } }): `list` is
-//     the registry tool ids allowed this turn, and a tool's callback is only set
-//     when it is allowed. Drivers deliver each tool through their own mechanism
-//     (custom tool, dynamic tool, permission flow); the registry does the gating.
+//     Harness tools go to createDriver({ tools: { list, askUser?, mcpServers? } }):
+//     `list` is the registry tool ids allowed this turn, and a tool's callback is
+//     only set when it is allowed. Drivers deliver each tool through their own
+//     mechanism (custom tool, dynamic tool, permission flow); the registry does
+//     the gating. `mcpServers` is [{ name, url }] of streamable HTTP MCP servers
+//     each driver converts to its provider's config and auto-approves.
 //   resume(providerAgentId, { model, cwd, mode, tools }) -> Promise<void>
 //     Rehydrate an existing agent by its provider-specific id and restore settings.
 //   send(prompt, { mode, onEvent, outputSchema?, terse? }) -> Promise<{ cancel, wait }>
@@ -50,6 +52,8 @@ const providers = {
 
 const listProviders = () => Object.keys(providers)
 
+const MEMORY_SERVER_NAME = 'harness_memory'
+
 const createDriver = ({ provider, ...opts }) => {
   const loader = providers[provider]
   if (!loader) throw new Error(`unknown provider: ${provider}`)
@@ -57,4 +61,4 @@ const createDriver = ({ provider, ...opts }) => {
   return mod.createDriver(opts)
 }
 
-module.exports = { createDriver, listProviders }
+module.exports = { createDriver, listProviders, MEMORY_SERVER_NAME }

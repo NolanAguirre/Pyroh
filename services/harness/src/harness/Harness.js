@@ -10,6 +10,7 @@ const proc = require('./process')
 const { listProviders } = require('../agents/driver')
 const sessionLock = require('../store/sessionLock')
 const tokenWaste = require('../modes/tokenWaste')
+const memoryExtract = require('../modes/memoryExtract')
 const newChat = require('../modes/newChat')
 const registry = require('../registry')
 const { requestChatName } = require('../categorizer')
@@ -111,17 +112,28 @@ const createSession = ({ workspaceId, provider, model, codex, grok, claude }) =>
   sessionStore.createSession({ workspaceId, provider, model, codex, grok, claude }, config.writeDir)
 
 
-const createTokenWasteSession = (sourceSessionId, { prompt: focus } = {}) => {
-  const entry = registry.builtinMode(tokenWaste.MODE)
+// A new session next to the source that reads the source's transcripts.
+const createSiblingSession = (modeId, buildPrompt, sourceSessionId, focus) => {
+  const entry = registry.builtinMode(modeId)
   const source = sessionStore.loadSession(sourceSessionId, config.writeDir)
   if (!source) throw Object.assign(new Error(`session not found: ${sourceSessionId}`), { status: 404 })
-  const prompt = tokenWaste.buildPrompt(sourceSessionId, focus, config.writeDir)
+  const prompt = buildPrompt(sourceSessionId, focus, config.writeDir)
   const workspaceId = source.workspaceId || workspaceStore.findWorkspaceByCwd(source.cwd, config.writeDir)?.id
   const created = createSession({ workspaceId, provider: source.provider, model: source.model, codex: source.codex, grok: source.grok, claude: source.claude })
   const session = sessionStore.updateSession(created.id, {
     mode: entry.id, sourceSessionId, name: entry.sessionName,
   }, config.writeDir)
   return { session, prompt }
+}
+
+const createTokenWasteSession = (sourceSessionId, { prompt: focus } = {}) =>
+  createSiblingSession(tokenWaste.MODE, tokenWaste.buildPrompt, sourceSessionId, focus)
+
+const createMemorySession = (sourceSessionId, { prompt: focus } = {}) => {
+  if (!config.memoryMcpUrl) {
+    throw Object.assign(new Error('memory extraction needs HARNESS_MEMORY_MCP_URL (the mcp-memory service)'), { status: 400 })
+  }
+  return createSiblingSession(memoryExtract.MODE, memoryExtract.buildPrompt, sourceSessionId, focus)
 }
 
 const continueInNewChat = (sourceSessionId, prompt, target) => {
@@ -185,6 +197,10 @@ const run = async (sessionId, { prompt, mode = 'agent', provider, model } = {}) 
     case 'token-waste': {
       const analysis = createTokenWasteSession(sessionId, { prompt })
       return spawnRun(analysis.session.id, 'run', { mode, prompt: analysis.prompt })
+    }
+    case 'memory': {
+      const extraction = createMemorySession(sessionId, { prompt })
+      return spawnRun(extraction.session.id, 'run', { mode, prompt: extraction.prompt })
     }
     case 'new-chat': {
       const handoff = resolveNewChatTarget(source, { provider, model })
@@ -279,6 +295,7 @@ module.exports = {
   updateWorkspace,
   createSession,
   createTokenWasteSession,
+  createMemorySession,
   resolveNewChatTarget,
   continueInNewChat,
   plan,

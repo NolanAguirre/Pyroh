@@ -7,11 +7,18 @@ const { resolveWorkDir } = require('../store/workDir')
 const { snapshotIfGitRepo } = require('../store/gitSnapshot')
 const workspaceStore = require('../store/workspaceStore')
 const tokenWaste = require('../modes/tokenWaste')
+const memoryExtract = require('../modes/memoryExtract')
 const newChat = require('../modes/newChat')
 const registry = require('../registry')
 
 // Kinds this command runs in the foreground; others go through Harness.run.
-const FOREGROUND_KINDS = ['turn', 'token-waste', 'new-chat']
+const FOREGROUND_KINDS = ['turn', 'token-waste', 'memory', 'new-chat']
+
+// Modes that run in a new sibling session built from the source session.
+const SIBLING_MODES = {
+  [tokenWaste.MODE]: (sessionId, flags) => Harness.createTokenWasteSession(sessionId, { prompt: flags.prompt }),
+  [memoryExtract.MODE]: (sessionId, flags) => Harness.createMemorySession(sessionId, { prompt: flags.prompt }),
+}
 
 const DEFAULT_RESUME_PROMPT = 'Continue where you left off'
 
@@ -26,10 +33,11 @@ Commands:
                                                           Create a session in a workspace
   plan <sid> --prompt <text> [--detach]                   Run a plan-mode turn
   ask <sid> --prompt <text> [--detach]                    Ask a question without changing code
-  run <sid> --prompt <text> [--mode agent|plan|ask|token-waste|new-chat|<plugin-id>] [--detach]
-                                                          Run a turn (prompt optional for token-waste/new-chat)
+  run <sid> --prompt <text> [--mode agent|plan|ask|token-waste|memory-extract|new-chat|<plugin-id>] [--detach]
+                                                          Run a turn (prompt optional for token-waste/memory-extract/new-chat)
                                                           Plugin modes always run detached
   token-waste <sid> [--prompt <focus>] [--detach]          Spawn a new session to analyze token savings
+  memory <sid> [--prompt <focus>] [--detach]               Spawn a new session to extract memories via mcp-memory
   runs [--mode mode]                                      List indexed runs, metrics, and transcript paths
   token-waste-runs                                        Alias for runs --mode token-waste
   new-chat <sid> [--prompt <focus>] [--provider p] [--model m] [--detach]
@@ -127,11 +135,17 @@ const handleTurn = async (action, sessionId, flags) => {
       return fail(`${action}: ${err && err.message}`)
     }
   }
-  if (flags.mode === tokenWaste.MODE && !flags['run-id']) {
-    const analysis = Harness.createTokenWasteSession(sessionId, { prompt: flags.prompt })
-    sessionId = analysis.session.id
-    flags = { ...flags, prompt: analysis.prompt }
-    print({ sessionId, sourceSessionId: analysis.session.sourceSessionId })
+  const createSibling = SIBLING_MODES[flags.mode]
+  if (createSibling && !flags['run-id']) {
+    let sibling
+    try {
+      sibling = createSibling(sessionId, flags)
+    } catch (err) {
+      return fail(`${action}: ${err && err.message}`)
+    }
+    sessionId = sibling.session.id
+    flags = { ...flags, prompt: sibling.prompt }
+    print({ sessionId, sourceSessionId: sibling.session.sourceSessionId })
   }
   const lock = require('../store/sessionLock').acquire(sessionId, config.writeDir)
   sessionStore.recoverSession(sessionId, config.writeDir, { excludeRunId: flags['run-id'] })
@@ -352,6 +366,8 @@ const main = async (argv) => {
       return handleTurn('run', positionals[0], { ...flags, mode: 'ask' })
     case 'token-waste':
       return handleTurn('run', positionals[0], { ...flags, mode: tokenWaste.MODE })
+    case 'memory':
+      return handleTurn('run', positionals[0], { ...flags, mode: memoryExtract.MODE })
     case 'token-waste-runs':
       return print(require('../store/runIndexStore').listRuns(config.writeDir, { mode: tokenWaste.MODE }))
     case 'runs':

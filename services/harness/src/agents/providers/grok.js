@@ -5,6 +5,7 @@ const { normalizeGrokOptions } = require('./grokOptions')
 const { composePrompt } = require('../modes')
 
 const CANCELLED = { outcome: { outcome: 'cancelled' } }
+const HARNESS_MCP_TOOLS = ['create_memory']
 
 // Grok's input count includes cached tokens and its output count includes reasoning.
 const normalizeUsage = (usage) => usage ? {
@@ -35,6 +36,15 @@ const toolOutput = (update) => {
 
 const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
   const options = normalizeGrokOptions(grok)
+  const harnessMcp = Array.isArray(tools.mcpServers) ? tools.mcpServers : []
+  const mcpServers = harnessMcp.map((server) => ({ type: 'http', name: server.name, url: server.url, headers: [] }))
+  // ACP permission requests do not name the MCP server reliably, so match the
+  // server name or a harness MCP tool name anywhere in the request.
+  const isHarnessMcpCall = (call) => {
+    if (!harnessMcp.length) return false
+    const text = JSON.stringify([call.title, call.kind, call.rawInput && call.rawInput.name, call._meta])
+    return [...harnessMcp.map((server) => server.name), ...HARNESS_MCP_TOOLS].some((name) => text.includes(name))
+  }
   let client = null
   let sessionId = null
   let currentMode = null
@@ -61,6 +71,11 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
     if (!active || active.done || params.sessionId !== sessionId) return CANCELLED
     const choices = params.options || []
     const selected = (choice) => ({ outcome: { outcome: 'selected', optionId: choice.optionId } })
+    if (isHarnessMcpCall(params.toolCall || {})) {
+      const allow = choices.find((choice) => choice.kind === 'allow_once') ||
+        choices.find((choice) => String(choice.kind || '').startsWith('allow'))
+      if (allow) return selected(allow)
+    }
     if (active.mode === 'ask' || typeof tools.askUser !== 'function') {
       const reject = choices.find((choice) => String(choice.kind || '').startsWith('reject'))
       return reject ? selected(reject) : CANCELLED
@@ -153,8 +168,8 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
       throw new Error(`${model} does not support reasoning effort ${options.reasoningEffort}`)
     }
     const response = id
-      ? await client.resumeSession(id, { cwd: settings.cwd })
-      : await client.newSession({ cwd: settings.cwd })
+      ? await client.resumeSession(id, { cwd: settings.cwd, mcpServers })
+      : await client.newSession({ cwd: settings.cwd, mcpServers })
     sessionId = id || response.sessionId
     // Resumed sessions keep their stored model and effort; spawn flags only seed new sessions.
     if (settings.model && response?.models?.currentModelId !== settings.model) {

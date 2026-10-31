@@ -82,32 +82,32 @@ const createGrokClient = ({ bin, model, reasoningEffort, env = process.env, onPe
     return { currentModelId: state.currentModelId || null, availableModels: state.availableModels || [] }
   }
 
-  const newSession = async ({ cwd }) => {
+  const newSession = async ({ cwd, mcpServers = [] }) => {
     await initialize()
-    return withAuth(() => transport.request('session/new', { cwd, mcpServers: [] }))
+    return withAuth(() => transport.request('session/new', { cwd, mcpServers }))
   }
 
-  const loadSession = async (sessionId, { cwd }) => {
+  const loadSession = async (sessionId, { cwd, mcpServers = [] }) => {
     loading.add(sessionId)
     try {
-      return await withAuth(() => transport.request('session/load', { sessionId, cwd, mcpServers: [] }))
+      return await withAuth(() => transport.request('session/load', { sessionId, cwd, mcpServers }))
     } finally {
       loading.delete(sessionId)
     }
   }
 
-  const resumeSession = async (sessionId, { cwd }) => {
+  const resumeSession = async (sessionId, { cwd, mcpServers = [] }) => {
     await initialize()
     const caps = init.agentCapabilities || {}
     if (!caps.sessionCapabilities?.resume) {
       if (!caps.loadSession) throw new Error('Grok agent cannot resume sessions')
-      return loadSession(sessionId, { cwd })
+      return loadSession(sessionId, { cwd, mcpServers })
     }
     try {
-      return await withAuth(() => transport.request('session/resume', { sessionId, cwd, mcpServers: [] }))
+      return await withAuth(() => transport.request('session/resume', { sessionId, cwd, mcpServers }))
     } catch (err) {
       if (err.code !== METHOD_NOT_FOUND || !caps.loadSession) throw err
-      return loadSession(sessionId, { cwd })
+      return loadSession(sessionId, { cwd, mcpServers })
     }
   }
 

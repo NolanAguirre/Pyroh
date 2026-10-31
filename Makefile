@@ -4,6 +4,7 @@
 	services.harness.install services.harness.start services.harness.cli services.harness.models services.harness.models.refresh services.harness.tool-stats services.harness.index.rebuild \
 	services.categorizer.install services.categorizer.install.js services.categorizer.install.python services.categorizer.install.model services.categorizer.start services.categorizer.consumer \
 	services.analytics.install services.analytics.build services.analytics.start services.analytics.sync services.analytics.backfill \
+	services.mcp-memory.install services.mcp-memory.build services.mcp-memory.start services.mcp-memory.help \
 	ui.harness.install ui.harness.dev ui.harness.build ui.harness.lint ui.harness.preview \
 	services.nginx.start services.nginx.stop services.nginx.reload services.nginx.status services.nginx.test services.nginx.render
 
@@ -63,6 +64,18 @@ services.analytics.sync: ## Rescan sessions and compute stale metrics (SESSION=<
 
 services.analytics.backfill: ## Recompute stale results for a metric (METRIC=<name>, FORCE=1 for all)
 	$(MAKE) -C services/analytics backfill METRIC="$(METRIC)" FORCE="$(FORCE)"
+
+services.mcp-memory.install: ## mcp-memory: Install dependencies
+	$(MAKE) -C services/mcp-memory install
+
+services.mcp-memory.build: ## mcp-memory: Run the configured build
+	$(MAKE) -C services/mcp-memory build
+
+services.mcp-memory.start: ## mcp-memory: Start the memory MCP server in the background
+	$(MAKE) -C services/mcp-memory start
+
+services.mcp-memory.help: ## mcp-memory: Show service help
+	$(MAKE) -C services/mcp-memory help
 
 ui.harness.install: ## Install harness UI deps
 	$(MAKE) -C ui/harness install

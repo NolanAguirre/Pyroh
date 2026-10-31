@@ -117,7 +117,12 @@ const normalizeResult = (result) => {
   }
 }
 
+const mcpOptions = (servers) => Array.isArray(servers) && servers.length
+  ? { mcpServers: Object.fromEntries(servers.map((server) => [server.name, { type: 'http', url: server.url }])) }
+  : {}
+
 const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, transcriptFile, sdkStoreDir } = {}) => {
+  const harnessMcp = mcpOptions(tools.mcpServers)
   let agent = null
   let sdk = null
   let selectedModel = null
@@ -222,6 +227,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, transcriptFile
       local,
       agents: subagents(),
       ...modeOptions(mode),
+      ...harnessMcp,
     }
     if (name) opts.name = name
     if (apiKey) opts.apiKey = apiKey
@@ -235,7 +241,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, transcriptFile
     selectedModel = resolveModel(model)
     const { Agent } = ensureSdk()
     const includeCustom = !(Array.isArray(tools) && tools.length === 0)
-    const opts = { local: { ...localOptions({ includeCustom }), ...(cwd ? { cwd } : {}) }, mode: sdkMode(mode), agents: subagents(), ...modeOptions(mode) }
+    const opts = { local: { ...localOptions({ includeCustom }), ...(cwd ? { cwd } : {}) }, mode: sdkMode(mode), agents: subagents(), ...modeOptions(mode), ...harnessMcp }
     if (tools !== undefined) opts.tools = tools
     if (apiKey) opts.apiKey = apiKey
     agent = await Agent.resume(providerAgentId, opts)

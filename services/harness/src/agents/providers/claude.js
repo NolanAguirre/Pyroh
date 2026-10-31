@@ -99,6 +99,9 @@ const grantedOptions = (granted) => {
 
 const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions } = {}) => {
   const options = normalizeClaudeOptions(claude)
+  const harnessMcp = Array.isArray(tools.mcpServers) ? tools.mcpServers : []
+  const harnessMcpPrefixes = harnessMcp.map((server) => `mcp__${server.name}__`)
+  const isHarnessMcpTool = (toolName) => harnessMcpPrefixes.some((prefix) => toolName.startsWith(prefix))
   let granted = Array.isArray(permissions) ? permissions : []
   let sessionId = null
   let resumable = false
@@ -154,6 +157,7 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     const { signal } = context
     const deny = (message) => ({ behavior: 'deny', message })
     if (!active || active.done) return { behavior: 'deny', message: 'No active harness turn', interrupt: true }
+    if (isHarnessMcpTool(toolName)) return { behavior: 'allow', updatedInput: toolInput }
     if (toolName === 'ExitPlanMode' && active.mode === 'plan') {
       active.planToolUseId = context.toolUseID
       active.result = typeof toolInput.plan === 'string' ? toolInput.plan : JSON.stringify(toolInput)
@@ -358,9 +362,17 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
       : configuredMode === 'default' ? grants.mode || 'default' : configuredMode
     // Saved allow rules could auto-approve writes, so ask mode skips them.
     const { allowedTools, ...grantsWithoutAllow } = grants.options
-    const grantOptions = mode === 'ask'
+    const baseGrants = mode === 'ask'
       ? { ...grantsWithoutAllow, disallowedTools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] }
       : grants.options
+    const harnessAllowed = harnessMcp.map((server) => `mcp__${server.name}`)
+    const grantOptions = harnessMcp.length
+      ? {
+        ...baseGrants,
+        allowedTools: [...new Set([...(baseGrants.allowedTools || []), ...harnessAllowed])],
+        mcpServers: Object.fromEntries(harnessMcp.map((server) => [server.name, { type: 'http', url: server.url }])),
+      }
+      : baseGrants
     input = createInput()
     // Claude Code has no ask mode. Ask uses the default permission mode, blocks
     // edit tools, and denies every approval request, plus an instruction.
