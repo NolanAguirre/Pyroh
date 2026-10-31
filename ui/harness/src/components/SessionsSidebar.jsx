@@ -433,28 +433,37 @@ const SessionsSidebar = ({
             <>
               <DevScope id="hr9f0l3">
                 <div className="sidebar__workspace-selector">
-                  <DropdownTypeahead
-                    key={workspace?.id || 'none'}
-                    defaultValue={workspace?.id || ''}
-                    options={workspaceOptions}
-                    change={onSelectWorkspace}
-                    filter
-                  >
-                    <DropdownTypeaheadTrigger placeholder="Select a workspace…" />
-                    <DropdownTypeaheadMenu filterPlaceholder="Find a workspace…" />
-                  </DropdownTypeahead>
-                  {workspace && (
-                    <Popup devId="w8f2l5q" triggerDevId="n1d7x4m" panelClassName="new-session-panel edit-workspace-panel">
-                      <EditWorkspaceForm
-                        devId="m4q8w2n"
-                        workspace={workspace}
-                        onUpdated={onWorkspaceUpdated}
-                      />
-                      <Button variant="secondary" size="sm" type="button" title="Edit workspace" aria-label="Edit workspace">
-                        ✎
-                      </Button>
-                    </Popup>
-                  )}
+                  <div className="sidebar__workspace-picker">
+                    <DropdownTypeahead
+                      key={workspace?.id || 'none'}
+                      defaultValue={workspace?.id || ''}
+                      options={workspaceOptions}
+                      change={onSelectWorkspace}
+                      filter
+                    >
+                      <DropdownTypeaheadTrigger placeholder="Select a workspace…" />
+                      <DropdownTypeaheadMenu filterPlaceholder="Find a workspace…" />
+                    </DropdownTypeahead>
+                  </div>
+                  <Popup devId="w8f2l5q" triggerDevId="n1d7x4m" panelClassName="new-session-panel edit-workspace-panel">
+                    <EditWorkspaceForm
+                      devId="m4q8w2n"
+                      workspace={workspace}
+                      onUpdated={onWorkspaceUpdated}
+                    />
+                    <button
+                      type="button"
+                      className="sidebar__workspace-edit"
+                      title="Edit workspace"
+                      aria-label="Edit workspace"
+                      disabled={!workspace}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M12 20h9" />
+                        <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                      </svg>
+                    </button>
+                  </Popup>
                 </div>
               </DevScope>
               {workspace && (

@@ -240,25 +240,44 @@
 
 .sidebar__workspace-selector {
   width: 100%;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
 }
 
-.sidebar__workspace-selector .form-dropdown {
-  flex: 1;
+.sidebar__workspace-picker {
   min-width: 0;
 }
 
-.sidebar__workspace-selector .button {
+.sidebar__workspace-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 28px;
   height: 28px;
   padding: 0;
-  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elev-2);
+  color: #c4783a;
+  cursor: pointer;
 }
 
-.sidebar__workspace-selector .button__label {
-  display: inline-flex;
+.sidebar__workspace-edit svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.sidebar__workspace-edit:hover {
+  color: var(--text);
+  background: var(--bg-elev);
+}
+
+.sidebar__workspace-edit:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .sidebar__cwd {
