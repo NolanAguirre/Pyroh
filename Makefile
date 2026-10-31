@@ -71,7 +71,7 @@ services.mcp-memory.install: ## mcp-memory: Install dependencies
 services.mcp-memory.build: ## mcp-memory: Run the configured build
 	$(MAKE) -C services/mcp-memory build
 
-services.mcp-memory.start: ## mcp-memory: Start the memory MCP server in the background
+services.mcp-memory.start: ## mcp-memory: Start the memory MCP server
 	$(MAKE) -C services/mcp-memory start
 
 services.mcp-memory.help: ## mcp-memory: Show service help
@@ -159,6 +159,7 @@ install: ## Install all services and UIs, including python venvs
 	$(MAKE) services.git.install
 	$(MAKE) services.categorizer.install
 	$(MAKE) services.analytics.install
+	$(MAKE) services.mcp-memory.install
 	$(MAKE) ui.harness.install
 
 install.js: ## Install only JS packages across all services and UIs
@@ -168,6 +169,7 @@ install.js: ## Install only JS packages across all services and UIs
 	$(MAKE) services.git.install
 	$(MAKE) services.categorizer.install.js
 	$(MAKE) services.analytics.install
+	$(MAKE) services.mcp-memory.install
 	$(MAKE) ui.harness.install
 
 install.py: ## Install python venvs for the GPU services
@@ -187,6 +189,7 @@ start: ## Start the harness stack and stop its child process groups on exit
 	setsid $(MAKE) -C services/categorizer start & pids="$$pids $$!"; \
 	setsid $(MAKE) -C services/categorizer consumer & pids="$$pids $$!"; \
 	setsid $(MAKE) -C services/analytics start & pids="$$pids $$!"; \
+	setsid $(MAKE) -C services/mcp-memory start & pids="$$pids $$!"; \
 	setsid $(MAKE) -C ui/harness dev & pids="$$pids $$!"; \
 	wait
 
