@@ -5,6 +5,7 @@
 	services.categorizer.install services.categorizer.install.js services.categorizer.install.python services.categorizer.install.model services.categorizer.start services.categorizer.consumer \
 	services.analytics.install services.analytics.build services.analytics.start services.analytics.sync services.analytics.backfill \
 	services.mcp-memory.install services.mcp-memory.build services.mcp-memory.start services.mcp-memory.help \
+	services.memory.install services.memory.build services.memory.start services.memory.help \
 	ui.harness.install ui.harness.dev ui.harness.build ui.harness.lint ui.harness.preview \
 	services.nginx.start services.nginx.stop services.nginx.reload services.nginx.status services.nginx.test services.nginx.render
 
@@ -76,6 +77,18 @@ services.mcp-memory.start: ## mcp-memory: Start the memory MCP server
 
 services.mcp-memory.help: ## mcp-memory: Show service help
 	$(MAKE) -C services/mcp-memory help
+
+services.memory.install: ## memory: Install dependencies
+	$(MAKE) -C services/memory install
+
+services.memory.build: ## memory: Run the configured build
+	$(MAKE) -C services/memory build
+
+services.memory.start: ## memory: Start the foreground memory CRUD API
+	$(MAKE) -C services/memory start
+
+services.memory.help: ## memory: Show service help
+	$(MAKE) -C services/memory help
 
 ui.harness.install: ## Install harness UI deps
 	$(MAKE) -C ui/harness install
@@ -160,6 +173,7 @@ install: ## Install all services and UIs, including python venvs
 	$(MAKE) services.categorizer.install
 	$(MAKE) services.analytics.install
 	$(MAKE) services.mcp-memory.install
+	$(MAKE) services.memory.install
 	$(MAKE) ui.harness.install
 
 install.js: ## Install only JS packages across all services and UIs
@@ -170,6 +184,7 @@ install.js: ## Install only JS packages across all services and UIs
 	$(MAKE) services.categorizer.install.js
 	$(MAKE) services.analytics.install
 	$(MAKE) services.mcp-memory.install
+	$(MAKE) services.memory.install
 	$(MAKE) ui.harness.install
 
 install.py: ## Install python venvs for the GPU services
@@ -190,6 +205,7 @@ start: ## Start the harness stack and stop its child process groups on exit
 	setsid $(MAKE) -C services/categorizer consumer & pids="$$pids $$!"; \
 	setsid $(MAKE) -C services/analytics start & pids="$$pids $$!"; \
 	setsid $(MAKE) -C services/mcp-memory start & pids="$$pids $$!"; \
+	setsid $(MAKE) -C services/memory start & pids="$$pids $$!"; \
 	setsid $(MAKE) -C ui/harness dev & pids="$$pids $$!"; \
 	wait
 

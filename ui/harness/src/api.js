@@ -250,6 +250,17 @@ const api = {
     })
     return fetch(at(null, `/api/analytics/tool-calls?${query}`), { signal }).then(json)
   },
+  listMemories: (params = {}, { signal } = {}) => {
+    const query = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') query.set(key, String(value))
+    })
+    return fetch(at(null, `/api/memory/memories?${query}`), { signal }).then(json)
+  },
+  getMemory: (id) => fetch(at(null, `/api/memory/memories/${encodeURIComponent(id)}`)).then(json),
+  createMemory: (memory) => post(at(null, '/api/memory/memories'), memory),
+  updateMemory: (id, patch) => send('PATCH', at(null, `/api/memory/memories/${encodeURIComponent(id)}`), patch).then(json),
+  deleteMemory: (id) => fetch(at(null, `/api/memory/memories/${encodeURIComponent(id)}`), { method: 'DELETE' }).then(empty),
   getCodeStats: (workspace, { signal } = {}) => {
     const target = fsTarget(workspace)
     return fetch(at(target.machine, `/api/analytics/code-stats?${target.query({})}`), { signal }).then(json)

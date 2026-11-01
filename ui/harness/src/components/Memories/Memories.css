@@ -1,0 +1,166 @@
+.memories {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.memories__topbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 6px 12px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.memories__title {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.memories__filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.memories__body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(240px, 360px) 1fr;
+}
+
+.memories__list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.memories__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.memories__item:hover {
+  background: var(--bg-elev);
+}
+
+.memories__item--selected {
+  background: var(--bg-elev);
+  outline: 1px solid var(--border);
+}
+
+.memories__item-title {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memories__item-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.memories__session {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memories__session:hover {
+  text-decoration: underline;
+}
+
+.memories__detail {
+  padding: 16px;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.memories__detail-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.memories__detail-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.memories__title-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.memories__actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.memories__meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.memories__meta dt {
+  color: var(--text-dim);
+}
+
+.memories__meta dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.memories__label {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.memories__text {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: 13px;
+}
+
+.memories__textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.memories__error {
+  color: var(--danger, #e5534b);
+  font-size: 12px;
+}

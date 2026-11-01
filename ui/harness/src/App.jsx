@@ -27,6 +27,7 @@ import GitView from './components/Git/GitView'
 import AnalyticsView from './components/Analytics/AnalyticsView'
 import CodeStatsView from './components/CodeStats/CodeStatsView'
 import RegistryView from './components/Registry/RegistryView'
+import MemoriesView from './components/Memories/MemoriesView'
 import NewSessionForm from './components/NewSessionForm'
 import NewWorkspaceForm from './components/NewWorkspaceForm'
 import api from './api'
@@ -560,6 +561,16 @@ const App = () => {
         onCreated={onCreated}
         onClose={() => closePanel('code-stats')}
         onOpenFile={openEditor}
+      />
+    ),
+    memories: () => (
+      <MemoriesView
+        devId="m5n8r3t"
+        onBack={() => closePanel('memories')}
+        onOpenSession={(sessionId) => api.getSession(sessionId).then(({ session }) => {
+          go(session.workspaceId, session.id, { view: null })
+          showChat()
+        })}
       />
     ),
     registry: () => (
