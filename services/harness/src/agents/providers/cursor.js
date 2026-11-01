@@ -1,6 +1,4 @@
 const crypto = require('crypto')
-const fs = require('fs')
-const path = require('path')
 const config = require('../../config')
 const { errorMessage } = require('../../store/formatError')
 const { composePrompt } = require('../modes')
@@ -52,7 +50,8 @@ const normalizeUsage = (usage) => usage ? {
   totalTokens: (usage.inputTokens || 0) + (usage.outputTokens || 0),
 } : null
 
-// Map a single SDK stream message to zero or more normalized events.
+// Map a single SDK stream message to zero or more normalized events. Messages
+// with no normalized form are kept whole as provider_message events.
 const mapMessage = (message, emit, runId, segment = { kind: null, seq: 0 }) => {
   if (!message || typeof message !== 'object') return
   const type = message.type
@@ -68,11 +67,14 @@ const mapMessage = (message, emit, runId, segment = { kind: null, seq: 0 }) => {
         segment.kind = null
         emit({
           type: 'tool_call',
+          toolUseId: block.id,
           name: block.name || 'tool',
           input: block.input || block.arguments || null,
           status: 'started',
           runId,
         })
+      } else if (!block.type || !['text', 'thinking', 'reasoning'].includes(block.type)) {
+        emit({ type: 'provider_message', message: block, runId })
       }
     }
     return
@@ -84,14 +86,18 @@ const mapMessage = (message, emit, runId, segment = { kind: null, seq: 0 }) => {
   }
 
   if (type === 'thinking') {
-    if (message.text) emit({ type: 'thinking', itemId: segmentId(segment, runId, 'thinking'), delta: true, text: message.text, runId })
+    if (message.text) {
+      emit({ type: 'thinking', itemId: segmentId(segment, runId, 'thinking'), delta: true, text: message.text,
+        thinkingDurationMs: message.thinking_duration_ms, runId })
+    }
     return
   }
 
   if (type === 'tool_call') {
     segment.kind = null
     emit({ type: 'tool_call', itemId: message.call_id, name: message.name,
-      input: message.args, output: message.result == null ? undefined : JSON.stringify(message.result), status: message.status, runId })
+      input: message.args, output: message.result == null ? undefined : JSON.stringify(message.result), status: message.status,
+      truncated: message.truncated, runId })
     return
   }
 
@@ -103,6 +109,7 @@ const mapMessage = (message, emit, runId, segment = { kind: null, seq: 0 }) => {
   if (message.usage) {
     emit({ type: 'usage', usage: normalizeUsage(message.usage), runId })
   }
+  emit({ type: 'provider_message', message, runId })
 }
 
 const normalizeResult = (result) => {
@@ -114,7 +121,11 @@ const normalizeResult = (result) => {
     usage: normalizeUsage(result?.usage),
     durationMs: result?.durationMs ?? null,
     error,
+    ...(result?.errorStack ? { errorStack: result.errorStack } : {}),
     id: result?.id ?? null,
+    requestId: result?.requestId ?? null,
+    model: result?.model ?? null,
+    git: result?.git ?? null,
   }
 }
 
