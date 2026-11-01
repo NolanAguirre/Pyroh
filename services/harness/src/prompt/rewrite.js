@@ -1,4 +1,5 @@
 const { execFile } = require('child_process')
+const { TRIGGERS } = require('./triggers')
 
 const findFiles = (needle, cwd) => new Promise((resolve) => {
   if (!cwd) return resolve([])
@@ -15,10 +16,12 @@ const devIdPaths = async ([match, id], { cwd }) => {
   return files.length ? `${match} ${files.join(' ')}` : match
 }
 
+const triggerPattern = (id) => TRIGGERS.find((trigger) => trigger.id === id).patterns[0]
+
 // Applied in order. Patterns need the `g` flag; rewrite(match, context)
 // resolves to the replacement text for that match.
 const rules = [
-  { name: 'devId', pattern: /##([a-z0-9]{7})\b(?!\s+\/)/g, rewrite: devIdPaths },
+  { name: 'devId', pattern: triggerPattern('devIdPaths'), rewrite: devIdPaths },
 ]
 
 const replaceAsync = async (text, pattern, rewrite, context) => {

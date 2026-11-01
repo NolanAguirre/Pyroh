@@ -1,12 +1,12 @@
 const config = require('../config')
-const { createDriver, MEMORY_SERVER_NAME, DEVID_SERVER_NAME } = require('../agents/driver')
+const { createDriver, MEMORY_SERVER_NAME } = require('../agents/driver')
 const registry = require('../registry')
-const prompts = require('../prompts')
 const workspaceStore = require('../store/workspaceStore')
 const paths = require('../store/paths')
 const sessionStore = require('../store/sessionStore')
 const { rewritePrompt } = require('../prompt/rewrite')
-const { asksForDevIds } = require('../prompt/devIds')
+const { findTriggers } = require('../prompt/triggers')
+const { firedActions, triggerMcpServers, prependNotes } = require('../prompt/actions')
 
 const addUsage = (total, usage) => {
   if (!usage) return total
@@ -27,22 +27,16 @@ const memoryServer = (session) => {
   return { name: MEMORY_SERVER_NAME, url: `${config.memoryMcpUrl}/mcp/${route}` }
 }
 
-// mcpdevid records who each id was issued to from the URL path.
-const devIdServer = (session) => {
-  const route = [session.workspaceId, session.id].map(encodeURIComponent).join('/')
-  return { name: DEVID_SERVER_NAME, url: `${config.devIdMcpUrl}/mcp/${route}` }
-}
-
 // Harness tools for the driver: `list` holds the allowed ids, and each tool's
 // callback is only present when it is allowed. Providers deliver them their own way.
-// `mcpServers` ({ name, url }) holds the MCP-delivered tools.
-const driverTools = ({ askUser, harnessTools, session, devIds = false }) => {
+// `mcpServers` ({ name, url }) holds the MCP-delivered tools; `extraMcpServers`
+// come from prompt trigger actions.
+const driverTools = ({ askUser, harnessTools, session, extraMcpServers = [] }) => {
   const list = Array.isArray(harnessTools) ? harnessTools : typeof askUser === 'function' ? ['ask_user'] : []
   const tools = { list }
-  const mcpServers = []
+  const mcpServers = [...extraMcpServers]
   if (list.includes('ask_user') && typeof askUser === 'function') tools.askUser = askUser
   if (list.includes('create_memory')) mcpServers.push(memoryServer(session))
-  if (devIds) mcpServers.push(devIdServer(session))
   if (mcpServers.length) tools.mcpServers = mcpServers
   return tools
 }
@@ -90,8 +84,9 @@ const runOneTurn = async ({
     : undefined
   const textOnly = Array.isArray(tools) && tools.length === 0
   // The MCP list is fixed when the driver is created, so steers on this turn
-  // cannot attach mcpdevid.
-  const devIds = !textOnly && Boolean(config.devIdMcpUrl) && Boolean(session.workspaceId) && asksForDevIds(prompt)
+  // cannot fire trigger actions.
+  const fired = textOnly ? [] : firedActions(findTriggers(prompt))
+  const extraMcpServers = triggerMcpServers(fired, session)
   const makeDriver = () => createDriver({
     provider: session.provider,
     writeDir,
@@ -101,7 +96,7 @@ const runOneTurn = async ({
     claude: session.claude,
     permissions: session.claudePermissions,
     onPermissions: (claudePermissions) => sessionStore.updateSession(session.id, { claudePermissions }, writeDir),
-    tools: textOnly ? {} : driverTools({ askUser, harnessTools, session, devIds }),
+    tools: textOnly ? {} : driverTools({ askUser, harnessTools, session, extraMcpServers }),
   })
   let driver = makeDriver()
   let usage = null
@@ -166,7 +161,7 @@ const runOneTurn = async ({
 
     let text = await rewritePrompt(prompt, { cwd: settings.cwd })
     if (text !== prompt) onPromptRewrite?.(text)
-    if (devIds) text = `${prompts.text('devIds')}\n\n${text}`
+    text = prependNotes(fired, session, text)
     let first = true
     let result
     while (true) {

@@ -7,6 +7,7 @@ const host = process.env.HOST || '0.0.0.0'
 const port = Number(process.env.PORT || 6001)
 
 const libRoot = realpathSync(fileURLToPath(new URL('../../component-library', import.meta.url)))
+const triggersRoot = realpathSync(fileURLToPath(new URL('../../packages/prompt-triggers', import.meta.url)))
 
 export default defineConfig({
   clearScreen: false,
@@ -15,6 +16,7 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: /^component-library$/, replacement: `${libRoot}/src/index.js` },
+      { find: /^prompt-triggers$/, replacement: `${triggersRoot}/index.js` },
     ],
     dedupe: ['react', 'react-dom', 'react-virtuoso'],
   },
@@ -24,7 +26,7 @@ export default defineConfig({
     strictPort: true,
     allowedHosts: true,
     fs: {
-      allow: [searchForWorkspaceRoot(process.cwd()), libRoot],
+      allow: [searchForWorkspaceRoot(process.cwd()), libRoot, triggersRoot],
     },
     watch: {
       usePolling: true,

@@ -7,6 +7,7 @@ import NewSessionForm from './NewSessionForm'
 import QuestionCard from './QuestionCard'
 import MetricsPanel from './MetricsPanel'
 import LogFold from './LogFold'
+import PromptInput from './PromptInput'
 
 const STATUS_VARIANT = {
   idle: 'neutral',
@@ -608,8 +609,9 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
             )}
             <div className="composer__input-wrapper">
               <DevScope id="hr8r3c4">
-                <textarea
+                <PromptInput
                   className={`composer__input${isDecompose ? ' composer__input--plan' : ''}`}
+                  steer={steering}
                   placeholder={
                     steering
                       ? 'Steer the running agent (⌘↵ to interrupt and send)…'

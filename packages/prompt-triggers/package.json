@@ -1,0 +1,10 @@
+{
+  "name": "prompt-triggers",
+  "version": "0.1.0",
+  "description": "Prompt trigger detection shared by the harness UI and service",
+  "type": "module",
+  "main": "index.js",
+  "exports": "./index.js",
+  "license": "UNLICENSED",
+  "private": true
+}
