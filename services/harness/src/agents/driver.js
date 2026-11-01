@@ -53,6 +53,7 @@ const providers = {
 const listProviders = () => Object.keys(providers)
 
 const MEMORY_SERVER_NAME = 'harness_memory'
+const DEVID_SERVER_NAME = 'mcpdevid'
 
 const createDriver = ({ provider, ...opts }) => {
   const loader = providers[provider]
@@ -61,4 +62,4 @@ const createDriver = ({ provider, ...opts }) => {
   return mod.createDriver(opts)
 }
 
-module.exports = { createDriver, listProviders, MEMORY_SERVER_NAME }
+module.exports = { createDriver, listProviders, MEMORY_SERVER_NAME, DEVID_SERVER_NAME }

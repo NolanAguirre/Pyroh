@@ -27,6 +27,16 @@ const TEMPLATES = [
     template: 'This is a question, do not change code, do not run commands that will change things, only explore what is required to answer the question.',
   },
   {
+    id: 'devIds',
+    name: 'Dev ids',
+    group: 'flags',
+    description: 'Prepended to a turn whose prompt asks to add dev ids. The mcpdevid MCP server is attached on those turns.',
+    usedBy: ['harness/runTurn.js'],
+    vars: [],
+    template: `Dev ids are 7-character [a-z0-9] literals that tag UI elements so the operator can point at them, for example devId="k3x9q2a" or <DevScope id="k3x9q2a">. Each id must be unique across the codebase.
+Do not make up dev ids. Call the get_dev_ids tool on the mcpdevid MCP server with the count you need, and use the ids it returns. Ask for all the ids you need in one call.`,
+  },
+  {
     id: 'operatorFocus',
     name: 'Operator focus',
     group: 'shared',
