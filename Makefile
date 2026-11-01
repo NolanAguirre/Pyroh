@@ -256,3 +256,27 @@ db.harness.verify:
 
 db.harness.revert:
 	$(MAKE) -C db/harness revert
+
+# Sqitch database db/mcpdevid
+.PHONY: help db.mcpdevid.help db.mcpdevid.init db.mcpdevid.deploy db.mcpdevid.status db.mcpdevid.verify db.mcpdevid.revert
+
+help: db.mcpdevid.help
+
+db.mcpdevid.help:
+	@echo 'db/mcpdevid: db.mcpdevid.init db.mcpdevid.deploy db.mcpdevid.status db.mcpdevid.verify db.mcpdevid.revert'
+	@$(MAKE) --no-print-directory -C db/mcpdevid help
+
+db.mcpdevid.init:
+	$(MAKE) -C db/mcpdevid init
+
+db.mcpdevid.deploy:
+	$(MAKE) -C db/mcpdevid deploy
+
+db.mcpdevid.status:
+	$(MAKE) -C db/mcpdevid status
+
+db.mcpdevid.verify:
+	$(MAKE) -C db/mcpdevid verify
+
+db.mcpdevid.revert:
+	$(MAKE) -C db/mcpdevid revert

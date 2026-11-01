@@ -1,20 +1,21 @@
-const { ASK_PROMPT, TERSE_PROMPT } = require('../agents/modes')
+const { askPrompt, tersePrompt } = require('../agents/modes')
 
 // What each mode flag does, for the Registry panel. `text` is the exact prompt
-// text the flag adds to turns; `test` picks the modes that include it.
+// text the flag adds to turns (a function so edits show up); `test` picks the
+// modes that include it.
 const FLAGS = [
   {
     id: 'terse',
     label: 'terse',
     description: 'Prepended to the first prompt of a session.',
-    text: TERSE_PROMPT,
+    text: tersePrompt,
     test: (mode) => mode.terse,
   },
   {
     id: 'ask',
     label: 'ask base',
     description: 'Prepended to every turn of modes built on Ask. Drivers also deny any approval request that is not read-only.',
-    text: ASK_PROMPT,
+    text: askPrompt,
     test: (mode) => mode.base === 'ask',
   },
   {
@@ -69,7 +70,10 @@ const FLAGS = [
 ]
 
 // Each flag with the ids of the modes that include it.
-const describeFlags = (modes) => FLAGS.map(({ test, ...flag }) =>
-  ({ ...flag, modes: modes.filter(test).map((mode) => mode.id) }))
+const describeFlags = (modes) => FLAGS.map(({ test, text, ...flag }) => ({
+  ...flag,
+  text: typeof text === 'function' ? text() : text,
+  modes: modes.filter(test).map((mode) => mode.id),
+}))
 
 module.exports = { FLAGS, describeFlags }

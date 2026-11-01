@@ -1,3 +1,6 @@
+const config = require('../config')
+const paths = require('../store/paths')
+const { readJson, writeJson } = require('../store/jsonFile')
 const { TEMPLATES } = require('./templates')
 
 const PLACEHOLDER = /\{\{(\w+)\}\}/g
@@ -22,16 +25,67 @@ const get = (id) => {
   return entry
 }
 
-const text = (id) => get(id).template
+// Operator edits, stored as `{ [id]: template }` in prompts.json. Loaded once
+// and kept in memory; writes go through `setOverride`.
+let overrides = null
+
+const loadOverrides = () => {
+  if (overrides) return overrides
+  let stored = {}
+  try {
+    stored = readJson(paths.promptsFile(config.writeDir), {}) || {}
+  } catch (err) {
+    if (!(err instanceof SyntaxError)) throw err
+  }
+  overrides = Object.fromEntries(Object.entries(stored)
+    .filter(([id, template]) => byId.has(id) && typeof template === 'string'))
+  return overrides
+}
+
+const badRequest = (message) => Object.assign(new Error(message), { status: 400 })
+
+// Saves an edited template, or resets to the built-in one when `template` is null.
+const setOverride = (id, template) => {
+  if (!byId.has(id)) throw Object.assign(new Error(`prompts: unknown prompt ${id}`), { status: 404 })
+  const next = { ...loadOverrides() }
+  if (template == null) {
+    delete next[id]
+  } else {
+    if (typeof template !== 'string') throw badRequest('template must be a string')
+    const declared = new Set(byId.get(id).vars.map((item) => item.name))
+    const undeclared = placeholders(template).filter((name) => !declared.has(name))
+    if (undeclared.length) throw badRequest(`unknown vars ${undeclared.map((name) => `{{${name}}}`).join(', ')}`)
+    if (template === byId.get(id).template) delete next[id]
+    else next[id] = template
+  }
+  writeJson(paths.promptsFile(config.writeDir), next)
+  overrides = next
+  return describe(byId.get(id))
+}
+
+const text = (id) => {
+  const entry = get(id)
+  const edited = loadOverrides()[id]
+  return edited == null ? entry.template : edited
+}
 
 const render = (id, vars = {}) =>
-  get(id).template.replace(PLACEHOLDER, (_, key) => (vars[key] == null ? '' : String(vars[key])))
+  text(id).replace(PLACEHOLDER, (_, key) => (vars[key] == null ? '' : String(vars[key])))
 
 const focusBlock = (focus) => (focus ? render('operatorFocus', { focus }) : '')
 
 const directoryLines = (directories) => directories.map((dir) => `- ${JSON.stringify(dir)}`).join('\n')
 
-const list = () => TEMPLATES.map(({ id, name, group, description, usedBy, vars, template }) =>
-  ({ id, name, group, description, usedBy, vars, template }))
+const describe = ({ id, name, group, description, usedBy, vars, template }) => {
+  const edited = loadOverrides()[id]
+  return {
+    id, name, group, description, usedBy, vars,
+    template: edited == null ? template : edited,
+    defaultTemplate: template,
+    edited: edited != null,
+  }
+}
 
-module.exports = { get, text, render, focusBlock, directoryLines, list }
+const list = () => TEMPLATES.map(describe)
+
+module.exports = { get, text, render, focusBlock, directoryLines, list, setOverride }

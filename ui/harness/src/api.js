@@ -194,6 +194,8 @@ const api = {
   },
   // Built-in prompt templates with the vars each one interpolates.
   listPrompts: ({ signal } = {}) => fetch(at(null, '/api/prompts'), { signal }).then(json),
+  // Saves an edited template; `null` resets to the built-in one.
+  updatePrompt: (id, template) => send('PUT', at(null, `/api/prompts/${encodeURIComponent(id)}`), { template }).then(json),
 
   // Every registry entry with its decision; global scope when there is no workspace.
   explainRegistry: (workspaceId, { provider } = {}, { signal } = {}) => {

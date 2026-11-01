@@ -1,6 +1,6 @@
 const config = require('../config')
 const workspaceStore = require('../store/workspaceStore')
-const { TERSE_PROMPT, ASK_PROMPT } = require('../agents/modes')
+const { tersePrompt, askPrompt } = require('../agents/modes')
 const { transcriptDirectories } = require('../modes/tokenWaste')
 
 // Lazy so Harness can require this module without a cycle.
@@ -30,7 +30,7 @@ const makeHarnessApi = (workspace, source) => {
 
   return {
     workspace,
-    prompts: { terse: TERSE_PROMPT, ask: ASK_PROMPT },
+    prompts: { terse: tersePrompt(), ask: askPrompt() },
     createSession: ({ provider, model } = {}) => {
       const Harness = harnessModule()
       const target = source

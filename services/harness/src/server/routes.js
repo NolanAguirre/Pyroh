@@ -168,6 +168,15 @@ router.get('/prompts', (req, res) => {
   res.json({ prompts: prompts.list() })
 })
 
+// Body `{ template }` saves an edit; `{ template: null }` resets to the built-in.
+router.put('/prompts/:id', (req, res) => {
+  try {
+    res.json({ prompt: prompts.setOverride(req.params.id, (req.body || {}).template ?? null) })
+  } catch (err) {
+    sendError(res, err)
+  }
+})
+
 router.get('/registry/rules', (_req, res) => {
   res.json(registry.readRules(null))
 })

@@ -20,8 +20,8 @@
 //       { status, result, usage, durationMs, error }
 //     `mode` is one of modes.AGENT_MODES. Each driver maps it to the provider's
 //     native mode or emulates it. Ask is enforced: drivers auto-deny approval
-//     requests for anything not read-only, and inject modes.ASK_PROMPT.
-//     `terse` prefixes modes.TERSE_PROMPT. The caller sets it on the first prompt
+//     requests for anything not read-only, and inject modes.askPrompt().
+//     `terse` prefixes modes.tersePrompt(). The caller sets it on the first prompt
 //     of an execute, ask, plan, or token-waste session.
 //   listModels() -> Promise<Array<{ id, displayName? }>>
 //   providerAgentId() -> string | null

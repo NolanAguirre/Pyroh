@@ -4,6 +4,8 @@ const config = require('../config')
 
 const uiSettingsFile = (writeDir = config.writeDir) => path.join(writeDir, 'ui.json')
 
+const promptsFile = (writeDir = config.writeDir) => path.join(writeDir, 'prompts.json')
+
 const tokenWasteIndexDir = (writeDir = config.writeDir) => path.join(writeDir, 'token-waste-runs')
 const runIndexDir = (writeDir = config.writeDir) => path.join(writeDir, 'run-index')
 
@@ -169,6 +171,7 @@ const stepWriteFile = (sessionId, phase, filename, writeDir = config.writeDir) =
 
 module.exports = {
   uiSettingsFile,
+  promptsFile,
   tokenWasteIndexDir,
   runIndexDir,
   workspacesDir,

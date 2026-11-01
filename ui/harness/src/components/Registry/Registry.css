@@ -147,6 +147,20 @@
   word-break: break-word;
 }
 
+.registry__prompt-edit {
+  width: 100%;
+  margin: 0 0 8px;
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+.registry__prompt-actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
 .registry__var {
   background: none;
   color: var(--accent, #3b82f6);
