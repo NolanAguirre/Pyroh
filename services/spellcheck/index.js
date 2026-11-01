@@ -11,13 +11,13 @@ const app = express()
 
 app.use(express.json({ limit: '1mb' }))
 
-app.get('/health', (_req, res) => {
+app.get(['/health', '/spellcheck/health'], (_req, res) => {
   res.json({ status: 'ok', queue_dir: process.env.QUEUE_DIR || null })
 })
 
 // Body: { text, triggers: [{ start, end }], ignore: [word], steer }.
 // Replies { text, fixes }; any failure replies with the text unchanged.
-app.post('/check', async (req, res) => {
+app.post(['/check', '/spellcheck/check'], async (req, res) => {
   const { text, triggers, ignore, steer } = req.body || {}
   if (typeof text !== 'string') return res.status(400).json({ error: 'text must be a string' })
   try {

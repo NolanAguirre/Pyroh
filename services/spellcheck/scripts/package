@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+service_dir="$(cd "$(dirname "$0")/.." && pwd)"
+project_dir="$(cd "$service_dir/../.." && pwd)"
+release_dir="$project_dir/tmp/spellcheck-release"
+mkdir -p "$release_dir"
+staging_dir="$(mktemp -d "$release_dir/.package.XXXXXX")"
+trap 'rm -rf "$staging_dir"' EXIT
+
+api_dir="$staging_dir/spellcheck"
+consumer_dir="$staging_dir/spellcheck-consumer"
+mkdir -p "$api_dir/services/spellcheck" "$api_dir/packages" "$consumer_dir/cli"
+cp "$service_dir/package.json" "$service_dir/index.js" "$api_dir/services/spellcheck/"
+if [[ -f "$service_dir/package-lock.json" ]]; then
+  cp "$service_dir/package-lock.json" "$api_dir/services/spellcheck/"
+fi
+cp -R "$service_dir/lib" "$api_dir/services/spellcheck/"
+cp -R "$project_dir/packages/prompt-triggers" "$api_dir/packages/"
+(
+  cd "$api_dir/services/spellcheck"
+  npm install --omit=dev
+)
+cat > "$api_dir/run" <<'EOF'
+#!/bin/sh
+set -e
+umask 0002
+cd "$(dirname "$0")/services/spellcheck"
+exec node index.js
+EOF
+
+cp "$service_dir/cli/consumer.py" "$service_dir/cli/fsqueue.py" "$service_dir/cli/requirements.txt" "$consumer_dir/cli/"
+cat > "$consumer_dir/run" <<'EOF'
+#!/bin/sh
+set -e
+umask 0002
+cd "$(dirname "$0")"
+exec /var/service-dir/harness-spellcheck-consumer/venv/bin/python3 -u cli/consumer.py
+EOF
+
+chmod +x "$api_dir/run" "$consumer_dir/run"
+chmod -R a+rX "$api_dir" "$consumer_dir"
+rm -rf "$release_dir/spellcheck" "$release_dir/spellcheck-consumer"
+mv "$api_dir" "$consumer_dir" "$release_dir/"
+printf 'Packaged spellcheck and spellcheck-consumer in %s\n' "$release_dir"

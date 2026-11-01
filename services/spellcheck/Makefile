@@ -1,4 +1,7 @@
-.PHONY: install install.js install.python install.model build start consumer help
+.PHONY: install install.js install.python install.model build start consumer package deploy help
+
+REMOTE_TARGET ?= workstation
+RELEASE_DIR := $(abspath ../../tmp/spellcheck-release)
 
 help:
 	@echo "Available commands:"
@@ -9,6 +12,8 @@ help:
 	@echo "  build           Run the build script, if configured"
 	@echo "  start           Start the service in the background"
 	@echo "  consumer        Drain the filesystem queue in the foreground"
+	@echo "  package         Package API and consumer releases under tmp/spellcheck-release"
+	@echo "  deploy          Package and deploy both services (REMOTE_TARGET=workstation)"
 	@echo "  help            Show this help message"
 
 install:
@@ -34,3 +39,10 @@ start:
 
 consumer:
 	envdir "./env-dir/$${ENV_USER:-$$USER}" cli/.venv/bin/python3 -u cli/consumer.py
+
+package:
+	bash scripts/package
+
+deploy: package
+	remote deploy harness spellcheck-consumer "$(RELEASE_DIR)/spellcheck-consumer" --to "$(REMOTE_TARGET)"
+	remote deploy harness spellcheck "$(RELEASE_DIR)/spellcheck" --to "$(REMOTE_TARGET)"

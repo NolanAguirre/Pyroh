@@ -34,6 +34,38 @@ services.harness.tool-stats: ## Harness tool-call analytics (ARGS="...")
 services.harness.index.rebuild: ## Rebuild the harness SQLite session index
 	$(MAKE) -C services/harness index.rebuild
 
+.PHONY: services.spellcheck.install services.spellcheck.install.js services.spellcheck.install.python services.spellcheck.install.model services.spellcheck.build services.spellcheck.start services.spellcheck.consumer services.spellcheck.package services.spellcheck.deploy services.spellcheck.help
+
+services.spellcheck.install: ## Install spellcheck node deps and python venv
+	$(MAKE) -C services/spellcheck install
+
+services.spellcheck.install.js: ## Install spellcheck node dependencies
+	$(MAKE) -C services/spellcheck install.js
+
+services.spellcheck.install.python: ## Install spellcheck Python dependencies
+	$(MAKE) -C services/spellcheck install.python
+
+services.spellcheck.install.model: ## Prefetch the spellcheck model weights
+	$(MAKE) -C services/spellcheck install.model
+
+services.spellcheck.build: ## Run the spellcheck build if configured
+	$(MAKE) -C services/spellcheck build
+
+services.spellcheck.start: ## Start the spellcheck HTTP service
+	$(MAKE) -C services/spellcheck start
+
+services.spellcheck.consumer: ## Run the spellcheck GPU queue consumer
+	$(MAKE) -C services/spellcheck consumer
+
+services.spellcheck.package: ## Package spellcheck API and consumer releases
+	$(MAKE) -C services/spellcheck package
+
+services.spellcheck.deploy: ## Deploy spellcheck to workstation (REMOTE_TARGET override supported)
+	$(MAKE) -C services/spellcheck deploy
+
+services.spellcheck.help: ## Show spellcheck service commands
+	$(MAKE) -C services/spellcheck help
+
 services.categorizer.install: ## Install categorizer node deps and python venv
 	$(MAKE) -C services/categorizer install
 
