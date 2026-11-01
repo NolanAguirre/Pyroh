@@ -16,7 +16,8 @@
 .code-stats__topbar {
   position: sticky;
   top: 0;
-  z-index: 1;
+  /* Matrix sticky headers use z-index 2, and the corner cell uses 3. */
+  z-index: 4;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
