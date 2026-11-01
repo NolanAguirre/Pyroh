@@ -1,1 +1,10 @@
 # Python dependencies for cli/consumer.py, installed into cli/.venv by make install.python.
+# RTX 5070 (Blackwell) needs CUDA 12.8 wheels. PEP 440 sorts torch X+cu128
+# above the plain PyPI X, so the extra index wins for torch only.
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch>=2.7
+# Qwen3.5 (qwen3_5) needs a transformers release that ships its model code.
+transformers>=5.2
+accelerate
+bitsandbytes>=0.46
+huggingface_hub

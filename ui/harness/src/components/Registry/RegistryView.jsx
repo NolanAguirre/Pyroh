@@ -293,74 +293,80 @@ const PromptCard = ({ prompt, onSaved }) => {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <strong>{prompt.name}</strong> <code className="registry__id">{prompt.id}</code>
-        {prompt.edited && <> <Badge size="small" variant="info">edited</Badge></>}
-      </CardHeader>
-      <CardSection>
-        <p className="registry__flag-desc">{prompt.description}</p>
-        {prompt.vars.length ? (
-          <ul className="registry__list registry__vars">
-            {prompt.vars.map((item) => (
-              <li key={item.name}><code>{`{{${item.name}}}`}</code> {item.description}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="hint">No variables.</p>
-        )}
-        {draft == null ? (
-          <Template template={prompt.template} />
-        ) : (
-          <textarea
-            className="form__textarea registry__prompt-edit"
-            rows={Math.min(24, Math.max(4, draft.split('\n').length + 1))}
-            aria-label={`${prompt.name} template`}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            disabled={saving}
-          />
-        )}
-        {error && <p className="registry__error">{error}</p>}
-        <div className="registry__prompt-actions">
-          {draft == null ? (
-            <>
-              <Button devId="r3e7p5d" variant="secondary" size="sm" onClick={() => setDraft(prompt.template)}>Edit</Button>
-              {prompt.edited && (
-                <Button devId="r9z2k6u" variant="secondary" size="sm" onClick={() => save(null)} disabled={saving}>Reset to default</Button>
-              )}
-            </>
+    <DevScope id="n3wtq8l" state={{ id: prompt.id, editing: draft != null, saving }}>
+      <Card>
+        <CardHeader>
+          <strong>{prompt.name}</strong> <code className="registry__id">{prompt.id}</code>
+          {prompt.edited && <> <Badge size="small" variant="info">edited</Badge></>}
+        </CardHeader>
+        <CardSection>
+          <p className="registry__flag-desc">{prompt.description}</p>
+          {prompt.vars.length ? (
+            <ul className="registry__list registry__vars">
+              {prompt.vars.map((item) => (
+                <li key={item.name}><code>{`{{${item.name}}}`}</code> {item.description}</li>
+              ))}
+            </ul>
           ) : (
-            <>
-              <Button devId="r5c1v8y" size="sm" onClick={() => save(draft)} disabled={saving || draft === prompt.template}>
-                {saving ? 'Saving…' : 'Save'}
-              </Button>
-              <Button devId="r2n9b4x" variant="secondary" size="sm" onClick={() => { setDraft(null); setError(null) }} disabled={saving}>Cancel</Button>
-            </>
+            <p className="hint">No variables.</p>
           )}
-        </div>
-        <div className="registry__flag-modes">
-          <span className="hint">Used by</span> {prompt.usedBy.join(', ')}
-        </div>
-      </CardSection>
-    </Card>
+          <DevScope id="dx7104n" state={{ editing: draft != null }}>
+            {draft == null ? (
+              <Template template={prompt.template} />
+            ) : (
+              <textarea
+                className="form__textarea registry__prompt-edit"
+                rows={Math.min(24, Math.max(4, draft.split('\n').length + 1))}
+                aria-label={`${prompt.name} template`}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                disabled={saving}
+              />
+            )}
+          </DevScope>
+          {error && <p className="registry__error">{error}</p>}
+          <div className="registry__prompt-actions">
+            {draft == null ? (
+              <>
+                <Button devId="r3e7p5d" variant="secondary" size="sm" onClick={() => setDraft(prompt.template)}>Edit</Button>
+                {prompt.edited && (
+                  <Button devId="r9z2k6u" variant="secondary" size="sm" onClick={() => save(null)} disabled={saving}>Reset to default</Button>
+                )}
+              </>
+            ) : (
+              <>
+                <Button devId="r5c1v8y" size="sm" onClick={() => save(draft)} disabled={saving || draft === prompt.template}>
+                  {saving ? 'Saving…' : 'Save'}
+                </Button>
+                <Button devId="r2n9b4x" variant="secondary" size="sm" onClick={() => { setDraft(null); setError(null) }} disabled={saving}>Cancel</Button>
+              </>
+            )}
+          </div>
+          <div className="registry__flag-modes">
+            <span className="hint">Used by</span> {prompt.usedBy.join(', ')}
+          </div>
+        </CardSection>
+      </Card>
+    </DevScope>
   )
 }
 
 const PromptsView = () => {
   const { prompts, error, replace } = usePrompts()
-  if (error) return <p className="registry__error">{error}</p>
-  if (!prompts) return <p className="hint">Loading prompts…</p>
+  if (error) return <DevScope id="9kbs589"><p className="registry__error">{error}</p></DevScope>
+  if (!prompts) return <DevScope id="62o4caw"><p className="hint">Loading prompts…</p></DevScope>
   const groups = [...new Set(prompts.map((prompt) => prompt.group))]
   return (
     <DevScope id="r8q4w1v">
       {groups.map((group) => (
-        <section key={group} className="registry__prompt-group">
-          <h3 className="registry__group-title">{group}</h3>
-          <div className="registry__flags">
-            {prompts.filter((prompt) => prompt.group === group).map((prompt) => <PromptCard key={prompt.id} prompt={prompt} onSaved={replace} />)}
-          </div>
-        </section>
+        <DevScope key={group} id="va0d167" state={{ group }}>
+          <section className="registry__prompt-group">
+            <h3 className="registry__group-title">{group}</h3>
+            <div className="registry__flags">
+              {prompts.filter((prompt) => prompt.group === group).map((prompt) => <PromptCard key={prompt.id} prompt={prompt} onSaved={replace} />)}
+            </div>
+          </section>
+        </DevScope>
       ))}
     </DevScope>
   )

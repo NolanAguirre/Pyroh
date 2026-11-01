@@ -66,6 +66,9 @@ const config = {
   categorizerUrl: (process.env.HARNESS_CATEGORIZER_URL || '').trim().replace(/\/+$/, '') || null,
   // Unset disables analytics (tool-stats and run notifications).
   analyticsUrl: (process.env.HARNESS_ANALYTICS_URL || '').trim().replace(/\/+$/, '') || null,
+  // Spellcheck base URL. Unset disables prompt spellchecking.
+  spellcheckUrl: (process.env.HARNESS_SPELLCHECK_URL || '').trim().replace(/\/+$/, '') || null,
+  spellcheckTimeoutMs: Number(process.env.HARNESS_SPELLCHECK_TIMEOUT_MS || 10000),
   // mcp-memory base URL. Unset disables the create_memory tool.
   memoryMcpUrl: (process.env.HARNESS_MEMORY_MCP_URL || '').trim().replace(/\/+$/, '') || null,
   // mcpdevid base URL. Unset disables dev id allocation on prompts that ask for dev ids.

@@ -13,6 +13,8 @@ const { listProviders } = require('../agents/driver')
 const registry = require('../registry')
 const prompts = require('../prompts')
 const { TRIGGERS } = require('../prompt/triggers')
+const { correctText } = require('../spellcheck')
+const questionStore = require('../store/questionStore')
 
 const router = express.Router()
 
@@ -349,7 +351,7 @@ const startRun = async (req, res, requested, { prompt, provider, model, targetMo
   const inPlace = Harness.repliesInPlace(session, entry)
   if (!prompt && (inPlace || !entry.promptOptional)) return res.status(400).json({ error: 'prompt is required' })
   try {
-    const run = await Harness.run(req.params.id, { prompt, mode, provider, model, targetMode })
+    const run = await Harness.run(req.params.id, { prompt: await correctText(prompt), mode, provider, model, targetMode })
     if (entry.kind === 'decompose') return res.status(202).json(run)
     res.status(202).json({ run, ...(entry.newSession && !inPlace
       ? { session: sessionStore.loadSession(run.sessionId, config.writeDir) } : {}) })
@@ -368,9 +370,9 @@ router.post('/sessions/:id/run', (req, res) => {
 
 router.post('/sessions/:id/decompose', (req, res) => startRun(req, res, 'decompose', req.body || {}))
 
-router.post('/sessions/:id/resume', (req, res) => {
+router.post('/sessions/:id/resume', async (req, res) => {
   const { prompt, mode } = req.body || {}
-  const result = Harness.resume(req.params.id, { prompt, mode })
+  const result = Harness.resume(req.params.id, { prompt: await correctText(prompt), mode })
   if (result && result.mode === 'decompose') return res.status(202).json(result)
   res.status(202).json({ run: result })
 })
@@ -383,21 +385,32 @@ router.post('/sessions/:id/stop', (req, res) => {
   res.json(Harness.stop(req.params.id))
 })
 
-router.post('/sessions/:id/steer', (req, res) => {
+router.post('/sessions/:id/steer', async (req, res) => {
   const { prompt } = req.body || {}
   if (typeof prompt !== 'string' || !prompt.trim()) return res.status(400).json({ error: 'prompt is required' })
+  const corrected = await correctText(prompt, { steer: true })
   try {
-    res.status(202).json({ steer: Harness.steer(req.params.id, prompt) })
+    res.status(202).json({ steer: Harness.steer(req.params.id, corrected) })
   } catch (err) {
     res.status(err.status || 400).json({ error: err.message })
   }
 })
 
-router.post('/sessions/:id/questions/:qid/answer', (req, res) => {
+// Only free text is spellchecked; secrets, an answer that picks an offered option,
+// or any answer to an options-only question must reach the store unchanged.
+const correctAnswer = async (sessionId, qid, answer) => {
+  if (typeof answer !== 'string') return answer
+  const question = questionStore.loadQuestion(sessionId, qid, config.writeDir)
+  if (!question || question.secret || question.allowFreeText === false || question.options.includes(answer)) return answer
+  return correctText(answer)
+}
+
+router.post('/sessions/:id/questions/:qid/answer', async (req, res) => {
   const { answer } = req.body || {}
   if (answer === undefined) return res.status(400).json({ error: 'answer is required' })
+  const corrected = await correctAnswer(req.params.id, req.params.qid, answer)
   try {
-    res.json({ answer: Harness.answer(req.params.id, req.params.qid, answer) })
+    res.json({ answer: Harness.answer(req.params.id, req.params.qid, corrected) })
   } catch (err) {
     res.status(400).json({ error: err.message })
   }
