@@ -1,6 +1,9 @@
 BEGIN;
 
--- Add idempotent schema changes here before the first deployment.
--- After deployment, append a new version instead of editing this file.
+CREATE TABLE IF NOT EXISTS dev_ids (
+  id TEXT PRIMARY KEY CHECK (length(id) = 7 AND id NOT GLOB '*[^a-z0-9]*'),
+  source TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
 
 COMMIT;

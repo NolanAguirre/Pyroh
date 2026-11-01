@@ -6,6 +6,7 @@
 	services.analytics.install services.analytics.build services.analytics.start services.analytics.sync services.analytics.backfill \
 	services.mcp-memory.install services.mcp-memory.build services.mcp-memory.start services.mcp-memory.help \
 	services.memory.install services.memory.build services.memory.start services.memory.help \
+	services.mcpdevid.install services.mcpdevid.build services.mcpdevid.start services.mcpdevid.import services.mcpdevid.help \
 	ui.harness.install ui.harness.dev ui.harness.build ui.harness.lint ui.harness.preview \
 	services.nginx.start services.nginx.stop services.nginx.reload services.nginx.status services.nginx.test services.nginx.render
 
@@ -89,6 +90,21 @@ services.memory.start: ## memory: Start the foreground memory CRUD API
 
 services.memory.help: ## memory: Show service help
 	$(MAKE) -C services/memory help
+
+services.mcpdevid.install: ## mcpdevid: Install dependencies
+	$(MAKE) -C services/mcpdevid install
+
+services.mcpdevid.build: ## mcpdevid: Run the configured build
+	$(MAKE) -C services/mcpdevid build
+
+services.mcpdevid.start: ## mcpdevid: Start the dev id MCP server
+	$(MAKE) -C services/mcpdevid start
+
+services.mcpdevid.import: ## mcpdevid: Import dev ids from repos (REPOS="~/a ~/b")
+	$(MAKE) -C services/mcpdevid import REPOS="$(REPOS)"
+
+services.mcpdevid.help: ## mcpdevid: Show service help
+	$(MAKE) -C services/mcpdevid help
 
 ui.harness.install: ## Install harness UI deps
 	$(MAKE) -C ui/harness install
@@ -174,6 +190,7 @@ install: ## Install all services and UIs, including python venvs
 	$(MAKE) services.analytics.install
 	$(MAKE) services.mcp-memory.install
 	$(MAKE) services.memory.install
+	$(MAKE) services.mcpdevid.install
 	$(MAKE) ui.harness.install
 
 install.js: ## Install only JS packages across all services and UIs
@@ -185,6 +202,7 @@ install.js: ## Install only JS packages across all services and UIs
 	$(MAKE) services.analytics.install
 	$(MAKE) services.mcp-memory.install
 	$(MAKE) services.memory.install
+	$(MAKE) services.mcpdevid.install
 	$(MAKE) ui.harness.install
 
 install.py: ## Install python venvs for the GPU services
@@ -193,6 +211,7 @@ install.py: ## Install python venvs for the GPU services
 start: SHELL := /bin/bash
 start: ## Start the harness stack and stop its child process groups on exit
 	@$(MAKE) db.harness.deploy
+	@$(MAKE) db.mcpdevid.deploy
 	@pids=""; \
 	cleanup() { trap '' INT TERM; for pid in $$pids; do kill -TERM -- -$$pid 2>/dev/null || true; done; wait || true; }; \
 	trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM; \
@@ -206,6 +225,7 @@ start: ## Start the harness stack and stop its child process groups on exit
 	setsid $(MAKE) -C services/analytics start & pids="$$pids $$!"; \
 	setsid $(MAKE) -C services/mcp-memory start & pids="$$pids $$!"; \
 	setsid $(MAKE) -C services/memory start & pids="$$pids $$!"; \
+	setsid $(MAKE) -C services/mcpdevid start & pids="$$pids $$!"; \
 	setsid $(MAKE) -C ui/harness dev & pids="$$pids $$!"; \
 	wait
 
