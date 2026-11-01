@@ -203,7 +203,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
       const value = await ask(input, signal)
       return { success: true, contentItems: [{ type: 'inputText', text: typeof value === 'string' ? value : JSON.stringify(value) }] }
     }
-    const readOnly = readOnlyModes.includes(active?.mode)
+    const readOnly = tools.restrictedChild || readOnlyModes.includes(active?.mode)
     if (method === 'item/commandExecution/requestApproval' || method === 'item/fileChange/requestApproval') {
       if (readOnly) return { decision: 'decline' }
       const choices = (params.availableDecisions || ['accept', 'decline', 'cancel'])
@@ -321,11 +321,12 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     threadOptions = settings
     cumulativeUsage = null
     const params = { model, cwd: settings.cwd,
-      sandbox: options.sandbox,
+      sandbox: tools.restrictedChild ? 'read-only' : options.sandbox,
       approvalPolicy: approvalFor(settings.mode, options.approvalPolicy),
       approvalsReviewer: 'user',
       config: {
         web_search: options.webSearch,
+        ...(tools.disableNativeSpawning ? { 'features.multi_agent': false } : {}),
         ...(harnessMcp.length ? { mcp_servers: Object.fromEntries(harnessMcp.map((server) => [server.name, { url: server.url }])) } : {}),
       },
       dynamicTools: typeof tools.askUser === 'function' ? [askTool()] : [],
@@ -341,7 +342,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
       active = { id: null, emit: onEvent || (() => {}), resolve, mode, startedAt: Date.now(), done: false,
         messages: new Map(), items: new Map(), plan: '', usage: null, baseline: cumulativeUsage }
     })
-    const sandbox = options.sandbox
+    const sandbox = tools.restrictedChild ? 'read-only' : options.sandbox
     // Codex has no ask collaboration mode. Ask uses the default mode with enforced
     // read-only approvals, plus an instruction explaining the denials.
     const text = composePrompt(prompt, { mode, terse, instructions })

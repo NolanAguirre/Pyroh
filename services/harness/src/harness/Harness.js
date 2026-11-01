@@ -73,14 +73,16 @@ const resolveNewChatTarget = (source, target = {}) => {
   return { provider, model, mode }
 }
 
-const spawnRun = (sessionId, action, { mode, prompt, autoName = false, handoff, plugin }) => {
+const spawnRun = (sessionId, action, { mode, prompt, autoName = false, handoff, plugin, onPrepared }) => {
   const lock = sessionLock.acquire(sessionId, config.writeDir)
   try {
     sessionStore.recoverSession(sessionId, config.writeDir)
     const session = sessionStore.loadSession(sessionId, config.writeDir)
+    require('./delegation').assertChildRun(session, mode)
     const firstUnnamedRun = Boolean(session) && session.name == null &&
       sessionStore.listRuns(sessionId, config.writeDir).length === 0
     const run = sessionStore.createRun(sessionId, { mode, prompt, handoff, plugin })
+    onPrepared?.(run)
     sessionStore.updateSession(sessionId, { status: 'running' }, config.writeDir)
     const pid = proc.spawnHarness([action, sessionId, '--run-id', run.id], lock.spawnOptions())
     if (autoName && firstUnnamedRun) requestChatName(sessionId, prompt)
@@ -221,6 +223,7 @@ const run = async (sessionId, { prompt, mode: requested, provider, model, target
   const source = sessionStore.loadSession(sessionId, config.writeDir)
   if (!source) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
   const mode = requested || replyMode(source)
+  require('./delegation').assertChildRun(source, mode)
   const workspace = registry.sessionWorkspace(source)
   const harness = workspace ? registry.makeHarnessApi(workspace, source) : undefined
   const entry = registry.requireMode(workspace, mode, { harness, provider: source.provider })
@@ -272,6 +275,7 @@ const resume = (sessionId, { prompt, mode: requested } = {}) => {
 }
 
 const terminate = (sessionId, intent) => {
+  for (const run of sessionStore.listRuns(sessionId, config.writeDir)) require('./delegation').stopChildren(sessionId, run.id)
   writeJson(paths.controlFile(sessionId, config.writeDir), { intent, at: Date.now() })
   const pid = daemonPidOf(sessionId)
   const signalled = pid ? proc.signal(pid, 'SIGTERM') : false
@@ -329,6 +333,7 @@ const list = async (workspaceId, { includeArchived = false, orderBy = 'createdAt
 }
 
 module.exports = {
+  spawnRun,
   createWorkspace,
   listWorkspaces,
   getWorkspace,

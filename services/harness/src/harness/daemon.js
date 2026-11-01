@@ -139,10 +139,13 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
     eventLog.append(sessionId, { ...event, runId }, writeDir)
   }
 
+  let parentWatch = null
   let exiting = false
   const finalize = (patch, sessionStatus, exitCode, sessionExtra = {}) => {
     if (exiting) return
     exiting = true
+    clearInterval(parentWatch)
+    require('./delegation').stopChildren(sessionId, runId)
     try {
       sessionStore.updateRun(sessionId, runId, { endedAt: Date.now(), ...patch }, writeDir)
       questionStore.cancelPending(sessionId, runId, writeDir)
@@ -185,6 +188,18 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
       await inflight.cancel()
     }
   }
+  if (session.parentRunId) {
+    const checkParent = () => {
+      if (!require('./delegation').parentActive(session.parentSessionId, session.parentRunId)) {
+        writeJson(paths.controlFile(sessionId, writeDir), { intent: 'stop', at: Date.now() })
+        onSignal().catch(err => fail(err, 'parent cleanup failed', 2))
+      }
+    }
+    if (readControlIntent(sessionId, writeDir)) onSignal().catch(err => fail(err, 'child stop failed', 2))
+    checkParent()
+    parentWatch = setInterval(checkParent, 1000)
+    parentWatch.unref()
+  }
   process.on('SIGTERM', onSignal)
   process.on('SIGINT', onSignal)
 
@@ -197,6 +212,7 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
       writeDir,
       action,
       mode: driverMode,
+      delegationEligible: !session.parentRunId && (entry?.kind === 'turn' || Boolean(plugin)) && ['agent', 'plan', 'ask'].includes(driverMode),
       prompt,
       terse: !session.providerAgentId && Boolean(plugin ? plugin.terse : entry?.terse),
       instructions: plugin?.instructions || undefined,

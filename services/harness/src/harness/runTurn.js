@@ -72,6 +72,7 @@ const runOneTurn = async ({
   fresh = false,
   terse = false,
   instructions,
+  delegationEligible = false,
 }) => {
   const settings = { model: model || session.model, cwd: workspaceStore.resolveSessionCwd(session, writeDir), mode, tools }
   // Each daemon owns one session. Set its cwd before loading SDKs so shell
@@ -85,8 +86,14 @@ const runOneTurn = async ({
   const textOnly = Array.isArray(tools) && tools.length === 0
   // The MCP list is fixed when the driver is created, so steers on this turn
   // cannot fire trigger actions.
-  const fired = textOnly ? [] : firedActions(findTriggers(prompt))
+  const child = Boolean(session.parentRunId)
+  const managed = child || delegationEligible
+  const delegation = require('./delegation')
+  if (managed) instructions = [instructions, delegation.guidance(session.provider, child)].filter(Boolean).join('\n\n')
+  const fired = textOnly || child ? [] : firedActions(findTriggers(prompt))
   const extraMcpServers = triggerMcpServers(fired, session)
+  if (delegationEligible && !textOnly) extraMcpServers.push(delegation.open(session, runId, mode))
+  if (managed && session.provider === 'grok') onEvent?.({ type: 'status', status: 'Native spawning cannot be fully blocked by Grok; harness-only delegation is instructed.' })
   const makeDriver = () => createDriver({
     provider: session.provider,
     writeDir,
@@ -96,7 +103,7 @@ const runOneTurn = async ({
     claude: session.claude,
     permissions: session.claudePermissions,
     onPermissions: (claudePermissions) => sessionStore.updateSession(session.id, { claudePermissions }, writeDir),
-    tools: textOnly ? {} : driverTools({ askUser, harnessTools, session, extraMcpServers }),
+    tools: { ...(textOnly ? {} : driverTools({ askUser, harnessTools, session, extraMcpServers })), disableNativeSpawning: managed, restrictedChild: child && mode !== 'agent' },
   })
   let driver = makeDriver()
   let usage = null
@@ -159,7 +166,7 @@ const runOneTurn = async ({
       }
     }
 
-    let text = await rewritePrompt(prompt, { cwd: settings.cwd })
+    let text = child ? prompt : await rewritePrompt(prompt, { cwd: settings.cwd })
     if (text !== prompt) onPromptRewrite?.(text)
     text = await prependNotes(fired, session, text)
     let first = true
@@ -194,7 +201,8 @@ const runOneTurn = async ({
       if (!steering || signal?.aborted) break
       const steers = steering.take()
       if (!steers.length) break
-      text = await rewritePrompt(steers.map((steer) => steer.text).join('\n\n'), { cwd: settings.cwd })
+      const steerText = steers.map((steer) => steer.text).join('\n\n')
+      text = child ? steerText : await rewritePrompt(steerText, { cwd: settings.cwd })
       onEvent?.({ type: 'user', steer: true, text, itemId: `steer:${steers[0].id}` })
       if (signal?.aborted) break
     }

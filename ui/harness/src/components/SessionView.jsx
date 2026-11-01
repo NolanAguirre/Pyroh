@@ -12,6 +12,8 @@ import NewChatTarget from './Session/NewChatTarget'
 import ModeToggle from './Session/ModeToggle'
 import SessionHeader from './Session/SessionHeader'
 import SessionInspector from './Session/SessionInspector'
+import ChildRuns from './Session/ChildRuns'
+import { urlWithSelection } from '../appUrl'
 import MODE_PANELS from './Session/modePanels'
 
 // Shown until the registry loads.
@@ -29,7 +31,7 @@ const FALLBACK_MODES = [{
 const SPAWN_TARGET_KINDS = ['token-waste', 'memory']
 
 const SessionView = ({ devId, sessionId, initialSession, providers = [], workspaces = [], modes: registryModes, onChanged, onCreated, transcriptFontSize }) => {
-  const { events, session: liveSession, runs, pendingQuestions } = useSessionEvents(sessionId)
+  const { events, session: liveSession, runs, children, pendingQuestions } = useSessionEvents(sessionId)
   const session = liveSession || initialSession
   const defaultMode = replyMode(session)
   const [mode, setMode] = useState(() => loadComposer(sessionId, defaultMode).mode)
@@ -233,6 +235,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
 
         <div className={`session-view__body${sideOpen ? '' : ' session-view__body--side-collapsed'}`}>
           <div className="session-view__main">
+            {session.parentSessionId && <p className="hint"><a href={urlWithSelection(new URL(window.location.href), session.workspaceId, session.parentSessionId, null, null, null).href}>Parent session · {session.parentRunId}</a></p>}
             {ModePanel && (
               <ModePanel session={session} runs={runs} events={events} filter={filter} setFilter={setFilter} />
             )}
@@ -244,6 +247,8 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
               </DevScope>
             )}
             <Transcript devId="hr6v0n8" events={shownEvents} runs={shownRuns} renderPlanActions={renderPlanActions} fontSize={transcriptFontSize} />
+
+            <ChildRuns session={session} runs={runs} children={children} />
 
             {pendingQuestions.map((q) => (
               <QuestionCard key={q.id} devId="hr1p9t4" question={q} onAnswer={answer} />

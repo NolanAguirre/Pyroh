@@ -135,6 +135,13 @@ const mcpOptions = (servers) => Array.isArray(servers) && servers.length
 
 const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } = {}) => {
   const harnessMcp = mcpOptions(tools.mcpServers)
+  const nativeOptions = (mode) => ({
+    ...(tools.disableNativeSpawning ? {} : { agents: subagents() }),
+    ...modeOptions(mode),
+    ...(tools.disableNativeSpawning || tools.restrictedChild ? { disallowedTools: [...new Set([
+      ...((mode === 'ask' || tools.restrictedChild) ? ASK_DISALLOWED_TOOLS : []), 'task',
+    ])] } : {}),
+  })
   let agent = null
   let sdk = null
   let selectedModel = null
@@ -221,8 +228,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
       model: { id: selectedModel },
       mode: sdkMode(mode),
       local,
-      agents: subagents(),
-      ...modeOptions(mode),
+      ...nativeOptions(mode),
       ...harnessMcp,
     }
     if (name) opts.name = name
@@ -237,7 +243,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
     selectedModel = resolveModel(model)
     const { Agent } = ensureSdk()
     const includeCustom = !(Array.isArray(tools) && tools.length === 0)
-    const opts = { local: { ...localOptions({ includeCustom }), ...(cwd ? { cwd } : {}) }, mode: sdkMode(mode), agents: subagents(), ...modeOptions(mode), ...harnessMcp }
+    const opts = { local: { ...localOptions({ includeCustom }), ...(cwd ? { cwd } : {}) }, mode: sdkMode(mode), ...nativeOptions(mode), ...harnessMcp }
     if (tools !== undefined) opts.tools = tools
     if (apiKey) opts.apiKey = apiKey
     agent = await Agent.resume(providerAgentId, opts)

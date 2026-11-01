@@ -99,7 +99,23 @@ const summarizePerRun = (calls, { top, usageRuns }) => {
   return { byWorkspace, perRun }
 }
 
-const summarizeSubagents = (calls) => {
+const summarizeSubagents = (calls, usageRuns = []) => {
+  const unique = [...new Map((usageRuns || []).map(run => [runKeyOf(run), run])).values()]
+  const children = unique.filter(run => run.parentRunId)
+  const parents = unique.filter(run => !run.parentRunId)
+  const tokens = (runs) => sumUsage(runs.map(run => splitUsage(run.usage)))
+  const harness = {
+    count: new Set(children.map(run => run.sessionId)).size,
+    outcomes: sortedCounts(countBy(children, run => run.status || 'unknown'), 'status'),
+    durationMs: children.reduce((sum, run) => sum + (run.durationMs || 0), 0),
+    directUsage: tokens(parents), childUsage: tokens(children), combinedUsage: tokens(unique),
+    runs: children,
+    byModel: [...new Set(children.map(run => JSON.stringify([run.provider, run.model])))].map(key => {
+      const [provider, model] = JSON.parse(key)
+      const runs = children.filter(run => run.provider === provider && run.model === model)
+      return { provider, model, count: runs.length, durationMs: runs.reduce((sum, run) => sum + (run.durationMs || 0), 0), usage: tokens(runs) }
+    }),
+  }
   const tasks = calls.filter((call) => call.name === 'task' || call.subagentType)
   const stepCalls = calls.filter((call) => call.step)
   const topLevel = calls.filter((call) => !call.step)
@@ -111,6 +127,7 @@ const summarizeSubagents = (calls) => {
     entry.runs.add(runKeyOf(call))
   }
   return {
+    harness,
     tasks: {
       total: tasks.length,
       byType: sortedCounts(countBy(tasks, (call) => call.subagentType || '(unspecified)'), 'type'),
@@ -165,7 +182,7 @@ const summarize = (calls, { bucket = 'day', by = null, top = 10, since = null, u
     byWorkspace,
     overTime: summarizeOverTime(calls, byTool, { bucket, top }),
     perRun,
-    subagents: summarizeSubagents(calls),
+    subagents: summarizeSubagents(calls, usageRuns),
     breakdown: by ? summarizeBreakdown(calls, { by, top }) : null,
     targets: tool ? summarizeTargets(calls, tool) : null,
   }

@@ -208,3 +208,9 @@
   gap: 8px;
   flex-shrink: 0;
 }
+
+.sidebar__child-session {
+  margin-left: 18px;
+  border-left: 2px solid currentColor;
+  padding-left: 4px;
+}

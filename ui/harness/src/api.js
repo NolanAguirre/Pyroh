@@ -73,6 +73,8 @@ const tagSession = (session, machine) => (machine && session ? {
   id: tagId(session.id, machine),
   workspaceId: tagId(session.workspaceId, machine),
   sourceSessionId: tagId(session.sourceSessionId, machine),
+  parentSessionId: tagId(session.parentSessionId, machine),
+  rootSessionId: tagId(session.rootSessionId, machine),
   machine,
 } : session)
 

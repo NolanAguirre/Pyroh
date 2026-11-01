@@ -7,6 +7,7 @@ const useSessionEvents = (sessionId) => {
   const [events, setEvents] = useState([])
   const [session, setSession] = useState(null)
   const [runs, setRuns] = useState([])
+  const [children, setChildren] = useState([])
   const [questions, setQuestions] = useState([])
   const [connected, setConnected] = useState(false)
   const sourceRef = useRef(null)
@@ -16,6 +17,7 @@ const useSessionEvents = (sessionId) => {
     setSession(null)
     setRuns([])
     setQuestions([])
+    setChildren([])
     setConnected(false)
     if (!sessionId) return undefined
 
@@ -29,6 +31,10 @@ const useSessionEvents = (sessionId) => {
     })
     source.addEventListener('session', (e) => setSession(api.adoptSession(sessionId, JSON.parse(e.data))))
     source.addEventListener('runs', (e) => setRuns(JSON.parse(e.data)))
+    source.addEventListener('children', (e) => setChildren(JSON.parse(e.data).map(child => {
+      const tagged = api.adoptSession(sessionId, { id: child.sessionId, workspaceId: child.workspaceId })
+      return { ...child, sessionId: tagged.id, workspaceId: tagged.workspaceId }
+    })))
     source.addEventListener('questions', (e) => setQuestions(JSON.parse(e.data)))
     source.addEventListener('ready', () => setConnected(true))
     source.onerror = () => setConnected(false)
@@ -41,7 +47,7 @@ const useSessionEvents = (sessionId) => {
 
   const pendingQuestions = questions.filter((q) => q.status === 'pending')
 
-  return { events, session, runs, questions, pendingQuestions, connected }
+  return { events, session, runs, children, questions, pendingQuestions, connected }
 }
 
 export default useSessionEvents

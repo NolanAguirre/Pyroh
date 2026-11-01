@@ -70,20 +70,23 @@ const loadCalls = async (options) => {
   }))
 }
 
-// Every run with recorded usage, including runs that made no tool calls.
+// Include runs without usage so child failures and cancellations remain visible.
 const loadRuns = async (options) => {
   const params = []
   const clauses = [
     ...sessionClauses(options, params),
     ...tsClauses('r.started_at', options, params),
-    'r.input IS NOT NULL',
   ]
   const { rows } = await db.query(
     `SELECT r.session_id, r.run_id, ${epochMs('r.started_at')} AS started_at, r.step, r.mode,
             r.input, r.output, r.cache_read, r.cache_write, r.reasoning, r.total,
-            s.workspace_id, w.name AS workspace_name, s.provider
+            s.workspace_id, w.name AS workspace_name, s.provider, s.model, r.duration_ms,
+            s.meta->>'parentSessionId' AS parent_session_id, s.meta->>'parentRunId' AS parent_run_id,
+            s.meta->>'rootSessionId' AS root_session_id,
+            mr.result->'runMetadata'->r.run_id->>'status' AS status
      FROM runs r
      JOIN sessions s ON s.id = r.session_id
+     LEFT JOIN metric_results mr ON mr.session_id = s.id AND mr.metric = 'run-usage'
      LEFT JOIN workspaces w ON w.id = s.workspace_id
      ${whereSql(clauses)}
      ORDER BY s.updated_at DESC NULLS LAST, r.session_id, r.started_at NULLS FIRST, r.run_id`,
@@ -98,6 +101,8 @@ const loadRuns = async (options) => {
     step: row.step,
     mode: row.mode,
     firstTs: row.started_at,
+    model: row.model, durationMs: num(row.duration_ms), status: row.status,
+    parentSessionId: row.parent_session_id, parentRunId: row.parent_run_id, rootSessionId: row.root_session_id,
     usage: usageOf(row),
   }))
 }

@@ -81,6 +81,7 @@ const streamSession = async (req, res, sessionId) => {
   }
 
   const pushRuns = async () => sendChanged('runs', await sessionStore.listRunsAsync(sessionId, writeDir()))
+  const pushChildren = async () => sendChanged('children', require('../harness/delegation').childrenFor(sessionId))
   const pushQuestions = async () => sendChanged('questions', await questionStore.listQuestionsAsync(sessionId, writeDir()))
 
   let offset = 0
@@ -92,7 +93,7 @@ const streamSession = async (req, res, sessionId) => {
 
   // Replay existing events, then remember the byte offset for tailing.
   await tail()
-  await Promise.all([pushSession(), pushRuns(), pushQuestions()])
+  await Promise.all([pushSession(), pushRuns(), pushQuestions(), pushChildren()])
   send('ready', { sessionId })
   if (closed) return
 
@@ -109,7 +110,7 @@ const streamSession = async (req, res, sessionId) => {
         pending = false
         if (recoverDaemon) await recover()
         await tail()
-        await Promise.all([pushSession(), pushRuns(), pushQuestions()])
+        await Promise.all([pushSession(), pushRuns(), pushQuestions(), pushChildren()])
       } while (pending && !closed)
     })()
     try {

@@ -51,12 +51,15 @@ const listRunUsageAsync = async (sessionId, sessionDir) => {
   const [runs, usage] = await Promise.all([runRecords(sessionId, sessionDir), jsonRecords(path.join(sessionDir, 'usage'))])
   const entries = new Map(runs.map(({ record }) => [record.id, {
     runId: record.id, startedAt: record.startedAt, step: record.step ?? null, usage: record.usage, durationMs: record.durationMs,
+    status: record.status ?? null,
+    parentSessionId: record.parentSessionId ?? null, parentRunId: record.parentRunId ?? null, rootSessionId: record.rootSessionId ?? null,
     mode: record.plugin?.base ?? record.mode ?? null,
   }]))
   for (const { file, record } of usage) {
     if (!record?.runId) continue
     const run = entries.get(record.runId)
     entries.set(record.runId, {
+      ...run,
       runId: record.runId,
       startedAt: run?.startedAt ?? (await fs.promises.stat(file)).mtimeMs,
       step: run?.step ?? null,

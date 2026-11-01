@@ -8,6 +8,10 @@ const compute = async (session) => {
   const entries = await listRunUsageAsync(session.id, session.sessionDir)
   const runs = entries.map((entry) => ({
     runId: entry.runId,
+    status: entry.status || null,
+    parentSessionId: entry.parentSessionId || session.meta?.parentSessionId || null,
+    parentRunId: entry.parentRunId || session.meta?.parentRunId || null,
+    rootSessionId: entry.rootSessionId || session.meta?.rootSessionId || null,
     startedAt: Number.isFinite(entry.startedAt) ? entry.startedAt : null,
     step: entry.step == null ? null : String(entry.step),
     mode: entry.mode == null ? null : String(entry.mode),
@@ -52,6 +56,11 @@ const store = async (client, session, result) => {
   )
 }
 
-const summary = (result) => result.totals
+const summary = (result) => ({
+  ...result.totals,
+  runMetadata: Object.fromEntries(result.runs.map(run => [run.runId, {
+    status: run.status, parentSessionId: run.parentSessionId, parentRunId: run.parentRunId, rootSessionId: run.rootSessionId,
+  }])),
+})
 
-module.exports = { name: 'run-usage', version: 2, compute, store, summary }
+module.exports = { name: 'run-usage', version: 3, compute, store, summary }

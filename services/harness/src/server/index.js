@@ -14,6 +14,7 @@ const reconcileSessions = () => sessionIndex.reconcile(config.writeDir).catch((e
 const createApp = () => {
   const app = express()
   app.use(express.json({ limit: '4mb' }))
+  app.use('/mcp/agents', require('./delegationMcp'))
   app.use('/api/analytics', analyticsRoutes)
   app.use('/api', routes)
   app.use((err, _req, res, _next) => {
@@ -27,6 +28,9 @@ const start = () => {
   workspaceStore.ensureLayout(config.writeDir)
   reconcileSessions()
   setInterval(reconcileSessions, RECONCILE_INTERVAL_MS).unref()
+  const recoverChildren = () => require('../harness/delegation').recover().catch(err => process.stderr.write(`child recovery failed: ${err.message}\n`))
+  recoverChildren()
+  setInterval(recoverChildren, 5000).unref()
   const app = createApp()
   app.listen(config.port, config.host, () => {
     process.stdout.write(`harness API listening on http://${config.host}:${config.port}\n`)

@@ -62,6 +62,18 @@ const SessionsSidebar = ({
     onPin: (...args) => handlers.current.onPin(...args),
   }), [])
 
+  const groupedSessions = useMemo(() => {
+    const ids = new Set(shownSessions.map(session => session.id))
+    const children = new Map()
+    for (const session of shownSessions) {
+      if (!session.parentSessionId || !ids.has(session.parentSessionId)) continue
+      if (!children.has(session.parentSessionId)) children.set(session.parentSessionId, [])
+      children.get(session.parentSessionId).push(session)
+    }
+    return shownSessions.filter(session => !session.parentSessionId || !ids.has(session.parentSessionId))
+      .flatMap(session => [session, ...(children.get(session.id) || [])])
+  }, [shownSessions])
+
   const archiveOlder = () => {
     if (archiveBusy || !sessionsToArchive.length || !onArchiveOlder) return
     onArchiveOlder(sessionsToArchive.map(session => session.id))
@@ -173,9 +185,9 @@ const SessionsSidebar = ({
                 <p className="hint sidebar__empty-hint">No sessions match &ldquo;{searchQuery}&rdquo;</p>
               </DevScope>
             )}
-            {shownSessions.map((session) => (
+            {groupedSessions.map((session) => (
+              <div key={session.id} className={session.parentSessionId ? 'sidebar__child-session' : undefined}>
               <SessionRow
-                key={session.id}
                 session={session}
                 active={session.id === activeId}
                 onSelect={rowHandlers.onSelect}
@@ -185,6 +197,7 @@ const SessionsSidebar = ({
                 onPin={rowHandlers.onPin}
                 pinBusy={pinBusy}
               />
+              </div>
             ))}
             {hiddenArchived > 0 && (
               <DevScope id="m4r8s2v" state={{ hidden: hiddenArchived }}>
