@@ -44,7 +44,7 @@ Do not make up dev ids. Call the get_dev_ids tool on the mcpdevid MCP server wit
     usedBy: ['prompt/rewrite.js'],
     vars: [
       { name: 'match', description: 'The ##id token as typed.' },
-      { name: 'files', description: 'Paths of the files that contain the id, space separated.' },
+      { name: 'files', description: 'Each place the id appears as path:line, space separated.' },
     ],
     template: '{{match}} {{files}}',
   },

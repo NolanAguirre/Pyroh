@@ -3,7 +3,7 @@
 export const devIdPaths = {
   id: 'devIdPaths',
   label: 'Dev id paths',
-  description: 'Appends the files that contain each ##id.',
+  description: 'Appends the file:line locations of each ##id.',
   steer: true,
   patterns: [/##([a-z0-9]{7})\b(?!\s+\/)/g],
 }

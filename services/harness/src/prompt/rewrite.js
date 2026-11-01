@@ -2,19 +2,24 @@ const { execFile } = require('child_process')
 const { TRIGGERS } = require('./triggers')
 const prompts = require('../prompts')
 
-const findFiles = (needle, cwd) => new Promise((resolve) => {
+// --null puts a NUL after the path so paths containing ':' still parse.
+const findLocations = (needle, cwd) => new Promise((resolve) => {
   if (!cwd) return resolve([])
   execFile(
     'rg',
-    ['--files-with-matches', '--fixed-strings', '--word-regexp', '--follow', '--', needle, cwd],
+    ['--line-number', '--with-filename', '--no-heading', '--null', '--sort', 'path',
+      '--fixed-strings', '--word-regexp', '--follow', '--', needle, cwd],
     { maxBuffer: 1024 * 1024 },
-    (err, stdout) => resolve(String(stdout || '').split('\n').filter(Boolean).sort())
+    (err, stdout) => resolve(String(stdout || '').split('\n').filter(Boolean).map((row) => {
+      const [path, rest = ''] = row.split('\0')
+      return `${path}:${rest.split(':')[0]}`
+    }))
   )
 })
 
 const devIdPaths = async ([match, id], { cwd }) => {
-  const files = await findFiles(id, cwd)
-  return files.length ? prompts.render('devIdPaths', { match, files: files.join(' ') }) : match
+  const locations = await findLocations(id, cwd)
+  return locations.length ? prompts.render('devIdPaths', { match, files: locations.join(' ') }) : match
 }
 
 const triggerPattern = (id) => TRIGGERS.find((trigger) => trigger.id === id).patterns[0]
