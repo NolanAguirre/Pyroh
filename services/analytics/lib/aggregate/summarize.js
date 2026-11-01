@@ -1,0 +1,174 @@
+const { bucketKey } = require('./time')
+const { runKeyOf, countBy, sortedCounts, round, percentile } = require('./stats')
+const { splitUsage, sumUsage } = require('./usage')
+const { summarizeWorkspaces } = require('./workspaces')
+const { summarizeTargets } = require('./targets')
+
+const READ_ONLY_MODES = ['plan', 'ask']
+
+const groupKeyOf = (by) => (call) => {
+  if (by === 'workspace') return call.workspaceName || call.workspaceId || '(none)'
+  if (by === 'provider') return call.provider || '(none)'
+  if (by === 'model') return call.model || '(default)'
+  return call.sessionId
+}
+
+const summarizeTools = (calls) => {
+  const toolRuns = new Map()
+  for (const call of calls) {
+    if (!toolRuns.has(call.name)) toolRuns.set(call.name, { count: 0, runs: new Set() })
+    const entry = toolRuns.get(call.name)
+    entry.count += 1
+    entry.runs.add(runKeyOf(call))
+  }
+  return [...toolRuns.entries()]
+    .map(([tool, entry]) => ({
+      tool,
+      count: entry.count,
+      pct: calls.length ? round((entry.count / calls.length) * 100, 1) : 0,
+      runs: entry.runs.size,
+      perRun: round(entry.count / entry.runs.size),
+    }))
+    .sort((a, b) => b.count - a.count || a.tool.localeCompare(b.tool))
+}
+
+const summarizeOverTime = (calls, byTool, { bucket, top }) => {
+  const topTools = byTool.slice(0, top).map((entry) => entry.tool)
+  const buckets = new Map()
+  for (const call of calls) {
+    const key = bucketKey(call.ts, bucket)
+    if (!buckets.has(key)) buckets.set(key, { bucket: key, total: 0, other: 0, counts: {} })
+    const row = buckets.get(key)
+    row.total += 1
+    if (topTools.includes(call.name)) row.counts[call.name] = (row.counts[call.name] || 0) + 1
+    else row.other += 1
+  }
+  return {
+    bucket,
+    tools: topTools,
+    hasOther: byTool.length > topTools.length,
+    rows: [...buckets.values()].sort((a, b) => a.bucket.localeCompare(b.bucket)),
+  }
+}
+
+const summarizePerRun = (calls, { top, usageRuns }) => {
+  const runs = new Map()
+  for (const call of calls) {
+    const key = runKeyOf(call)
+    if (!runs.has(key)) {
+      runs.set(key, {
+        runId: call.runId,
+        sessionId: call.sessionId,
+        workspaceId: call.workspaceId,
+        workspaceName: call.workspaceName,
+        provider: call.provider,
+        step: call.step,
+        mode: call.mode,
+        firstTs: call.ts,
+        count: 0,
+        tokens: splitUsage(call.usage),
+      })
+    }
+    runs.get(key).count += 1
+  }
+  const runList = [...runs.values()]
+  const tokenRuns = new Map(runList.map((run) => [runKeyOf(run), run]))
+  for (const run of usageRuns || []) {
+    const key = runKeyOf(run)
+    const tokens = splitUsage(run.usage)
+    if (tokenRuns.has(key)) tokenRuns.get(key).tokens = tokens
+    else tokenRuns.set(key, { ...run, usage: undefined, count: 0, tokens })
+  }
+  const tokenRunList = [...tokenRuns.values()]
+  const byWorkspace = summarizeWorkspaces(tokenRunList)
+  const runCounts = runList.map((run) => run.count).sort((a, b) => a - b)
+  const perRun = {
+    runs: runCounts.length,
+    mean: runCounts.length ? round(calls.length / runCounts.length) : 0,
+    median: runCounts.length
+      ? (runCounts.length % 2
+        ? runCounts[(runCounts.length - 1) / 2]
+        : (runCounts[runCounts.length / 2 - 1] + runCounts[runCounts.length / 2]) / 2)
+      : 0,
+    p90: percentile(runCounts, 0.9),
+    max: runCounts.length ? runCounts[runCounts.length - 1] : 0,
+    tokens: sumUsage(tokenRunList.map((run) => run.tokens)),
+    buildTokens: sumUsage(tokenRunList.filter((run) => !READ_ONLY_MODES.includes(run.mode)).map((run) => run.tokens)),
+    top: runList.sort((a, b) => b.count - a.count).slice(0, top),
+  }
+  return { byWorkspace, perRun }
+}
+
+const summarizeSubagents = (calls) => {
+  const tasks = calls.filter((call) => call.name === 'task' || call.subagentType)
+  const stepCalls = calls.filter((call) => call.step)
+  const topLevel = calls.filter((call) => !call.step)
+  const stepRuns = new Map()
+  for (const call of stepCalls) {
+    if (!stepRuns.has(call.step)) stepRuns.set(call.step, { count: 0, runs: new Set() })
+    const entry = stepRuns.get(call.step)
+    entry.count += 1
+    entry.runs.add(runKeyOf(call))
+  }
+  return {
+    tasks: {
+      total: tasks.length,
+      byType: sortedCounts(countBy(tasks, (call) => call.subagentType || '(unspecified)'), 'type'),
+    },
+    decompose: {
+      steps: [...stepRuns.entries()]
+        .map(([step, entry]) => ({ step, count: entry.count, runs: entry.runs.size }))
+        .sort((a, b) => b.count - a.count),
+      topLevel: { count: topLevel.length, runs: new Set(topLevel.map(runKeyOf)).size },
+    },
+  }
+}
+
+const summarizeBreakdown = (calls, { by, top }) => {
+  const keyOf = groupKeyOf(by)
+  const groups = new Map()
+  for (const call of calls) {
+    const key = keyOf(call)
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(call)
+  }
+  return {
+    by,
+    groups: [...groups.entries()]
+      .map(([key, items]) => ({
+        key,
+        count: items.length,
+        runs: new Set(items.map(runKeyOf)).size,
+        tools: sortedCounts(countBy(items, (call) => call.name), 'tool').slice(0, top),
+      }))
+      .sort((a, b) => b.count - a.count),
+  }
+}
+
+// usageRuns (from loadRuns) adds token usage for runs without tool calls.
+const summarize = (calls, { bucket = 'day', by = null, top = 10, since = null, until = null, tool = null, usageRuns = null } = {}) => {
+  const runKeys = new Set(calls.map(runKeyOf))
+  const sessionIds = new Set(calls.map((call) => call.sessionId))
+  const byTool = summarizeTools(calls)
+  const { byWorkspace, perRun } = summarizePerRun(calls, { top, usageRuns })
+
+  return {
+    range: { since, until },
+    totals: {
+      calls: calls.length,
+      runs: runKeys.size,
+      sessions: sessionIds.size,
+      first: calls.length ? calls[0].ts : null,
+      last: calls.length ? calls[calls.length - 1].ts : null,
+    },
+    byTool,
+    byWorkspace,
+    overTime: summarizeOverTime(calls, byTool, { bucket, top }),
+    perRun,
+    subagents: summarizeSubagents(calls),
+    breakdown: by ? summarizeBreakdown(calls, { by, top }) : null,
+    targets: tool ? summarizeTargets(calls, tool) : null,
+  }
+}
+
+module.exports = { summarize }
