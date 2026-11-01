@@ -133,29 +133,12 @@ const mcpOptions = (servers) => Array.isArray(servers) && servers.length
   ? { mcpServers: Object.fromEntries(servers.map((server) => [server.name, { type: 'http', url: server.url }])) }
   : {}
 
-const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, transcriptFile, sdkStoreDir } = {}) => {
+const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } = {}) => {
   const harnessMcp = mcpOptions(tools.mcpServers)
   let agent = null
   let sdk = null
   let selectedModel = null
   let resumed = false
-  let transcriptError = null
-
-  // Keep the unmodified SDK payload before normalization, including tool results
-  // and thinking deltas. Append immediately so interrupted runs remain auditable.
-  const record = (kind, payload) => {
-    if (!transcriptFile) return
-    try {
-      fs.mkdirSync(path.dirname(transcriptFile), { recursive: true })
-      const fd = fs.openSync(transcriptFile, 'a', 0o600)
-      try {
-        fs.writeFileSync(fd, `${JSON.stringify({ ts: Date.now(), kind, payload })}\n`)
-        fs.fsyncSync(fd)
-      } finally { fs.closeSync(fd) }
-    } catch (err) {
-      transcriptError = transcriptError || errorMessage(err)
-    }
-  }
 
   const ensureSdk = () => {
     if (!sdk) sdk = loadSdk()
@@ -268,34 +251,24 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, transcriptFile
     const options = { ...(mode ? { mode: sdkMode(mode) } : {}), ...(selectedModel ? { model: { id: selectedModel } } : {}),
       ...(resumed ? { local: { force: true } } : {}) }
     const text = composePrompt(prompt, { mode, terse, instructions })
-    record('prompt', { prompt: text, options, providerAgentId: providerAgentId() })
-    if (transcriptError) throw new Error(`Cannot start Cursor without an audit transcript: ${transcriptError}`)
-    let run
-    try {
-      run = await agent.send(text, options)
-    } catch (err) {
-      record('error', { message: errorMessage(err), stack: err?.stack })
-      throw err
-    }
-    const runId = run.id || null
-    record('run', { runId, providerAgentId: providerAgentId() })
     let streamError = null
     const notify = (event) => {
       try { emit(event) } catch (err) { streamError = streamError || errorMessage(err) }
     }
+    notify({ type: 'provider_prompt', text, options, providerAgentId: providerAgentId() })
+    const run = await agent.send(text, options)
+    const runId = run.id || null
     notify({ type: 'status', status: 'running', runId })
 
     const segment = { kind: null, seq: 0 }
     const streaming = (async () => {
       try {
         for await (const message of run.stream()) {
-          record('message', message)
           mapMessage(message, notify, runId, segment)
         }
       } catch (err) {
         streamError = streamError || errorMessage(err)
-        record('error', { runId, message: errorMessage(err), stack: err?.stack })
-        notify({ type: 'error', message: errorMessage(err), runId })
+        notify({ type: 'error', message: errorMessage(err), stack: err?.stack, runId })
       }
     })()
 
@@ -305,24 +278,22 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, transcriptFile
       try {
         result = await run.wait()
       } catch (err) {
-        record('error', { runId, message: errorMessage(err), stack: err?.stack })
-        result = { status: 'error', error: errorMessage(err), usage: run.usage || null, id: runId }
+        result = { status: 'error', error: errorMessage(err), errorStack: err?.stack, usage: run.usage || null, id: runId }
       }
-      record('result', result)
       const normalized = normalizeResult(result)
       normalized.providerRunId = runId
-      normalized.transcriptStatus = transcriptError || streamError ? 'incomplete' : 'complete'
-      normalized.transcriptError = transcriptError || streamError
-      if (normalized.transcriptError) {
+      normalized.transcriptStatus = streamError ? 'incomplete' : 'complete'
+      normalized.transcriptError = streamError
+      if (streamError) {
         normalized.status = 'error'
-        normalized.error = `Cursor audit incomplete: ${normalized.transcriptError}`
+        normalized.error = `Cursor events incomplete: ${streamError}`
       }
       notify({ type: 'result', ...normalized, runId })
       if (streamError && !normalized.transcriptError) {
         normalized.transcriptStatus = 'incomplete'
         normalized.transcriptError = streamError
         normalized.status = 'error'
-        normalized.error = `Cursor audit incomplete: ${streamError}`
+        normalized.error = `Cursor events incomplete: ${streamError}`
       }
       return normalized
     }

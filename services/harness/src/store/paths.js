@@ -102,9 +102,6 @@ const runFile = (sessionId, runId, writeDir = config.writeDir) =>
 const runPromptFile = (sessionId, runId, writeDir = config.writeDir) =>
   path.join(runsDir(sessionId, writeDir), `${runId}.prompt.txt`)
 
-const runTranscriptFile = (sessionId, runId, writeDir = config.writeDir) =>
-  path.join(runsDir(sessionId, writeDir), `${runId}.cursor.jsonl`)
-
 const planFile = (sessionId, runId, writeDir = config.writeDir) =>
   path.join(runsDir(sessionId, writeDir), `${runId}.plan.md`)
 
@@ -188,7 +185,6 @@ module.exports = {
   runsDir,
   runFile,
   runPromptFile,
-  runTranscriptFile,
   planFile,
   eventsFile,
   daemonLog,

@@ -115,6 +115,7 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
           {
             type: 'error',
             message,
+            stack: err?.stack,
             runId: extra.runId || activeRunId,
             phase: extra.phase == null ? activePhase : extra.phase,
             step: extra.step || activeStepId,
@@ -299,7 +300,6 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
         },
         onCreated: (providerAgentId) => {
           record.providerAgentId = providerAgentId
-          if (live.provider === 'cursor') record.transcriptFile = paths.runTranscriptFile(sessionId, runId, writeDir)
           sessionStore.writeStepRun(sessionId, { phase, stepId: step.id }, record, writeDir)
           sessionStore.updateSession(
             sessionId,

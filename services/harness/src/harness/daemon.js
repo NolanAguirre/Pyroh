@@ -164,7 +164,7 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
     const status = failureStatus(err)
     logLine(`${label}${status === 'disconnected' ? ' (network lost)' : ''}: ${formatError(err)}`)
     try {
-      onEvent({ type: 'error', message })
+      onEvent({ type: 'error', message, stack: err?.stack })
     } catch {
       // keep going so the session is not left running
     }
@@ -235,10 +235,7 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
           },
           writeDir,
         )
-        sessionStore.updateRun(sessionId, runId, {
-          pid: process.pid, status: 'running', providerAgentId,
-          ...(session.provider === 'cursor' ? { transcriptFile: `${runId}.cursor.jsonl` } : {}),
-        }, writeDir)
+        sessionStore.updateRun(sessionId, runId, { pid: process.pid, status: 'running', providerAgentId }, writeDir)
         eventLog.append(sessionId, { type: 'status', status: 'running', runId }, writeDir)
       },
     })
@@ -279,7 +276,7 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
   const failAfterRun = (err, label) => {
     const message = errorMessage(err)
     logLine(`${label}: ${formatError(err)}`)
-    onEvent({ type: 'error', message })
+    onEvent({ type: 'error', message, stack: err?.stack })
     finalize(
       { status: 'error', usage: result.usage, durationMs, error: message, result: result.result },
       'error',

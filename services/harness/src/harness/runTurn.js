@@ -87,9 +87,6 @@ const runOneTurn = async ({
     claude: session.claude,
     permissions: session.claudePermissions,
     onPermissions: (claudePermissions) => sessionStore.updateSession(session.id, { claudePermissions }, writeDir),
-    transcriptFile: session.provider === 'cursor' && runId
-      ? paths.runTranscriptFile(session.id, runId, writeDir)
-      : undefined,
     tools: textOnly ? {} : driverTools({ askUser, harnessTools, session }),
   })
   let driver = makeDriver()

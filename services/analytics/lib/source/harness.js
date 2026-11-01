@@ -118,7 +118,6 @@ const describeSession = async (loc) => {
   const events = await statOrNull(eventsPath)
 
   const transcriptPaths = [
-    ...runFiles.filter((file) => file.endsWith('.cursor.jsonl')),
     ...rootSteps,
     ...phaseFiles.filter((file) => file.endsWith('.json')),
   ].sort()

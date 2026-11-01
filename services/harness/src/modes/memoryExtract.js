@@ -7,7 +7,7 @@ const MODE = 'memory-extract'
 const NAME = 'Memories'
 
 const isTranscriptFile = (name) =>
-  name === 'events.jsonl' || name.endsWith('.prompt.txt') || name.endsWith('.cursor.jsonl')
+  name === 'events.jsonl' || name.endsWith('.prompt.txt')
 
 const transcriptFiles = (sessionId, writeDir) => {
   const files = []

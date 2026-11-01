@@ -595,7 +595,7 @@ const recoverSession = (sessionId, writeDir, { excludeRunId } = {}) => {
       .sort((a, b) => a.startedAt - b.startedAt)[0])
     if (!receipt && sdk && ['finished', 'error', 'cancelled'].includes(sdk.status)) {
       receipt = { ...sdk, durationMs: (sdk.endedAt || Date.now()) - (sdk.startedAt || record.startedAt),
-        transcriptStatus: 'incomplete', transcriptError: 'Daemon stopped before the audit transcript was finalized' }
+        transcriptStatus: 'incomplete', transcriptError: 'Daemon stopped before the run finished streaming events' }
     }
     if (receipt && (!record.endedAt || (!record.usage && !record.receiptRecovered))) {
       const endedAt = receipt.endedAt || Date.now()
