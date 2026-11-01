@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/server/index.js"
   },
-  "license": "UNLICENSED",
+  "license": "ISC",
   "dependencies": {
     "express": "5.2.1"
   }

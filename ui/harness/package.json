@@ -1,6 +1,7 @@
 {
   "name": "harness",
   "private": true,
+  "license": "ISC",
   "version": "0.0.0",
   "type": "module",
   "scripts": {
