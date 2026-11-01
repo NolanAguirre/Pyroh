@@ -8,6 +8,9 @@ const { writePromptFile, persistRecordPrompt, readRecordPrompt, readRecordPrompt
 
 const createRun = (sessionId, { mode, prompt, handoff, plugin }, writeDir) => {
   const session = loadSession(sessionId, writeDir)
+  if (session?.parentRunId && listRuns(sessionId, writeDir).length) {
+    throw new Error('Harness children have one run; start a new child instead')
+  }
   const ancestry = session?.parentRunId ? { parentSessionId: session.parentSessionId, parentRunId: session.parentRunId, rootSessionId: session.rootSessionId } : {}
   const id = genId('r')
   const file = paths.runFile(sessionId, id, writeDir)

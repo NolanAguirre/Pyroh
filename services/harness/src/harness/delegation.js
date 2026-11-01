@@ -81,7 +81,7 @@ const targetFor = (parent, state, args) => {
     fail('This parent has Claude approval restrictions; choose a Claude child')
   }
   return { provider, model, mode,
-    ...(provider === 'codex' && parent.provider === 'codex' ? { codex: parent.codex } : {}),
+    ...(provider === 'codex' && parent.provider === 'codex' ? { codex: { ...parent.codex, ...(model !== parent.model ? { reasoningEffort: null } : {}) } } : {}),
     ...(provider === 'claude' && parent.provider === 'claude' ? { claude: parent.claude } : {}),
     ...(provider === 'grok' && parent.provider === 'grok' ? { grok: parent.grok } : {}),
   }
@@ -110,6 +110,8 @@ const describe = (child) => {
     done, provider: session?.provider, model: session?.model, mode: run?.mode,
     pendingQuestions: session ? questions.listQuestions(session.id, config.writeDir).filter(q => q.runId === child.runId && q.status === 'pending') : [],
     error: child.error || run?.error || null,
+    nativeSpawningBlocked: session ? session.provider !== 'grok' : null,
+    ...(session?.provider === 'grok' ? { warning: 'Native spawning cannot be fully blocked by Grok; the child is instructed not to spawn.' } : {}),
     usage: run?.usage ?? null, normalizedUsage: store.normalizeUsage(run?.usage, session?.provider),
     durationMs: run?.durationMs || (run ? Math.max(0, (run.endedAt || Date.now()) - run.startedAt) : 0),
     ...(done ? { finalResponse: run?.result ?? null } : {}),
@@ -131,6 +133,10 @@ const spawn = (context, args) => withLock(context.sessionId, context.runId, (fil
     }
     return describe(prior)
   }
+  for (const child of Object.values(state.children)) {
+    if (!child.runId && !child.error) child.error = 'Spawn was interrupted before launch; retry with a new key.'
+  }
+  writeJson(file, state)
   if (Object.values(state.children).filter(child => !describe(child).done).length >= 4) fail('Child limit reached: at most four active children per parent run')
   const parent = store.loadSession(context.sessionId, config.writeDir)
   const target = targetFor(parent, state, args)
@@ -139,7 +145,8 @@ const spawn = (context, args) => withLock(context.sessionId, context.runId, (fil
   // Reserve the key durably before creating a session or launching any worker.
   writeJson(file, state)
   try {
-    const session = store.createSession({ workspaceId: parent.workspaceId, ...target }, config.writeDir)
+    const workspaceId = parent.workspaceId || require('../store/workspaceStore').findWorkspaceByCwd(parent.cwd, config.writeDir)?.id
+    const session = store.createSession({ workspaceId, ...target }, config.writeDir)
     child.sessionId = session.id
     writeJson(file, state)
     store.updateSession(session.id, { mode: target.mode, parentSessionId: parent.id, parentRunId: context.runId,
@@ -194,6 +201,19 @@ const stopChildren = (sessionId, runId) => {
 const recover = async () => {
   const sessions = await store.listSessionsAsync(config.writeDir)
   for (const session of sessions) {
+    if (session.parentRunId && session.stopRequestedAt && Date.now() - session.stopRequestedAt > 10000 && store.listRuns(session.id, config.writeDir).some(run => !run.endedAt)) {
+      const owner = readJson(paths.daemonPid(session.id, config.writeDir))
+      if (locks.ownerAlive(owner)) {
+        // Harness workers lead their own process group, including provider subprocesses.
+        require('./process').signal(-owner.pid, 'SIGKILL')
+      }
+      let lock
+      try {
+        lock = locks.acquire(session.id, config.writeDir)
+        store.recoverSession(session.id, config.writeDir)
+      } catch (err) { if (err.status !== 409) throw err }
+      finally { lock?.release() }
+    }
     if (session.parentRunId && !parentActive(session.parentSessionId, session.parentRunId)) {
       if (['running', 'awaiting_input'].includes(session.status)) require('./Harness').stop(session.id)
     }
@@ -212,7 +232,7 @@ const childrenFor = (sessionId) => store.listRuns(sessionId, config.writeDir).fl
 
 const assertChildRun = (session, mode) => {
   if (!session?.parentRunId) return
-  if (!parentActive(session.parentSessionId, session.parentRunId)) fail('The parent run has ended; this child cannot start another run')
+  if (!parentActive(session.parentSessionId, session.parentRunId) || readJson(fileFor(session.parentSessionId, session.parentRunId))?.closed) fail('The parent run has ended; this child cannot start another run')
   const rank = { agent: 0, plan: 1, ask: 2 }
   if (!Object.hasOwn(rank, mode) || rank[mode] < rank[session.delegationMode]) fail('Child permissions cannot be broadened')
 }

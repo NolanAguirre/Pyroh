@@ -68,7 +68,7 @@ const AnalyticsView = ({ devId, workspaces = [], providers = [], onBack, onOpenS
           {!stats && !error && <p className="hint">Loading tool-call metrics…</p>}
           {stats && totals.calls === 0 && <p className="hint">No tool calls in this range.</p>}
 
-          {stats && totals.calls > 0 && (
+          {stats && (totals.calls > 0 || stats.subagents?.harness?.count > 0) && (
             <>
               <SummaryCard totals={totals} perRun={perRun} />
               <WorkspaceCard

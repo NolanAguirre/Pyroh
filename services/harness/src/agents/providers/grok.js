@@ -42,7 +42,10 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
   // server name or a harness MCP tool name anywhere in the request.
   const isHarnessMcpCall = (call) => {
     if (!harnessMcp.length) return false
-    const text = JSON.stringify([call.title, call.kind, call.rawInput && call.rawInput.name, call._meta])
+    const name = call.rawInput?.name
+    if (harnessMcp.some(server => server.name === 'harness_agents') &&
+      ['spawn', 'status', 'wait', 'stop'].some(tool => name === `mcp__harness_agents__${tool}` || name === `harness_agents/${tool}`)) return true
+    const text = JSON.stringify([call.title, call.kind, name, call._meta])
     return [...harnessMcp.map((server) => server.name), ...HARNESS_MCP_TOOLS].some((name) => text.includes(name))
   }
   let client = null

@@ -145,7 +145,8 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
     if (exiting) return
     exiting = true
     clearInterval(parentWatch)
-    require('./delegation').stopChildren(sessionId, runId)
+    try { require('./delegation').stopChildren(sessionId, runId) }
+    catch (err) { logLine(`child cleanup failed: ${formatError(err)}`) }
     try {
       sessionStore.updateRun(sessionId, runId, { endedAt: Date.now(), ...patch }, writeDir)
       questionStore.cancelPending(sessionId, runId, writeDir)
@@ -181,6 +182,8 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
   const onSignal = async () => {
     if (terminating) return
     terminating = true
+    try { require('./delegation').stopChildren(sessionId, runId) }
+    catch (err) { logLine(`child cleanup failed: ${formatError(err)}`) }
     const intent = readControlIntent(sessionId, writeDir) || 'paused'
     logLine(`received signal, intent=${intent}`)
     abortController.abort()
@@ -188,6 +191,7 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
       await inflight.cancel()
     }
   }
+  if (readControlIntent(sessionId, writeDir)) onSignal().catch(err => fail(err, 'stop failed', 2))
   if (session.parentRunId) {
     const checkParent = () => {
       if (!require('./delegation').parentActive(session.parentSessionId, session.parentRunId)) {
@@ -195,7 +199,6 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
         onSignal().catch(err => fail(err, 'parent cleanup failed', 2))
       }
     }
-    if (readControlIntent(sessionId, writeDir)) onSignal().catch(err => fail(err, 'child stop failed', 2))
     checkParent()
     parentWatch = setInterval(checkParent, 1000)
     parentWatch.unref()
@@ -203,9 +206,11 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
   process.on('SIGTERM', onSignal)
   process.on('SIGINT', onSignal)
 
+  if (!terminating) sessionStore.updateSession(sessionId, { status: 'running' }, writeDir)
   let started = false
   let result
   try {
+    if (session.parentRunId && !terminating) require('./delegation').assertChildRun(session, driverMode)
     const turn = await runOneTurn({
       session,
       runId,

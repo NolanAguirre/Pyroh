@@ -1,7 +1,10 @@
 import { Card, CardHeader, CardLabel, CardSection, DevScope, Matrix } from 'component-library'
-import { formatNumber } from '../../../format'
+import { urlWithSelection } from '../../../appUrl'
+import { formatNumber, formatDuration } from '../../../format'
 
 const SubagentsCard = ({ subagents }) => {
+  const harness = subagents.harness
+  const total = usage => (usage?.reads.cache || 0) + (usage?.reads.fresh || 0) + (usage?.writes.cache || 0) + (usage?.writes.fresh || 0)
   const scopeRows = subagents
     ? [
       { id: 'top-level', label: 'Top-level runs', ...subagents.decompose.topLevel },
@@ -13,8 +16,22 @@ const SubagentsCard = ({ subagents }) => {
     <DevScope id="xftf0jj" state={{ spawns: subagents.tasks.total }}>
       <Card>
         <CardHeader>Subagents &amp; decompose</CardHeader>
+        {harness && <CardSection>
+          <CardLabel>Harness children ({formatNumber(harness.count)})</CardLabel>
+          <p className="hint">{harness.outcomes.map(item => `${item.status}: ${item.count}`).join(' · ') || 'No children'} · {formatDuration(harness.durationMs)}</p>
+          <p className="hint">Reported tokens in this selection: direct parents {formatNumber(total(harness.directUsage))} · children {formatNumber(total(harness.childUsage))} · combined {formatNumber(total(harness.combinedUsage))}</p>
+          <Matrix label="Harness child runs" rowLabel="Transcript"
+            rows={harness.runs.map(run => ({ ...run, id: `${run.sessionId}:${run.runId}` }))}
+            columns={[{ id: 'status', title: 'Outcome' }, { id: 'model', title: 'Provider / model' }, { id: 'durationMs', title: 'Duration' }, { id: 'usage', title: 'Reported tokens' }]}
+            renderRowHeader={run => <a href={urlWithSelection(new URL(window.location.href), run.workspaceId, run.sessionId, null, null, null).href}>{run.runId}</a>}
+            renderCell={(run, column) => column.id === 'model' ? `${run.provider} / ${run.model || 'default'}`
+              : column.id === 'durationMs' ? formatDuration(run.durationMs)
+                : column.id === 'usage' ? run.usage ? formatNumber(run.usage.total) : 'Not reported' : run.status || 'Unknown'}
+          />
+          <p className="hint">Full events and approvals remain in each child transcript.</p>
+        </CardSection>}
         <CardSection>
-          <CardLabel>Task spawns ({formatNumber(subagents.tasks.total)})</CardLabel>
+          <CardLabel>Native task spawns ({formatNumber(subagents.tasks.total)})</CardLabel>
           {subagents.tasks.total ? (
             <Matrix
               devId="k99hltr"
@@ -44,7 +61,7 @@ const SubagentsCard = ({ subagents }) => {
             renderRowHeader={(row) => row.label}
             renderCell={(row, column) => formatNumber(row[column.id])}
           />
-          <p className="hint">Tool calls made inside subagents are not recorded in the parent transcript.</p>
+          <p className="hint">Native subagent tool calls are not recorded in the parent transcript.</p>
         </CardSection>
       </Card>
     </DevScope>

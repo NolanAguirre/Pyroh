@@ -65,7 +65,9 @@ const recoverSession = (sessionId, writeDir, { excludeRunId } = {}) => {
   if (recoveryError) patch.lastError = recoveryError
   if (['running', 'awaiting_input'].includes(session.status) || interrupted) patch.status = 'paused'
   if (Object.keys(patch).length) updateSession(sessionId, patch, writeDir)
-  return rebuildTotals(sessionId, writeDir)
+  const recovered = rebuildTotals(sessionId, writeDir)
+  if (session.parentRunId && (interrupted || recoveryError)) require('../analytics/client').notifySession(sessionId)
+  return recovered
 }
 
 module.exports = { recoverSession }

@@ -81,6 +81,7 @@ const spawnRun = (sessionId, action, { mode, prompt, autoName = false, handoff, 
     require('./delegation').assertChildRun(session, mode)
     const firstUnnamedRun = Boolean(session) && session.name == null &&
       sessionStore.listRuns(sessionId, config.writeDir).length === 0
+    require('fs').rmSync(paths.controlFile(sessionId, config.writeDir), { force: true })
     const run = sessionStore.createRun(sessionId, { mode, prompt, handoff, plugin })
     onPrepared?.(run)
     sessionStore.updateSession(sessionId, { status: 'running' }, config.writeDir)
@@ -281,7 +282,7 @@ const terminate = (sessionId, intent) => {
   const signalled = pid ? proc.signal(pid, 'SIGTERM') : false
   const status = intent === 'stop' ? 'stopped' : 'paused'
   const session = sessionStore.loadSession(sessionId, config.writeDir)
-  if (session) sessionStore.updateSession(sessionId, { status }, config.writeDir)
+  if (session) sessionStore.updateSession(sessionId, { status, ...(session.parentRunId ? { stopRequestedAt: session.stopRequestedAt || Date.now() } : {}) }, config.writeDir)
   return { signalled, pid }
 }
 

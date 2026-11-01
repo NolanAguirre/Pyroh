@@ -29,7 +29,7 @@ const ioText = (tokens) => (tokens && tokens.inputPerOutput != null ? `${tokens.
 
 const formatText = (summary) => {
   const { range, totals, byTool, byWorkspace, overTime, perRun, subagents, breakdown, targets } = summary
-  if (!totals.calls) {
+  if (!totals.calls && !subagents.harness?.count) {
     return `No tool calls found (range: ${formatTs(range.since)} .. ${formatTs(range.until)})`
   }
   const out = []
@@ -100,6 +100,15 @@ const formatText = (summary) => {
     ),
   ].join('\n')))
 
+  const owned = subagents.harness
+  if (owned) {
+    const total = usage => (usage?.reads.cache || 0) + (usage?.reads.fresh || 0) + (usage?.writes.cache || 0) + (usage?.writes.fresh || 0)
+    out.push(section('Harness children', [
+      table(['children', 'duration ms', 'parent tokens', 'child tokens', 'combined tokens'], [[owned.count, owned.durationMs, total(owned.directUsage), total(owned.childUsage), total(owned.combinedUsage)]]),
+      table(['outcome', 'count'], owned.outcomes.map(item => [item.status, item.count])),
+      table(['provider', 'model', 'children', 'duration ms', 'tokens'], owned.byModel.map(item => [item.provider, item.model || 'default', item.count, item.durationMs, total(item.usage)])),
+    ].join('\n')))
+  }
   const subagentLines = [
     subagents.tasks.total
       ? table(['subagent', 'spawns'], subagents.tasks.byType.map((entry) => [entry.type, entry.count]))
@@ -113,7 +122,7 @@ const formatText = (summary) => {
       ],
     ),
   ]
-  out.push(section('Subagents (tool calls inside subagents are not recorded)', subagentLines.join('\n')))
+  out.push(section('Native subagents (internal tool calls are not recorded)', subagentLines.join('\n')))
 
   if (breakdown) {
     out.push(section(`By ${breakdown.by}`, table(

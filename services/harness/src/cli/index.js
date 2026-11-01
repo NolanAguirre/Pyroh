@@ -192,7 +192,7 @@ const handleTurn = async (action, sessionId, flags) => {
   attachLog(sessionId, config.writeDir)
   try {
     const entry = run.plugin ? null : registry.builtinMode(run.mode)
-    if (run.plugin ? run.plugin.base !== 'ask' : entry ? entry.snapshot : true) {
+    if (!session.parentRunId && (run.plugin ? run.plugin.base !== 'ask' : entry ? entry.snapshot : true)) {
       const cwd = workspaceStore.resolveSessionCwd(session, config.writeDir)
       const snap = snapshotIfGitRepo(cwd, {
         message: `harness: snapshot before ${action} ${run.id}`,

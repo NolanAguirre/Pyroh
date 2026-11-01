@@ -36,7 +36,10 @@ const sessionClauses = ({ workspace, session, provider, since, until, archived }
     clauses.push(`(s.workspace_id = ANY(${p}::text[]) OR w.name = ANY(${p}::text[]))`)
   }
   const sessions = toList(session)
-  if (sessions) clauses.push(`s.id = ANY(${bind(sessions)}::text[])`)
+  if (sessions) {
+    const p = bind(sessions)
+    clauses.push(`(s.id = ANY(${p}::text[]) OR s.meta->>'parentSessionId' = ANY(${p}::text[]))`)
+  }
   const providers = toList(provider)
   if (providers) clauses.push(`s.provider = ANY(${bind(providers)}::text[])`)
   if (since != null) clauses.push(`(s.updated_at IS NULL OR s.updated_at >= to_timestamp(${bind(since)}::float8 / 1000))`)
