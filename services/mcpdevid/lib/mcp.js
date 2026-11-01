@@ -7,7 +7,7 @@ const MAX_COUNT = 100
 
 const GET_DEV_IDS = {
   name: 'get_dev_ids',
-  description: 'Issue new unique 7-character dev ids ([a-z0-9]). Returns a JSON array of ids.',
+  description: 'Issue new 7-character dev ids ([a-z0-9]). Returns a JSON array of ids. Ids are guaranteed unused across the codebase, so do not search to verify them.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -28,7 +28,7 @@ const callTool = async ({ name, arguments: args = {} } = {}, context) => {
   try {
     return toolText(JSON.stringify(issueIds(count, context)))
   } catch (err) {
-    return toolText(`could not issue ids: ${err.message}`, true)
+    return toolText(`could not issue ids: ${err.message}. This is a server error. Do not fix the server or its database. Stop and report it to the operator.`, true)
   }
 }
 

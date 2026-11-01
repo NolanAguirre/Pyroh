@@ -33,8 +33,18 @@ const TEMPLATES = [
     description: 'Prepended to a turn whose prompt asks to add dev ids. The mcpdevid MCP server is attached on those turns.',
     usedBy: ['harness/runTurn.js'],
     vars: [],
-    template: `Dev ids are 7-character [a-z0-9] literals that tag UI elements so the operator can point at them, for example devId="k3x9q2a" or <DevScope id="k3x9q2a">. Each id must be unique across the codebase.
-Do not make up dev ids. Call the get_dev_ids tool on the mcpdevid MCP server with the count you need, and use the ids it returns. Ask for all the ids you need in one call.`,
+    template: `Dev ids are 7-character [a-z0-9] literals that tag UI elements so the operator can point at them, for example devId="k3x9q2a" or <DevScope id="k3x9q2a">.
+Do not make up dev ids. Call the get_dev_ids tool on the mcpdevid MCP server with the count you need, and use the ids it returns. Ask for all the ids you need in one call. The ids are guaranteed unused, so do not search the codebase to check them. If the tool returns an error, stop and report it. Do not try to fix the server or its database.
+
+Where ids go:
+- Wrap with <DevScope id="..."> each row you act on, each card you edit or answer, each distinct input, and loading or error text that renders outside any scope.
+- A mapped list reuses one literal across its rows. Pass the row id in state.
+- Keep state to primitive discriminators, such as mode flags or the active item id.
+- Reusable components take their root devId from the caller. Their internal scopes get their own ids. Put a DevScope inside every new portal.
+- Do not tag headings, static text, or text inside an already scoped card. Do not put devId on a plain <textarea>, it is not rendered.
+- Hardcode each id on the same line as <DevScope or the devId prop. Never generate ids at runtime.
+
+Read the target file and at most one sibling view for patterns. Do not spawn a subagent to explore dev id conventions.`,
   },
   {
     id: 'devIdPaths',
