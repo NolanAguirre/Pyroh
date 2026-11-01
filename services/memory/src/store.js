@@ -142,9 +142,15 @@ const updateMemory = async (id, patch = {}) => {
   return next
 }
 
+// Soft delete: move the file under <writeDir>/.trash/, keeping its layout.
+// Listing skips dot-dirs, so trashed memories drop out of every read.
+const TRASH_DIR = '.trash'
+
 const deleteMemory = async (id) => {
   const file = await findFile(id)
-  await fs.unlink(file)
+  const target = path.join(config.writeDir, TRASH_DIR, path.relative(config.writeDir, file))
+  await fs.mkdir(path.dirname(target), { recursive: true })
+  await fs.rename(file, target)
 }
 
 module.exports = { isSegmentId, genId, listMemories, findMemory, createMemory, updateMemory, deleteMemory }
