@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Badge,
   Button,
+  createHarnessPlugin,
   Card,
   CardHeader,
   CardSection,
@@ -31,16 +32,9 @@ import MemoriesView from './components/Memories/MemoriesView'
 import NewSessionForm from './components/NewSessionForm'
 import NewWorkspaceForm from './components/NewWorkspaceForm'
 import api from './api'
-import harnessForms from './components/HarnessInspector/harnessForms'
-import SessionExplorer from './components/HarnessInspector/sessionExplorer'
 import './App.css'
 
-const harnessViews = [{
-  id: 'harness-sessions',
-  title: 'Harness sessions',
-  icon: '☷',
-  component: SessionExplorer,
-}]
+const HARNESS_WORKSPACE = { name: 'harness', cwdPatterns: [/\/ui\/harness\/?$/, /\/harness\/?$/], label: 'the harness workspace' }
 
 const WORKSPACE_KEY = 'harness.activeWorkspaceId'
 const WORKSPACE_PARAM = 'workspace'
@@ -189,6 +183,9 @@ const AppPlaceholder = ({ workspace, workspaces = [], sessions = [], providers =
 const App = () => {
   const { url, navigate } = useBrowserLocation()
   const { workspaceId: activeWorkspaceId, sessionId: activeId, view, file, term } = selectionFromUrl(url)
+  const harnessPlugin = useMemo(() => createHarnessPlugin({
+    client: api, workspace: HARNESS_WORKSPACE, preferredWorkspaceId: activeWorkspaceId,
+  }), [activeWorkspaceId])
   const mobile = useMediaQuery(MOBILE_QUERY)
   const [mobilePane, setMobilePane] = useState(() => (activeId ? MOBILE_CHAT : MOBILE_SESSIONS))
   const showChat = () => setMobilePane(MOBILE_CHAT)
@@ -672,7 +669,7 @@ const App = () => {
   )
 
   return (
-    <DevInspector enabled={import.meta.env.DEV} forms={harnessForms(activeWorkspaceId)} views={harnessViews}>
+    <DevInspector enabled={import.meta.env.DEV} forms={harnessPlugin.forms} views={harnessPlugin.views}>
       <DevScope id="hr7k2m9" state={{ workspace: activeWorkspaceId, session: activeId, view: activePanel ? view : 'sessions', file, term, running: runningCount, mobile }}>
         {activePanel?.placement === 'page' ? (
           PANEL_COMPONENTS[activePanel.id]()
