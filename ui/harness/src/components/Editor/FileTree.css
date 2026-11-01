@@ -1,0 +1,101 @@
+.file-tree {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.file-tree__body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.file-tree__viewport {
+  position: absolute;
+  inset: 0;
+}
+
+.file-tree__hint {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 6px 12px;
+  color: var(--text-dim);
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.file-tree__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 4px 12px;
+  color: #ff6b6b;
+  font-size: 11px;
+  word-break: break-word;
+}
+
+.file-tree__error span {
+  flex: 1;
+}
+
+.file-tree__dismiss {
+  padding: 0 2px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.file-tree__row-error {
+  margin-left: 6px;
+  color: #ff6b6b;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+
+.file-tree__symlink {
+  margin: 0 6px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.file-tree__dirty {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin: 0 6px;
+  border-radius: 50%;
+  background: var(--text);
+  flex-shrink: 0;
+}
+
+.file-tree__copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 0 2px 0 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+
+.file-tree__copy:hover,
+.file-tree__copy:focus-visible {
+  opacity: 1;
+}

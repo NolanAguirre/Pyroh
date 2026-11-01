@@ -19,6 +19,10 @@ import useFileTree from './useFileTree'
 import useOpenFiles, { isDirty } from './useOpenFiles'
 import { absolutePath, baseName, languageFor, mediaFor, parentOf } from './paths'
 import './Editor.css'
+import './Explorer.css'
+import './FileSearch.css'
+import './FileTree.css'
+import './EditorMain.css'
 
 const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const MOD = IS_MAC ? '⌘' : 'Ctrl'
