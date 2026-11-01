@@ -12,6 +12,7 @@ import NewChatTarget from './Session/NewChatTarget'
 import ModeToggle from './Session/ModeToggle'
 import SessionHeader from './Session/SessionHeader'
 import SessionInspector from './Session/SessionInspector'
+import MODE_PANELS from './Session/modePanels'
 
 // Shown until the registry loads.
 const FALLBACK_MODES = [{
@@ -40,6 +41,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const [handoffRunId, setHandoffRunId] = useState(null)
   const [spawnProvider, setSpawnProvider] = useState(session?.provider || '')
   const [spawnModel, setSpawnModel] = useState(session?.model || '')
+  const [filter, setFilter] = useState(null)
   const setPrompt = (value) => {
     setPromptState((prev) => {
       const next = typeof value === 'function' ? value(prev) : value
@@ -61,6 +63,10 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   useEffect(() => {
     if (!readDrafts()[sessionId]) setMode(defaultMode)
   }, [sessionId, defaultMode])
+
+  useEffect(() => {
+    setFilter(null)
+  }, [sessionId])
 
   useEffect(() => {
     saveComposer(sessionId, mode, prompt, defaultMode)
@@ -113,6 +119,11 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
     setHandoffRunId(null)
     onCreated?.(handoff.session)
   }, [events, handoffRunId, onCreated])
+
+  const ModePanel = MODE_PANELS[session?.mode] || null
+  const inFilter = (item) => (item.phase || 0) === filter.phase && item.step === filter.step
+  const shownEvents = ModePanel && filter ? events.filter(inFilter) : events
+  const shownRuns = ModePanel && filter ? runs.filter(inFilter) : runs
 
   const refresh = () => {
     if (onChanged) onChanged()
@@ -222,6 +233,9 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
 
         <div className={`session-view__body${sideOpen ? '' : ' session-view__body--side-collapsed'}`}>
           <div className="session-view__main">
+            {ModePanel && (
+              <ModePanel session={session} runs={runs} events={events} filter={filter} setFilter={setFilter} />
+            )}
             {!isBusy && session.lastError?.message && (
               <DevScope id="hr9w2b8">
                 <div className="tx tx--error" role="alert">
@@ -229,7 +243,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                 </div>
               </DevScope>
             )}
-            <Transcript devId="hr6v0n8" events={events} runs={runs} renderPlanActions={renderPlanActions} fontSize={transcriptFontSize} />
+            <Transcript devId="hr6v0n8" events={shownEvents} runs={shownRuns} renderPlanActions={renderPlanActions} fontSize={transcriptFontSize} />
 
             {pendingQuestions.map((q) => (
               <QuestionCard key={q.id} devId="hr1p9t4" question={q} onAnswer={answer} />

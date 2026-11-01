@@ -141,19 +141,3 @@
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
-
-/* Decompose Progress */
-.decompose-progress {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  background: var(--bg-elev-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.decompose-progress__title {
-  font-weight: 600;
-  font-size: 13px;
-}

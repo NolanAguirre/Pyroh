@@ -1,13 +1,11 @@
 import { Button, Tabs, TabList, Tab, TabPanel } from 'component-library'
 import MetricsPanel from '../MetricsPanel'
 import LogFold from '../LogFold'
-import DecomposeProgress from './DecomposeProgress'
 
 const SessionInspector = ({ sessionId, session, runs, isBusy, hasFailure, refreshKey, sideOpen, setSideOpen }) => (
   <aside className={`session-view__side${sideOpen ? '' : ' session-view__side--collapsed'}`}>
     {sideOpen ? (
       <>
-        <DecomposeProgress session={session} />
         <Tabs defaultIndex={0}>
           <TabList>
             <Tab>Metrics</Tab>

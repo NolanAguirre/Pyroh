@@ -1,0 +1,66 @@
+/* Decompose Panel */
+.decompose-panel {
+  position: sticky;
+  top: -18px;
+  z-index: 2;
+  margin: -18px -24px 0;
+  padding: 10px 24px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.decompose-panel__top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.decompose-panel__progress {
+  flex: 1;
+  min-width: 0;
+}
+
+.decompose-panel__rows {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.decompose-panel__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.decompose-panel__row--current {
+  border-color: var(--text-dim);
+}
+
+.decompose-panel__row-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.decompose-panel__chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.decompose-panel__error {
+  max-width: 240px;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
