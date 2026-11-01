@@ -62,8 +62,10 @@ const config = {
   codexApiKey: (process.env.HARNESS_CODEX_API_KEY || '').trim(),
   host: process.env.HOST || '0.0.0.0',
   port,
-  // Unset disables automatic chat naming.
-  categorizerUrl: (process.env.HARNESS_CATEGORIZER_URL || '').trim().replace(/\/+$/, '') || null,
+  // Unset, or HARNESS_CATEGORIZER_ENABLED=0, disables automatic chat naming.
+  categorizerUrl: process.env.HARNESS_CATEGORIZER_ENABLED === '0'
+    ? null
+    : (process.env.HARNESS_CATEGORIZER_URL || '').trim().replace(/\/+$/, '') || null,
   // Unset disables analytics (tool-stats and run notifications).
   analyticsUrl: (process.env.HARNESS_ANALYTICS_URL || '').trim().replace(/\/+$/, '') || null,
   // Spellcheck base URL. Unset disables prompt spellchecking.

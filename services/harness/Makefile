@@ -1,5 +1,7 @@
 .PHONY: help install start cli models models.refresh tool-stats index.rebuild
 
+HAS_CUDA ?= $(shell nvidia-smi -L >/dev/null 2>&1 && echo 1 || echo 0)
+
 help: ## Show this help
 	@grep -E '^[a-zA-Z_.-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
 
@@ -8,7 +10,7 @@ install: ## Install dependencies
 
 start: ## Refresh provider model lists, then start the Express API server
 	-./scripts/run-with-env-dir ./env-dir node scripts/refresh-models.js
-	./scripts/run-with-env-dir ./env-dir npm start
+	HARNESS_CATEGORIZER_ENABLED=$(HAS_CUDA) ./scripts/run-with-env-dir ./env-dir npm start
 
 cli: ## Run the harness CLI (pass args via ARGS="...")
 	./scripts/run-with-env-dir ./env-dir node bin/harness $(ARGS)
