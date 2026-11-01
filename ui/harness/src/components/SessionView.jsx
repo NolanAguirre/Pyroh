@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Badge, Button, DevScope, DropdownTypeahead, DropdownTypeaheadMenu, DropdownTypeaheadTrigger, FolderIcon, Popup, ProgressBar, Tabs, TabList, Tab, TabPanel, useSpeechRecognition } from 'component-library'
+import { Badge, Button, DevScope, DropdownTypeahead, DropdownTypeaheadMenu, DropdownTypeaheadTrigger, FolderIcon, Popup, ProgressBar, PromptInput, Tabs, TabList, Tab, TabPanel, useSpeechRecognition } from 'component-library'
+import { TRIGGERS } from 'prompt-triggers'
 import useSessionEvents from '../useSessionEvents'
 import api from '../api'
 import Transcript from './Transcript'
@@ -7,7 +8,6 @@ import NewSessionForm from './NewSessionForm'
 import QuestionCard from './QuestionCard'
 import MetricsPanel from './MetricsPanel'
 import LogFold from './LogFold'
-import PromptInput from './PromptInput'
 
 const STATUS_VARIANT = {
   idle: 'neutral',
@@ -611,6 +611,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
               <DevScope id="hr8r3c4">
                 <PromptInput
                   className={`composer__input${isDecompose ? ' composer__input--plan' : ''}`}
+                  triggers={TRIGGERS}
                   steer={steering}
                   placeholder={
                     steering
@@ -619,9 +620,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                   }
                   value={speech.interim ? `${prompt} ${speech.interim}` : prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send()
-                  }}
+                  onSubmit={send}
                   rows={isDecompose ? 8 : 3}
                 />
               </DevScope>

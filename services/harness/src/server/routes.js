@@ -12,6 +12,7 @@ const { readJsonAsync } = require('../store/jsonFile')
 const { listProviders } = require('../agents/driver')
 const registry = require('../registry')
 const prompts = require('../prompts')
+const { TRIGGERS } = require('../prompt/triggers')
 
 const router = express.Router()
 
@@ -162,6 +163,19 @@ router.get('/registry', (req, res) => {
 
 router.get('/registry/explain', (req, res) => {
   res.json(registry.explain(null, { provider: providerQuery(req) }))
+})
+
+// RegExps become { source, flags } so clients can rebuild them.
+router.get('/prompt-triggers', (_req, res) => {
+  res.json({
+    triggers: TRIGGERS.map(({ id, label, description, steer, patterns }) => ({
+      id,
+      label,
+      description,
+      steer,
+      patterns: patterns.map(({ source, flags }) => ({ source, flags })),
+    })),
+  })
 })
 
 router.get('/prompts', (req, res) => {
