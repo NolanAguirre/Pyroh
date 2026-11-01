@@ -3,4 +3,4 @@ Description: Subagent usage and exploration
 alwaysApply: true
 ---
 
-Use subagents for code exploration.
+Use the `harnessExplore` subagent for code exploration.

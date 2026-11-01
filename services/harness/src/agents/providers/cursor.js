@@ -197,6 +197,8 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
 
   // Custom definitions keyed by Task subagent_type. Built-in types otherwise
   // fall back to Cursor's runtime default model, not the parent's.
+  // Names must not match Cursor's built-in subagent types (explore,
+  // generalPurpose, etc.): the built-in wins and ignores our model.
   const SUBAGENT_MODEL = { id: 'grok-4.7' }
   const subagents = () => ({
     generalPurpose: {
@@ -204,7 +206,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
       prompt: prompts.text('subagentGeneralPurpose'),
       model: SUBAGENT_MODEL,
     },
-    explore: {
+    harnessExplore: {
       description: 'Fast agent for exploring codebases: finding files, searching code, and answering questions about the codebase.',
       prompt: prompts.text('subagentExplore'),
       model: SUBAGENT_MODEL,
