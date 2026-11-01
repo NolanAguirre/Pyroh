@@ -1,0 +1,44 @@
+#!/bin/sh
+# Move each session's sdk-store/ out of the session directory.
+# Stop the harness first: this does not take session locks.
+set -eu
+
+write_dir=${HARNESS_WRITE_DIR:-$HOME/.harness}
+case $write_dir in
+  "~"/*) write_dir=$HOME/${write_dir#"~/"} ;;
+  "~") write_dir=$HOME ;;
+esac
+
+moved=0
+skipped=0
+
+move_store() {
+  src=$1
+  dst=$2
+  if [ -e "$dst" ]; then
+    echo "skip (target exists): $src"
+    skipped=$((skipped + 1))
+    return
+  fi
+  mkdir -p "$(dirname "$dst")"
+  chmod 700 "$(dirname "$dst")"
+  mv "$src" "$dst"
+  echo "moved: $src -> $dst"
+  moved=$((moved + 1))
+}
+
+for src in "$write_dir"/workspaces/*/sessions/*/sdk-store; do
+  [ -d "$src" ] || continue
+  session_dir=$(dirname "$src")
+  sid=$(basename "$session_dir")
+  workspace=$(dirname "$(dirname "$session_dir")")
+  move_store "$src" "$workspace/sdk-store/$sid"
+done
+
+for src in "$write_dir"/sessions/*/sdk-store; do
+  [ -d "$src" ] || continue
+  sid=$(basename "$(dirname "$src")")
+  move_store "$src" "$write_dir/sdk-store/$sid"
+done
+
+echo "done: $moved moved, $skipped skipped"
