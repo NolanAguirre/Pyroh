@@ -1,0 +1,126 @@
+/* Touch devices: no hover, so show row actions */
+@media (hover: none) {
+  .session-row__edit-btn {
+    opacity: 1;
+  }
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .app__placeholder-hero {
+    padding: 20px 14px;
+  }
+
+  .app__hero-title {
+    font-size: 21px;
+  }
+
+  .app__hero-actions {
+    flex-wrap: wrap;
+  }
+
+  .app__ws-card-header {
+    flex-wrap: wrap;
+  }
+
+  .app__ws-cwd code {
+    overflow-wrap: anywhere;
+  }
+
+  .app__capabilities-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar__header {
+    justify-content: flex-start;
+  }
+
+  .sidebar__header-actions {
+    justify-content: flex-start;
+    gap: 6px;
+  }
+
+  .sidebar__header-actions .button {
+    width: 36px;
+    height: 36px;
+  }
+
+  .session-row {
+    padding: 10px 12px;
+  }
+
+  .session-view__header {
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .session-view__title {
+    gap: 8px;
+  }
+
+  .session-view__path-sub {
+    display: none;
+  }
+
+  .session-view__controls .button {
+    width: 34px;
+    height: 34px;
+  }
+
+  .session-view__body,
+  .session-view__body--side-collapsed {
+    grid-template-columns: 1fr;
+    position: relative;
+  }
+
+  .session-view__side--collapsed {
+    display: none;
+  }
+
+  .session-view__side {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border-left: none;
+  }
+
+  .session-view__main {
+    padding: 12px 10px;
+  }
+
+  .composer {
+    padding: 8px 10px;
+  }
+
+  .composer__mode-hint,
+  .composer__shortcut-hint {
+    display: none;
+  }
+
+  .mode-toggle {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .mode-toggle__btn {
+    flex-shrink: 0;
+  }
+
+  .composer__input,
+  .text-input {
+    font-size: 16px;
+  }
+
+  .composer__spawn-field {
+    min-width: 0;
+  }
+
+  .new-session-panel,
+  .edit-workspace-panel,
+  .ui-settings-panel {
+    min-width: 0;
+    width: calc(100vw - 16px);
+    padding: 16px;
+  }
+}

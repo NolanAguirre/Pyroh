@@ -1,0 +1,101 @@
+/* Forms & Modals */
+.ui-settings-panel {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
+  min-width: 280px;
+}
+
+.ui-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ui-settings__header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.ui-settings__header .hint {
+  margin: 4px 0 0;
+}
+
+.new-session-panel {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
+  min-width: 320px;
+}
+
+.edit-workspace-panel {
+  min-width: 440px;
+  max-width: 560px;
+}
+
+.text-input--path {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.new-session {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.new-session__header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.new-session__header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.new-session__workspace-hint {
+  margin: 0;
+  font-size: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.text-input {
+  background: var(--bg-elev-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.text-input:focus {
+  border-color: var(--accent);
+}
+
+.new-session__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}

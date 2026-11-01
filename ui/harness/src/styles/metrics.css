@@ -1,0 +1,91 @@
+/* Metrics */
+.metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.metrics__num {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.metrics__lbl {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin: 6px 0 0;
+}
+
+.metrics__lbl-inline {
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.metrics__stat-val {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.metrics__stat-sub {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.metrics__bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.metric-bar {
+  font-size: 11px;
+}
+
+.metrics__timeline {
+  width: 100%;
+}
+
+/* Log Fold */
+.log-fold {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.log-fold__path {
+  margin: 0 0 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: monospace;
+  flex-shrink: 0;
+}
+
+.log-fold__actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+  flex-shrink: 0;
+}
+
+.log-fold > .hint--error {
+  flex-shrink: 0;
+  margin-bottom: 6px;
+}
+
+.log-fold__pre {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  white-space: pre-wrap;
+  background: var(--bg);
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
