@@ -10,6 +10,7 @@ const tokenWaste = require('../modes/tokenWaste')
 const memoryExtract = require('../modes/memoryExtract')
 const newChat = require('../modes/newChat')
 const registry = require('../registry')
+const prompts = require('../prompts')
 
 // Kinds this command runs in the foreground; others go through Harness.run.
 const FOREGROUND_KINDS = ['turn', 'token-waste', 'memory', 'new-chat']
@@ -19,9 +20,6 @@ const SIBLING_MODES = {
   [tokenWaste.MODE]: (sessionId, flags) => Harness.createTokenWasteSession(sessionId, { prompt: flags.prompt, provider: flags.provider, model: flags.model }),
   [memoryExtract.MODE]: (sessionId, flags) => Harness.createMemorySession(sessionId, { prompt: flags.prompt, provider: flags.provider, model: flags.model }),
 }
-
-const DEFAULT_RESUME_PROMPT = 'Continue where you left off'
-
 const USAGE = `harness <command> [options]
 
 Commands:
@@ -176,7 +174,7 @@ const handleTurn = async (action, sessionId, flags) => {
         return fail(`${action}: ${err && err.message}`)
       }
     }
-    if (action === 'resume' && !prompt) prompt = DEFAULT_RESUME_PROMPT
+    if (action === 'resume' && !prompt) prompt = prompts.text('resume')
     if (!prompt) return fail(`${action}: --prompt is required`)
     run = sessionStore.createRun(sessionId, { mode, prompt, handoff })
     if (!session.mode && registry.builtinMode(mode)?.kind === 'turn') sessionStore.updateSession(sessionId, { mode }, config.writeDir)

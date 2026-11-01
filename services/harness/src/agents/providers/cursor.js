@@ -150,8 +150,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
     if (typeof tools.askUser !== 'function') return undefined
     return {
       ask_user: {
-        description:
-          'Ask the human operator a question and wait for their answer. Use when you need a decision, clarification, or missing information.',
+        description: prompts.text('askUserCursor'),
         parameters: {
           type: 'object',
           properties: {
@@ -202,12 +201,12 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
   const SUBAGENT_MODEL = { id: 'grok-4.7' }
   const subagents = () => ({
     generalPurpose: {
-      description: 'General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks.',
+      description: prompts.text('subagentGeneralPurposeDescription'),
       prompt: prompts.text('subagentGeneralPurpose'),
       model: SUBAGENT_MODEL,
     },
     harnessExplore: {
-      description: 'Fast agent for exploring codebases: finding files, searching code, and answering questions about the codebase.',
+      description: prompts.text('subagentExploreDescription'),
       prompt: prompts.text('subagentExplore'),
       model: SUBAGENT_MODEL,
     },

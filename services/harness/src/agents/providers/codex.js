@@ -5,6 +5,7 @@ const config = require('../../config')
 const { createTransport } = require('./codexTransport')
 const { normalizeCodexOptions } = require('./codexOptions')
 const { composePrompt } = require('../modes')
+const prompts = require('../../prompts')
 
 // The live catalog can lag a launch. Keep GPT 6.1 Sol selectable until model/list returns it.
 const GPT_61_SOL = {
@@ -27,16 +28,17 @@ const readOnlyModes = ['ask']
 // Ask enforces read-only approvals. Native plan mode keeps the configured
 // approval policy so repository inspection is not automatically declined.
 const approvalFor = (mode, configured) => approvalTypes[readOnlyModes.includes(mode) ? 'untrusted' : configured]
-const askTool = {
-  name: 'harness_ask_user',
-  description: 'Ask the human operator for a decision, clarification, or missing information and wait for their answer.',
+const ASK_TOOL_NAME = 'harness_ask_user'
+const askTool = () => ({
+  name: ASK_TOOL_NAME,
+  description: prompts.text('askUserCodex'),
   inputSchema: {
     type: 'object', properties: {
       question: { type: 'string' }, options: { type: 'array', items: { type: 'string' } },
       allowMultiple: { type: 'boolean' },
     }, required: ['question'], additionalProperties: false,
   },
-}
+})
 
 // Codex's output token count already includes reasoning tokens.
 const normalizeUsage = (usage) => usage ? {
@@ -196,7 +198,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
       return { answers }
     }
     if (method === 'item/tool/call') {
-      if (params.tool !== askTool.name) throw new Error(`Unsupported Codex dynamic tool: ${params.tool}`)
+      if (params.tool !== ASK_TOOL_NAME) throw new Error(`Unsupported Codex dynamic tool: ${params.tool}`)
       const input = typeof params.arguments === 'string' ? JSON.parse(params.arguments) : params.arguments
       const value = await ask(input, signal)
       return { success: true, contentItems: [{ type: 'inputText', text: typeof value === 'string' ? value : JSON.stringify(value) }] }
@@ -326,7 +328,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
         web_search: options.webSearch,
         ...(harnessMcp.length ? { mcp_servers: Object.fromEntries(harnessMcp.map((server) => [server.name, { url: server.url }])) } : {}),
       },
-      dynamicTools: typeof tools.askUser === 'function' ? [askTool] : [],
+      dynamicTools: typeof tools.askUser === 'function' ? [askTool()] : [],
     }
     const response = await transport.request(id ? 'thread/resume' : 'thread/start', id ? { ...params, threadId: id } : params)
     threadId = response.thread.id

@@ -1,5 +1,6 @@
 const { execFile } = require('child_process')
 const { TRIGGERS } = require('./triggers')
+const prompts = require('../prompts')
 
 const findFiles = (needle, cwd) => new Promise((resolve) => {
   if (!cwd) return resolve([])
@@ -13,7 +14,7 @@ const findFiles = (needle, cwd) => new Promise((resolve) => {
 
 const devIdPaths = async ([match, id], { cwd }) => {
   const files = await findFiles(id, cwd)
-  return files.length ? `${match} ${files.join(' ')}` : match
+  return files.length ? prompts.render('devIdPaths', { match, files: files.join(' ') }) : match
 }
 
 const triggerPattern = (id) => TRIGGERS.find((trigger) => trigger.id === id).patterns[0]

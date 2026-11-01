@@ -14,8 +14,7 @@ const memoryExtract = require('../modes/memoryExtract')
 const newChat = require('../modes/newChat')
 const registry = require('../registry')
 const { requestChatName } = require('../categorizer')
-
-const DEFAULT_RESUME_PROMPT = 'Continue where you left off'
+const prompts = require('../prompts')
 
 const isDecomposeResume = (session) =>
   session &&
@@ -227,7 +226,7 @@ const run = async (sessionId, { prompt, mode: requested, provider, model, target
   const entry = registry.requireMode(workspace, mode, { harness, provider: source.provider })
   if (repliesInPlace(source, entry)) {
     const plugin = entry.kind === 'plugin' ? lastPluginRun(sessionId, entry.id) : undefined
-    return spawnRun(sessionId, 'run', { mode, prompt: prompt || DEFAULT_RESUME_PROMPT, plugin })
+    return spawnRun(sessionId, 'run', { mode, prompt: prompt || prompts.text('resume'), plugin })
   }
   if (entry.kind === 'turn' && !source.mode) sessionStore.updateSession(sessionId, { mode: entry.id }, config.writeDir)
   switch (entry.kind) {
@@ -269,7 +268,7 @@ const resume = (sessionId, { prompt, mode: requested } = {}) => {
   const retry = !prompt && undeliveredRun(sessionId, session)
   if (retry) return spawnRun(sessionId, 'resume', { mode: retry.mode, prompt: retry.prompt, handoff: retry.handoff, plugin: retry.plugin })
   const mode = requested || replyMode(session)
-  return spawnRun(sessionId, 'resume', { mode, prompt: prompt || DEFAULT_RESUME_PROMPT, plugin: lastPluginRun(sessionId, mode) })
+  return spawnRun(sessionId, 'resume', { mode, prompt: prompt || prompts.text('resume'), plugin: lastPluginRun(sessionId, mode) })
 }
 
 const terminate = (sessionId, intent) => {
