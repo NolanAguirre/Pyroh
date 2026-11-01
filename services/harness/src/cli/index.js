@@ -16,8 +16,8 @@ const FOREGROUND_KINDS = ['turn', 'token-waste', 'memory', 'new-chat']
 
 // Modes that run in a new sibling session built from the source session.
 const SIBLING_MODES = {
-  [tokenWaste.MODE]: (sessionId, flags) => Harness.createTokenWasteSession(sessionId, { prompt: flags.prompt }),
-  [memoryExtract.MODE]: (sessionId, flags) => Harness.createMemorySession(sessionId, { prompt: flags.prompt }),
+  [tokenWaste.MODE]: (sessionId, flags) => Harness.createTokenWasteSession(sessionId, { prompt: flags.prompt, provider: flags.provider, model: flags.model }),
+  [memoryExtract.MODE]: (sessionId, flags) => Harness.createMemorySession(sessionId, { prompt: flags.prompt, provider: flags.provider, model: flags.model }),
 }
 
 const DEFAULT_RESUME_PROMPT = 'Continue where you left off'
@@ -36,8 +36,10 @@ Commands:
   run <sid> --prompt <text> [--mode agent|plan|ask|token-waste|memory-extract|new-chat|<plugin-id>] [--detach]
                                                           Run a turn (prompt optional for token-waste/memory-extract/new-chat)
                                                           Plugin modes always run detached
-  token-waste <sid> [--prompt <focus>] [--detach]          Spawn a new session to analyze token savings
-  memory <sid> [--prompt <focus>] [--detach]               Spawn a new session to extract memories via mcp-memory
+  token-waste <sid> [--prompt <focus>] [--provider p] [--model m] [--detach]
+                                                          Spawn a new session to analyze token savings
+  memory <sid> [--prompt <focus>] [--provider p] [--model m] [--detach]
+                                                          Spawn a new session to extract memories via mcp-memory
   runs [--mode mode]                                      List indexed runs, metrics, and transcript paths
   token-waste-runs                                        Alias for runs --mode token-waste
   new-chat <sid> [--prompt <focus>] [--provider p] [--model m] [--target-mode agent|ask|plan] [--detach]

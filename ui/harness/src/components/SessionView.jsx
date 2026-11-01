@@ -100,6 +100,9 @@ const saveComposer = (sessionId, mode, prompt, fallbackMode) => {
   writeDrafts(drafts)
 }
 
+// Sibling analysis modes that may run on a different provider and model than the source.
+const SPAWN_TARGET_KINDS = ['token-waste', 'memory']
+
 const NewChatTarget = ({ providers, provider, model, onProvider, onModel, modes, targetMode, onTargetMode }) => {
   const current = providers.find((item) => item.id === provider)
   const providerOptions = providers.map((item) => ({
@@ -116,26 +119,28 @@ const NewChatTarget = ({ providers, provider, model, onProvider, onModel, modes,
   const modelOptions = withCurrent.length
     ? withCurrent
     : [{ value: '', displayValue: 'default' }]
-  const modeOptions = modes
+  const modeOptions = (modes || [])
     .filter((item) => item.kind === 'turn')
     .map((item) => ({ value: item.id, displayValue: item.label }))
 
   return (
     <DevScope id="n8k3p1w" state={{ provider, model, targetMode }}>
       <div className="composer__spawn">
-        <DevScope id="n5t9r3m" state={{ targetMode }}>
-          <div className="field composer__spawn-field">
-            <span className="field__label">Spawn mode</span>
-            <DropdownTypeahead
-              defaultValue={targetMode}
-              options={modeOptions}
-              change={onTargetMode}
-            >
-              <DropdownTypeaheadTrigger />
-              <DropdownTypeaheadMenu />
-            </DropdownTypeahead>
-          </div>
-        </DevScope>
+        {onTargetMode && (
+          <DevScope id="n5t9r3m" state={{ targetMode }}>
+            <div className="field composer__spawn-field">
+              <span className="field__label">Spawn mode</span>
+              <DropdownTypeahead
+                defaultValue={targetMode}
+                options={modeOptions}
+                change={onTargetMode}
+              >
+                <DropdownTypeaheadTrigger />
+                <DropdownTypeaheadMenu />
+              </DropdownTypeahead>
+            </div>
+          </DevScope>
+        )}
         <DevScope id="n2v6h4q" state={{ provider }}>
           <div className="field composer__spawn-field">
             <span className="field__label">Spawn provider</span>
@@ -314,6 +319,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
     : registryActive
   const isDecompose = active?.kind === 'decompose'
   const isNewChat = active?.kind === 'new-chat'
+  const picksSpawnTarget = isNewChat || (Boolean(active?.newSession) && SPAWN_TARGET_KINDS.includes(active?.kind))
 
   // A saved mode that this workspace no longer has falls back to the session's mode, then agent.
   useEffect(() => {
@@ -332,7 +338,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const steering = isBusy && active?.steerable !== false && !spawnsSession
   const spawnEntry = providers.find((item) => item.id === spawnProvider)
   const spawnModelId = spawnModel || spawnEntry?.models?.[0]?.id || null
-  const spawnBlocked = isNewChat && Boolean(spawnEntry) && (spawnEntry.implemented === false || spawnEntry.error)
+  const spawnBlocked = picksSpawnTarget && Boolean(spawnEntry) && (spawnEntry.implemented === false || spawnEntry.error)
   const sendDisabled = steering
     ? !prompt.trim()
     : (blocksWhileBusy && isBusy) || (promptRequired && !prompt.trim()) || spawnBlocked
@@ -358,9 +364,10 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
       if (steering) await api.steer(sessionId, prompt)
       else if (isDecompose) await api.decompose(sessionId, prompt)
       else {
+        const target = { provider: spawnProvider || session.provider, model: spawnModelId }
         const result = await api.run(sessionId, isNewChat
-          ? { prompt, mode, provider: spawnProvider || session.provider, model: spawnModelId, targetMode: spawnMode }
-          : { prompt, mode })
+          ? { prompt, mode, ...target, targetMode: spawnMode }
+          : picksSpawnTarget ? { prompt, mode, ...target } : { prompt, mode })
         if (result.session) onCreated?.(result.session)
         if (isNewChat) setHandoffRunId(result.run.id)
       }
@@ -587,16 +594,16 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
               <ModeToggle modes={modes} mode={mode} onChange={changeMode} disabled={busy} />
               <span className="composer__mode-hint">{active?.hint}</span>
             </div>
-            {isNewChat && (
+            {picksSpawnTarget && (
               <NewChatTarget
                 providers={providers}
                 provider={spawnProvider || session.provider}
                 model={spawnModel}
                 onProvider={chooseSpawnProvider}
                 onModel={setSpawnModel}
-                modes={modes}
-                targetMode={spawnMode}
-                onTargetMode={setSpawnMode}
+                modes={isNewChat ? modes : undefined}
+                targetMode={isNewChat ? spawnMode : undefined}
+                onTargetMode={isNewChat ? setSpawnMode : undefined}
               />
             )}
             <div className="composer__input-wrapper">

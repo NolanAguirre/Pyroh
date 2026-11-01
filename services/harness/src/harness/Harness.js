@@ -38,9 +38,9 @@ const lastPluginRun = (sessionId, mode) =>
 
 // Launch a detached daemon for a freshly created run. Returns the run record.
 // autoName marks prompts typed by the user, in modes that may name an unnamed session.
-// The new chat records the mode picked for it, never new-chat itself. Only
-// turn modes fit, since the continuation prompt is an ordinary turn.
-const resolveNewChatTarget = (source, target = {}) => {
+// A session spawned from the source runs on the picked provider and model,
+// falling back to the source's.
+const resolveSpawnTarget = (source, target = {}) => {
   const provider = target.provider || source.provider
   if (!listProviders().includes(provider)) {
     throw Object.assign(new Error(`unknown provider: ${provider}`), { status: 400 })
@@ -49,6 +49,23 @@ const resolveNewChatTarget = (source, target = {}) => {
   const model = requested == null || requested === ''
     ? (provider === source.provider ? (source.model || null) : null)
     : requested
+  return { provider, model }
+}
+
+// Provider options such as reasoning effort only carry over to the same provider and model.
+const spawnSessionFields = (source, { provider, model }) => {
+  const keepOptions = provider === source.provider && (model || null) === (source.model || null)
+  return {
+    provider,
+    model,
+    ...(keepOptions ? { codex: source.codex, grok: source.grok, claude: source.claude } : {}),
+  }
+}
+
+// The new chat records the mode picked for it, never new-chat itself. Only
+// turn modes fit, since the continuation prompt is an ordinary turn.
+const resolveNewChatTarget = (source, target = {}) => {
+  const { provider, model } = resolveSpawnTarget(source, target)
   const mode = target.mode || 'agent'
   const entry = registry.requireMode(registry.sessionWorkspace(source), mode, { provider })
   if (entry.kind !== 'turn') {
@@ -133,27 +150,29 @@ const createSession = ({ workspaceId, provider, model, codex, grok, claude }) =>
 
 
 // A new session next to the source that reads the source's transcripts.
-const createSiblingSession = (modeId, buildPrompt, sourceSessionId, focus) => {
+const createSiblingSession = (modeId, buildPrompt, sourceSessionId, { focus, provider, model } = {}) => {
   const entry = registry.builtinMode(modeId)
   const source = sessionStore.loadSession(sourceSessionId, config.writeDir)
   if (!source) throw Object.assign(new Error(`session not found: ${sourceSessionId}`), { status: 404 })
+  const target = resolveSpawnTarget(source, { provider, model })
+  registry.requireMode(registry.sessionWorkspace(source), entry.id, { provider: target.provider })
   const prompt = buildPrompt(sourceSessionId, focus, config.writeDir)
   const workspaceId = source.workspaceId || workspaceStore.findWorkspaceByCwd(source.cwd, config.writeDir)?.id
-  const created = createSession({ workspaceId, provider: source.provider, model: source.model, codex: source.codex, grok: source.grok, claude: source.claude })
+  const created = createSession({ workspaceId, ...spawnSessionFields(source, target) })
   const session = sessionStore.updateSession(created.id, {
     mode: entry.id, sourceSessionId, name: entry.sessionName,
   }, config.writeDir)
   return { session, prompt }
 }
 
-const createTokenWasteSession = (sourceSessionId, { prompt: focus } = {}) =>
-  createSiblingSession(tokenWaste.MODE, tokenWaste.buildPrompt, sourceSessionId, focus)
+const createTokenWasteSession = (sourceSessionId, { prompt: focus, provider, model } = {}) =>
+  createSiblingSession(tokenWaste.MODE, tokenWaste.buildPrompt, sourceSessionId, { focus, provider, model })
 
-const createMemorySession = (sourceSessionId, { prompt: focus } = {}) => {
+const createMemorySession = (sourceSessionId, { prompt: focus, provider, model } = {}) => {
   if (!config.memoryMcpUrl) {
     throw Object.assign(new Error('memory extraction needs HARNESS_MEMORY_MCP_URL (the mcp-memory service)'), { status: 400 })
   }
-  return createSiblingSession(memoryExtract.MODE, memoryExtract.buildPrompt, sourceSessionId, focus)
+  return createSiblingSession(memoryExtract.MODE, memoryExtract.buildPrompt, sourceSessionId, { focus, provider, model })
 }
 
 const continueInNewChat = (sourceSessionId, prompt, target) => {
@@ -161,13 +180,7 @@ const continueInNewChat = (sourceSessionId, prompt, target) => {
   if (!source) throw Object.assign(new Error(`session not found: ${sourceSessionId}`), { status: 404 })
   const workspaceId = source.workspaceId || workspaceStore.findWorkspaceByCwd(source.cwd, config.writeDir)?.id
   const next = resolveNewChatTarget(source, target)
-  const keepOptions = next.provider === source.provider && (next.model || null) === (source.model || null)
-  const created = createSession({
-    workspaceId,
-    provider: next.provider,
-    model: next.model,
-    ...(keepOptions ? { codex: source.codex, grok: source.grok, claude: source.claude } : {}),
-  })
+  const created = createSession({ workspaceId, ...spawnSessionFields(source, next) })
   const mode = target?.mode || 'agent'
   const session = sessionStore.updateSession(created.id, { sourceSessionId, mode }, config.writeDir)
   const run = spawnRun(session.id, mode === 'plan' ? 'plan' : 'run', { mode, prompt })
@@ -222,11 +235,11 @@ const run = async (sessionId, { prompt, mode: requested, provider, model, target
       if (!harness) throw Object.assign(new Error(`${entry.id}: plugin modes need a workspace`), { status: 400 })
       return runPlugin(source, entry, harness, { prompt, provider, model })
     case 'token-waste': {
-      const analysis = createTokenWasteSession(sessionId, { prompt })
+      const analysis = createTokenWasteSession(sessionId, { prompt, provider, model })
       return spawnRun(analysis.session.id, 'run', { mode, prompt: analysis.prompt })
     }
     case 'memory': {
-      const extraction = createMemorySession(sessionId, { prompt })
+      const extraction = createMemorySession(sessionId, { prompt, provider, model })
       return spawnRun(extraction.session.id, 'run', { mode, prompt: extraction.prompt })
     }
     case 'new-chat': {
