@@ -31,6 +31,12 @@ const start = () => {
   const recoverChildren = () => require('../harness/delegation').recover().catch(err => process.stderr.write(`child recovery failed: ${err.message}\n`))
   recoverChildren()
   setInterval(recoverChildren, 5000).unref()
+  const pumpRunAfter = () => {
+    try { require('../harness/runAfter').pump() }
+    catch (err) { process.stderr.write(`run after failed: ${err.message}\n`) }
+  }
+  pumpRunAfter()
+  setInterval(pumpRunAfter, 1000).unref()
   const app = createApp()
   app.listen(config.port, config.host, () => {
     process.stdout.write(`harness API listening on http://${config.host}:${config.port}\n`)

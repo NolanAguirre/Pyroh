@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button, DevScope, Popup, PromptInput, useSpeechRecognition } from 'component-library'
 import { TRIGGERS } from 'prompt-triggers'
 import useSessionEvents from '../useSessionEvents'
@@ -10,6 +10,7 @@ import { Icon, ICONS } from './Session/icons'
 import { readDrafts, replyMode, loadComposer, saveComposer } from './Session/composerDrafts'
 import NewChatTarget from './Session/NewChatTarget'
 import ModeToggle from './Session/ModeToggle'
+import RunAfterControl, { eligibleRunAfterSessions } from './Session/RunAfterControl'
 import SessionHeader from './Session/SessionHeader'
 import SessionInspector from './Session/SessionInspector'
 import ChildRuns from './Session/ChildRuns'
@@ -29,9 +30,10 @@ const FALLBACK_MODES = [{
 
 // Sibling analysis modes that may run on a different provider and model than the source.
 const SPAWN_TARGET_KINDS = ['token-waste', 'memory']
+const QUEUED_RUN_AFTER = { prompt: '' }
 
-const SessionView = ({ devId, sessionId, initialSession, providers = [], workspaces = [], modes: registryModes, onChanged, onCreated, transcriptFontSize }) => {
-  const { events, session: liveSession, runs, children, pendingQuestions } = useSessionEvents(sessionId)
+const SessionView = ({ devId, sessionId, initialSession, providers = [], workspaces = [], sessions = [], modes: registryModes, onChanged, onCreated, transcriptFontSize }) => {
+  const { events, session: liveSession, runs, children, pendingQuestions, connected } = useSessionEvents(sessionId)
   const session = liveSession || initialSession
   const defaultMode = replyMode(session)
   const [mode, setMode] = useState(() => loadComposer(sessionId, defaultMode).mode)
@@ -44,6 +46,9 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const [spawnProvider, setSpawnProvider] = useState(session?.provider || '')
   const [spawnModel, setSpawnModel] = useState(session?.model || '')
   const [filter, setFilter] = useState(null)
+  const [runAfterOn, setRunAfterOn] = useState(false)
+  const [runAfterSessionId, setRunAfterSessionId] = useState('')
+  const [runsKnown, setRunsKnown] = useState(false)
   const setPrompt = (value) => {
     setPromptState((prev) => {
       const next = typeof value === 'function' ? value(prev) : value
@@ -69,6 +74,10 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   useEffect(() => {
     setFilter(null)
   }, [sessionId])
+
+  useEffect(() => {
+    if (connected) setRunsKnown(true)
+  }, [connected])
 
   useEffect(() => {
     saveComposer(sessionId, mode, prompt, defaultMode)
@@ -99,8 +108,16 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   }, [registryModes, mode, defaultMode])
 
   const status = session?.status || 'idle'
+  const queued = status === 'queued'
   const isBusy = status === 'running' || status === 'awaiting_input'
   const disconnected = status === 'disconnected'
+  const specialRun = isDecompose || isNewChat || Boolean(active?.newSession)
+  const submitted = runs.length > 0 || events.some((event) => event.type === 'user')
+  const showRunAfter = runsKnown && !submitted && !queued && !specialRun
+  const eligible = useMemo(() => eligibleRunAfterSessions(sessions, sessionId), [sessions, sessionId])
+  const dependencyId = runAfterOn && !specialRun
+    ? (eligible.find((item) => item.id === runAfterSessionId)?.id || '')
+    : ''
   const latestRun = runs[runs.length - 1]
   const hasFailure = Boolean(session?.lastError?.message || latestRun?.error || latestRun?.transcriptError)
   const promptRequired = !active?.promptOptional
@@ -110,9 +127,18 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const spawnEntry = providers.find((item) => item.id === spawnProvider)
   const spawnModelId = spawnModel || spawnEntry?.models?.[0]?.id || null
   const spawnBlocked = picksSpawnTarget && Boolean(spawnEntry) && (spawnEntry.implemented === false || spawnEntry.error)
-  const sendDisabled = steering
+  const runAfterBlocked = showRunAfter && runAfterOn && !dependencyId
+  const sendDisabled = queued || runAfterBlocked || (steering
     ? !prompt.trim()
-    : (blocksWhileBusy && isBusy) || (promptRequired && !prompt.trim()) || spawnBlocked
+    : (blocksWhileBusy && isBusy) || (promptRequired && !prompt.trim()) || spawnBlocked)
+
+  useEffect(() => {
+    if (!eligible.length) {
+      setRunAfterOn(false)
+      return
+    }
+    if (runAfterSessionId && !eligible.some((item) => item.id === runAfterSessionId)) setRunAfterSessionId('')
+  }, [eligible, runAfterSessionId])
 
   useEffect(() => {
     if (!handoffRunId) return
@@ -141,9 +167,18 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
       else if (isDecompose) await api.decompose(sessionId, prompt)
       else {
         const target = { provider: spawnProvider || session.provider, model: spawnModelId }
+        const reply = dependencyId
+          ? {
+              prompt,
+              mode,
+              provider: session.provider,
+              ...(session.model ? { model: session.model } : {}),
+              runAfterSessionId: dependencyId,
+            }
+          : { prompt, mode }
         const result = await api.run(sessionId, isNewChat
           ? { prompt, mode, ...target, targetMode: spawnMode }
-          : picksSpawnTarget ? { prompt, mode, ...target } : { prompt, mode })
+          : picksSpawnTarget ? { prompt, mode, ...target } : reply)
         if (result.session) onCreated?.(result.session)
         if (isNewChat) setHandoffRunId(result.run.id)
       }
@@ -246,7 +281,16 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                 </div>
               </DevScope>
             )}
-            <Transcript devId="hr6v0n8" events={shownEvents} runs={shownRuns} renderPlanActions={renderPlanActions} fontSize={transcriptFontSize} />
+            <Transcript
+              devId="hr6v0n8"
+              events={shownEvents}
+              runs={shownRuns}
+              renderPlanActions={renderPlanActions}
+              fontSize={transcriptFontSize}
+              queued={queued ? (session.runAfter || QUEUED_RUN_AFTER) : null}
+              workspaceId={session.workspaceId}
+              viewerSessionId={sessionId}
+            />
 
             <ChildRuns session={session} runs={runs} children={children} />
 
@@ -270,7 +314,18 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
         <DevScope id="hr7a5x3" state={{ mode }}>
           <footer className={`composer${isDecompose ? ' composer--decompose' : ''}`}>
             <div className="composer__toolbar">
-              <ModeToggle modes={modes} mode={mode} onChange={changeMode} disabled={busy} />
+              <div className="composer__toolbar-start">
+                <ModeToggle modes={modes} mode={mode} onChange={changeMode} disabled={busy} />
+                {showRunAfter && (
+                  <RunAfterControl
+                    sessions={eligible}
+                    checked={runAfterOn}
+                    sessionId={runAfterSessionId}
+                    onChecked={setRunAfterOn}
+                    onSession={setRunAfterSessionId}
+                  />
+                )}
+              </div>
               <span className="composer__mode-hint">{active?.hint}</span>
             </div>
             {picksSpawnTarget && (
@@ -299,6 +354,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                   value={speech.interim ? `${prompt} ${speech.interim}` : prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   onSubmit={send}
+                  disabled={queued}
                   rows={isDecompose ? 8 : 3}
                 />
               </DevScope>

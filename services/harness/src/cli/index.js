@@ -119,6 +119,7 @@ const fail = (msg, code = 2) => {
 const handleTurn = async (action, sessionId, flags) => {
   if (!sessionId) return fail(`${action}: missing <sid>`)
   const current = flags['run-id'] ? null : sessionStore.loadSession(sessionId, config.writeDir)
+  if (current?.status === 'queued') return fail(`${action}: session is queued`)
   if (current && action !== 'plan' && !flags.mode) flags = { ...flags, mode: Harness.replyMode(current) }
   if (action === 'run' && flags.mode && !flags['run-id'] && !FOREGROUND_KINDS.includes(registry.builtinMode(flags.mode)?.kind)) {
     try {
@@ -221,6 +222,8 @@ const handleTurn = async (action, sessionId, flags) => {
 
 const handleDecompose = async (sessionId, flags) => {
   if (!sessionId) return fail('decompose: missing <sid>')
+  const existing = sessionStore.loadSession(sessionId, config.writeDir)
+  if (existing?.status === 'queued') return fail('decompose: session is queued')
   const lock = require('../store/sessionLock').acquire(sessionId, config.writeDir)
   sessionStore.recoverSession(sessionId, config.writeDir)
   const session = sessionStore.loadSession(sessionId, config.writeDir)

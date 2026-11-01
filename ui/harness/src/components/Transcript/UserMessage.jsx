@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { DevScope } from 'component-library'
+import api from '../../api'
+import { urlWithSelection } from '../../appUrl'
 
 const CopyIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -14,24 +16,41 @@ const CheckIcon = () => (
   </svg>
 )
 
+const dependencySessionId = (event) => {
+  const sessionId = event.runAfter?.sessionId
+  if (!sessionId) return ''
+  if (!event.viewerSessionId) return sessionId
+  return api.adoptSession(event.viewerSessionId, { id: sessionId }).id
+}
+
+const loadSessionHref = (event) => {
+  const sessionId = dependencySessionId(event)
+  if (!sessionId || !event.workspaceId) return ''
+  return urlWithSelection(new URL(window.location.href), event.workspaceId, sessionId, null, null, null).href
+}
+
 const UserMessage = ({ event }) => {
   const [copied, setCopied] = useState(false)
+  const dependency = event.runAfter
+  const text = event.text || dependency?.prompt || ''
+  const copyText = text
+  const href = dependency ? loadSessionHref(event) : ''
 
   const copy = () => {
-    const text = event.text || ''
-    if (!text) return
-    navigator.clipboard?.writeText(text).then(() => {
+    if (!copyText) return
+    navigator.clipboard?.writeText(copyText).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     }).catch(() => {})
   }
 
   return (
-    <DevScope id="hr9k4u2" state={{ runId: event.runId }}>
+    <DevScope id="hr9k4u2" state={{ runId: event.runId, queued: Boolean(dependency) }}>
       <div className="tx tx--user">
         <div className="tx__user-header">
           <span className="tx__user-tag">You</span>
           {event.steer && <span className="tx__steer-tag">Steer</span>}
+          {dependency && <span className="tx__steer-tag">Queued</span>}
           <DevScope id="k3w8n1p">
             <button
               type="button"
@@ -44,7 +63,19 @@ const UserMessage = ({ event }) => {
             </button>
           </DevScope>
         </div>
-        <div className="tx__user-body">{event.text}</div>
+        <div className="tx__user-body">{text}</div>
+        {dependency && (
+          <div className="tx__user-after">
+            <span className="tx__user-after-label">
+              After {dependency.sessionTitle || dependency.sessionId || 'session'}
+            </span>
+            {href ? (
+              <DevScope id="l5s8n2q" state={{ session: dependencySessionId(event) }}>
+                <a className="tx__user-after-load" href={href}>Load session</a>
+              </DevScope>
+            ) : null}
+          </div>
+        )}
       </div>
     </DevScope>
   )

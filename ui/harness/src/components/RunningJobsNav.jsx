@@ -10,6 +10,7 @@ const STATUS_VARIANT = {
   stopped: 'neutral',
   finished: 'success',
   error: 'danger',
+  queued: 'info',
 }
 
 const JobRow = ({ job, workspaceName, active, onSelect }) => {

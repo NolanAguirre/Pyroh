@@ -10,9 +10,12 @@ const STATUS_VARIANT = {
   stopped: 'neutral',
   finished: 'success',
   error: 'danger',
+  queued: 'info',
 }
 
-const SessionHeader = ({ session, status, isBusy, disconnected, busy, sideOpen, onPause, onResume, onStop, onToggleSide }) => (
+const SessionHeader = ({ session, status, isBusy, disconnected, busy, sideOpen, onPause, onResume, onStop, onToggleSide }) => {
+  const queued = status === 'queued'
+  return (
   <header className="session-view__header">
     <div className="session-view__title">
       <Badge size="small" variant={STATUS_VARIANT[status] || 'neutral'}>{status}</Badge>
@@ -51,7 +54,7 @@ const SessionHeader = ({ session, status, isBusy, disconnected, busy, sideOpen, 
         variant="secondary"
         size="sm"
         onClick={onPause}
-        disabled={busy || !isBusy}
+        disabled={busy || !isBusy || queued}
         devId="hr8c4n1"
         title="Pause"
         aria-label="Pause"
@@ -62,7 +65,7 @@ const SessionHeader = ({ session, status, isBusy, disconnected, busy, sideOpen, 
         variant="secondary"
         size="sm"
         onClick={onResume}
-        disabled={busy || isBusy}
+        disabled={busy || isBusy || queued}
         devId="hr6p0s5"
         title={disconnected ? 'Reconnect and resume' : 'Resume'}
         aria-label={disconnected ? 'Reconnect and resume' : 'Resume'}
@@ -92,6 +95,7 @@ const SessionHeader = ({ session, status, isBusy, disconnected, busy, sideOpen, 
       </Button>
     </div>
   </header>
-)
+  )
+}
 
 export default SessionHeader

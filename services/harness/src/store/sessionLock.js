@@ -22,8 +22,12 @@ const ownerAlive = (owner) => {
 // flock locks the inherited open-file description. Keeping our descriptor open
 // retains the lock after flock exits; the kernel releases it on process death.
 // Never unlink the lock file: another process may already have it open.
+const lockPath = (sessionId, writeDir) => path.join(paths.sessionDir(sessionId, writeDir), 'session.lock')
+
+const holds = (sessionId, writeDir) => held.has(lockPath(sessionId, writeDir))
+
 const acquire = (sessionId, writeDir) => {
-  const file = path.join(paths.sessionDir(sessionId, writeDir), 'session.lock')
+  const file = lockPath(sessionId, writeDir)
   if (held.has(file)) return held.get(file)
   if (!fs.existsSync(paths.sessionFile(sessionId, writeDir))) throw new Error(`session not found: ${sessionId}`)
   const inherited = process.env.HARNESS_LOCK_FILE === file
@@ -61,4 +65,4 @@ const acquire = (sessionId, writeDir) => {
   return lock
 }
 
-module.exports = { acquire, identity, ownerAlive }
+module.exports = { acquire, holds, identity, ownerAlive }

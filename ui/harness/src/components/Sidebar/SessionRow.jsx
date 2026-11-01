@@ -12,6 +12,7 @@ const STATUS_VARIANT = {
   stopped: 'neutral',
   finished: 'success',
   error: 'danger',
+  queued: 'info',
 }
 
 const SessionRow = memo(({ session, active, onSelect, onRename, onArchive, archiveBusy, onPin, pinBusy }) => {

@@ -119,6 +119,12 @@ const daemonPid = (sessionId, writeDir = config.writeDir) =>
 const controlFile = (sessionId, writeDir = config.writeDir) =>
   path.join(sessionDir(sessionId, writeDir), 'control.json')
 
+const runAfterDispatchFile = (sessionId, writeDir = config.writeDir) =>
+  path.join(sessionDir(sessionId, writeDir), 'run-after-dispatch.json')
+
+const runAfterCancelFile = (sessionId, writeDir = config.writeDir) =>
+  path.join(sessionDir(sessionId, writeDir), 'run-after-cancel.json')
+
 const questionsDir = (sessionId, writeDir = config.writeDir) =>
   path.join(sessionDir(sessionId, writeDir), 'questions')
 
@@ -193,6 +199,8 @@ module.exports = {
   daemonLog,
   daemonPid,
   controlFile,
+  runAfterDispatchFile,
+  runAfterCancelFile,
   questionsDir,
   questionFile,
   answerFile,

@@ -54,7 +54,11 @@ const splitId = (value) => {
   return { id: value.slice(0, at), machine: value.slice(at + 1) }
 }
 
-const tagId = (id, machine) => (machine && id ? `${id}@${machine}` : id)
+const tagId = (id, machine) => {
+  if (!machine || !id || typeof id !== 'string') return id
+  if (splitId(id).machine) return id
+  return `${id}@${machine}`
+}
 
 // Vite's base, so the app also works behind a path prefix such as /harness/.
 const base = import.meta.env.BASE_URL.replace(/\/$/, '')
@@ -75,6 +79,12 @@ const tagSession = (session, machine) => (machine && session ? {
   sourceSessionId: tagId(session.sourceSessionId, machine),
   parentSessionId: tagId(session.parentSessionId, machine),
   rootSessionId: tagId(session.rootSessionId, machine),
+  ...(session.runAfter ? {
+    runAfter: {
+      ...session.runAfter,
+      sessionId: tagId(session.runAfter.sessionId, machine),
+    },
+  } : {}),
   machine,
 } : session)
 
@@ -238,7 +248,13 @@ const api = {
     return fetch(url).then(json).then((data) => ({ ...data, session: tagSession(data.session, machine) }))
   },
   plan: (id, prompt) => sessionPost(id, '/plan', { prompt }),
-  run: (id, { prompt, mode, provider, model }) => sessionPost(id, '/run', { prompt, mode, provider, model }),
+  run: (id, { prompt, mode, provider, model, runAfterSessionId }) => sessionPost(id, '/run', {
+    prompt,
+    mode,
+    provider,
+    model,
+    ...(runAfterSessionId ? { runAfterSessionId: splitId(runAfterSessionId).id } : {}),
+  }),
   decompose: (id, prompt) => sessionPost(id, '/decompose', { prompt }),
   resume: (id, { prompt, mode } = {}) => sessionPost(id, '/resume', { prompt, mode }),
   pause: (id) => sessionPost(id, '/pause'),

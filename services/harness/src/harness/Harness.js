@@ -73,31 +73,42 @@ const resolveNewChatTarget = (source, target = {}) => {
   return { provider, model, mode }
 }
 
-const spawnRun = (sessionId, action, { mode, prompt, autoName = false, handoff, plugin, onPrepared }) => {
+const spawnRun = (sessionId, action, { mode, prompt, autoName = false, handoff, plugin, onPrepared, allowQueued = false }) => {
+  const owned = !sessionLock.holds(sessionId, config.writeDir)
   const lock = sessionLock.acquire(sessionId, config.writeDir)
+  const stopped = () => Object.assign(new Error('stopped'), { code: 'stopped' })
   try {
     sessionStore.recoverSession(sessionId, config.writeDir)
     const session = sessionStore.loadSession(sessionId, config.writeDir)
+    if (session?.status === 'queued' && !allowQueued) {
+      throw Object.assign(new Error('session is queued'), { status: 409 })
+    }
+    const runAfter = require('./runAfter')
+    if (allowQueued && runAfter.cancelled(sessionId)) throw stopped()
     require('./delegation').assertChildRun(session, mode)
     const firstUnnamedRun = Boolean(session) && session.name == null &&
       sessionStore.listRuns(sessionId, config.writeDir).length === 0
     require('fs').rmSync(paths.controlFile(sessionId, config.writeDir), { force: true })
+    if (allowQueued && runAfter.cancelled(sessionId)) throw stopped()
     const run = sessionStore.createRun(sessionId, { mode, prompt, handoff, plugin })
     onPrepared?.(run)
     sessionStore.updateSession(sessionId, { status: 'running' }, config.writeDir)
+    if (allowQueued && runAfter.cancelled(sessionId)) throw stopped()
     const pid = proc.spawnHarness([action, sessionId, '--run-id', run.id], lock.spawnOptions())
     if (autoName && firstUnnamedRun) requestChatName(sessionId, prompt)
     return { ...run, daemonPid: pid }
   } catch (err) {
     sessionStore.recoverSession(sessionId, config.writeDir)
     throw err
-  } finally { lock.release() }
+  } finally { if (owned) lock.release() }
 }
 
 const spawnDecompose = (sessionId, { resume = false, prompt } = {}) => {
   const lock = sessionLock.acquire(sessionId, config.writeDir)
   try {
     sessionStore.recoverSession(sessionId, config.writeDir)
+    const session = sessionStore.loadSession(sessionId, config.writeDir)
+    if (session?.status === 'queued') throw Object.assign(new Error('session is queued'), { status: 409 })
     if (prompt) sessionStore.writeSourcePlan(sessionId, prompt, config.writeDir)
     const args = ['decompose', sessionId]
     if (resume) args.push('--resume')
@@ -220,11 +231,16 @@ const decompose = (sessionId, { prompt }) => {
 }
 
 // Every mode is looked up in the registry, which also enforces deny rules.
-const run = async (sessionId, { prompt, mode: requested, provider, model, targetMode } = {}) => {
+const run = async (sessionId, { prompt, mode: requested, provider, model, targetMode, runAfterSessionId } = {}) => {
   const source = sessionStore.loadSession(sessionId, config.writeDir)
   if (!source) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
+  if (source.status === 'queued') throw Object.assign(new Error('session is queued'), { status: 409 })
   const mode = requested || replyMode(source)
   require('./delegation').assertChildRun(source, mode)
+  if (runAfterSessionId != null && runAfterSessionId !== '') {
+    const outcome = require('./runAfter').enqueue(source, { prompt, mode, runAfterSessionId })
+    if (outcome) return outcome
+  }
   const workspace = registry.sessionWorkspace(source)
   const harness = workspace ? registry.makeHarnessApi(workspace, source) : undefined
   const entry = registry.requireMode(workspace, mode, { harness, provider: source.provider })
@@ -268,6 +284,9 @@ const undeliveredRun = (sessionId, session) => {
 
 const resume = (sessionId, { prompt, mode: requested } = {}) => {
   const session = sessionStore.loadSession(sessionId, config.writeDir)
+  if (session?.status === 'queued') {
+    throw Object.assign(new Error('queued session cannot be resumed'), { status: 409 })
+  }
   if (isDecomposeResume(session)) return spawnDecompose(sessionId, { resume: true })
   const retry = !prompt && undeliveredRun(sessionId, session)
   if (retry) return spawnRun(sessionId, 'resume', { mode: retry.mode, prompt: retry.prompt, handoff: retry.handoff, plugin: retry.plugin })
@@ -286,9 +305,39 @@ const terminate = (sessionId, intent) => {
   return { signalled, pid }
 }
 
-const pause = (sessionId) => terminate(sessionId, 'pause')
+const pause = (sessionId) => {
+  const session = sessionStore.loadSession(sessionId, config.writeDir)
+  if (session?.status === 'queued') {
+    throw Object.assign(new Error('queued session cannot be paused'), { status: 409 })
+  }
+  return terminate(sessionId, 'pause')
+}
 
-const stop = (sessionId) => terminate(sessionId, 'stop')
+const stop = (sessionId) => {
+  const session = sessionStore.loadSession(sessionId, config.writeDir)
+  if (session?.status !== 'queued') return terminate(sessionId, 'stop')
+  const runAfter = require('./runAfter')
+  if (sessionLock.holds(sessionId, config.writeDir)) {
+    runAfter.requestCancel(sessionId)
+    return { signalled: false, pid: null }
+  }
+  let lock
+  try {
+    lock = sessionLock.acquire(sessionId, config.writeDir)
+  } catch (err) {
+    if (err.status !== 409) throw err
+    runAfter.requestCancel(sessionId)
+    writeJson(paths.controlFile(sessionId, config.writeDir), { intent: 'stop', at: Date.now() })
+    const pid = daemonPidOf(sessionId)
+    return { signalled: pid ? proc.signal(pid, 'SIGTERM') : false, pid }
+  }
+  try {
+    const current = sessionStore.loadSession(sessionId, config.writeDir)
+    if (!current || current.status !== 'queued') return terminate(sessionId, 'stop')
+    runAfter.cancelQueued(current)
+    return { signalled: false, pid: null }
+  } finally { lock.release() }
+}
 
 const answer = (sessionId, qid, value) =>
   questionStore.answer(sessionId, qid, value, config.writeDir)
@@ -296,6 +345,7 @@ const answer = (sessionId, qid, value) =>
 const steer = (sessionId, text) => {
   const session = sessionStore.loadSession(sessionId, config.writeDir)
   if (!session) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
+  if (session.status === 'queued') throw Object.assign(new Error('session is queued'), { status: 409 })
   if (registry.builtinMode(session.mode)?.steerable === false) {
     throw Object.assign(new Error(`${session.mode} sessions cannot be steered`), { status: 409 })
   }

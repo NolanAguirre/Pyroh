@@ -233,6 +233,7 @@ const App = () => {
           providers={providers}
           workspaces={workspaces}
           modes={registry.modes}
+          sessions={workspaceSessions}
           onCreated={onCreated}
           transcriptFontSize={transcriptFontSize}
           onChanged={() => {

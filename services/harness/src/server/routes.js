@@ -338,7 +338,7 @@ router.get('/sessions/:id', async (req, res) => {
 
 // Validates the mode against the registry before running, so prompt rules and
 // deny decisions come from one place.
-const startRun = async (req, res, requested, { prompt, provider, model, targetMode }) => {
+const startRun = async (req, res, requested, { prompt, provider, model, targetMode, runAfterSessionId }) => {
   const session = sessionStore.loadSession(req.params.id, config.writeDir)
   if (!session) return res.status(404).json({ error: 'session not found' })
   const mode = requested || Harness.replyMode(session)
@@ -351,7 +351,10 @@ const startRun = async (req, res, requested, { prompt, provider, model, targetMo
   const inPlace = Harness.repliesInPlace(session, entry)
   if (!prompt && (inPlace || !entry.promptOptional)) return res.status(400).json({ error: 'prompt is required' })
   try {
-    const run = await Harness.run(req.params.id, { prompt: await correctText(prompt), mode, provider, model, targetMode })
+    const run = await Harness.run(req.params.id, {
+      prompt: await correctText(prompt), mode, provider, model, targetMode, runAfterSessionId,
+    })
+    if (run && run.queued) return res.status(202).json({ session: run.session })
     if (entry.kind === 'decompose') return res.status(202).json(run)
     res.status(202).json({ run, ...(entry.newSession && !inPlace
       ? { session: sessionStore.loadSession(run.sessionId, config.writeDir) } : {}) })

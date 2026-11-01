@@ -16,6 +16,36 @@
   flex-wrap: wrap;
 }
 
+.composer__toolbar-start {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.composer__run-after {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.composer__run-after .checkbox:has(input:disabled) {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.composer__run-after-select {
+  min-width: 180px;
+  max-width: 280px;
+  background: var(--bg-elev-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
 .composer__mode-hint {
   font-size: 11px;
   color: var(--text-dim);
