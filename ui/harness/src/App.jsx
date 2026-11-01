@@ -125,8 +125,9 @@ const App = () => {
     go(workspace.id, null)
   }
 
-  const onCreated = (session) => {
+  const onCreated = (session, { stay = false } = {}) => {
     addSession(session)
+    if (stay) return
     go(session.workspaceId || activeWorkspaceId, session.id, { view: null })
     showChat()
   }

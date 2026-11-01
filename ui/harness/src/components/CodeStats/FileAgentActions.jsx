@@ -47,7 +47,7 @@ const FileAgentActions = ({ path, workspace, providers = [], onCreated }) => (
             title={mode.label}
             submitLabel={mode.submitLabel}
             afterCreate={(session) => mode.start(session.id, mode.prompt(path))}
-            onCreated={onCreated}
+            onCreated={mode.id === 'split-edit' ? (session) => onCreated(session, { stay: true }) : onCreated}
           />
           <Button devId={mode.devId} variant="ghost" size="sm" title={mode.label} aria-label={`${mode.label}: ${path}`}>
             <Icon d={mode.icon} />
