@@ -1,9 +1,11 @@
 const express = require('express')
 const config = require('./lib/config')
 const { handleMessage } = require('./lib/mcp')
+const { isRouteId } = require('./lib/store')
 
-// Streamable HTTP MCP, JSON responses only.
-const MCP_PATH = '/mcp'
+// Streamable HTTP MCP, JSON responses only. The harness points each agent at
+// /mcp/<workspaceId>[/<sessionId>], so the URL decides who the ids are issued to.
+const MCP_PATH = '/mcp/:workspaceId{/:sessionId}'
 
 const jsonParser = express.json({ limit: '1mb' })
 
@@ -15,14 +17,24 @@ app.all('/health', (_req, res) => {
   res.json({ ok: true })
 })
 
+app.use(MCP_PATH, (req, res, next) => {
+  const { workspaceId, sessionId } = req.params
+  if (!isRouteId(workspaceId) || (sessionId !== undefined && !isRouteId(sessionId))) {
+    res.status(400).json({ error: 'invalid workspace or session id' })
+    return
+  }
+  next()
+})
+
 app.post(MCP_PATH, jsonParser, async (req, res) => {
   if (req.body === undefined) {
     res.status(400).json(parseError)
     return
   }
+  const context = { workspaceId: req.params.workspaceId, sessionId: req.params.sessionId || null }
   const payload = req.body
   const messages = Array.isArray(payload) ? payload : [payload]
-  const responses = (await Promise.all(messages.map((message) => handleMessage(message)))).filter(Boolean)
+  const responses = (await Promise.all(messages.map((message) => handleMessage(message, context)))).filter(Boolean)
   if (!responses.length) {
     res.status(202).end()
     return
@@ -36,7 +48,7 @@ app.all(MCP_PATH, (_req, res) => {
 })
 
 app.use((_req, res) => {
-  res.status(404).json({ error: 'expected /mcp' })
+  res.status(404).json({ error: 'expected /mcp/<workspaceId>[/<sessionId>]' })
 })
 
 app.use((err, _req, res, _next) => {

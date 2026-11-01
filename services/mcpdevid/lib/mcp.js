@@ -21,12 +21,12 @@ const rpcError = (code, message) => Object.assign(new Error(message), { rpcCode:
 
 const toolText = (text, isError = false) => ({ content: [{ type: 'text', text }], ...(isError ? { isError: true } : {}) })
 
-const callTool = async ({ name, arguments: args = {} } = {}) => {
+const callTool = async ({ name, arguments: args = {} } = {}, context) => {
   if (name !== GET_DEV_IDS.name) throw rpcError(-32602, `unknown tool: ${name}`)
   const count = args.count === undefined ? 1 : args.count
   if (!Number.isInteger(count) || count < 1 || count > MAX_COUNT) return toolText(`count must be an integer from 1 to ${MAX_COUNT}`, true)
   try {
-    return toolText(JSON.stringify(issueIds(count)))
+    return toolText(JSON.stringify(issueIds(count, context)))
   } catch (err) {
     return toolText(`could not issue ids: ${err.message}`, true)
   }
@@ -44,7 +44,7 @@ const METHODS = {
 }
 
 // One JSON-RPC message in, one response out. Notifications get no response.
-const handleMessage = async (message) => {
+const handleMessage = async (message, context) => {
   const isRequest = message && message.id !== undefined && message.id !== null
   if (!message || message.jsonrpc !== '2.0' || typeof message.method !== 'string') {
     return isRequest ? { jsonrpc: '2.0', id: message.id, error: { code: -32600, message: 'invalid request' } } : null
@@ -53,7 +53,7 @@ const handleMessage = async (message) => {
   const method = METHODS[message.method]
   if (!method) return { jsonrpc: '2.0', id: message.id, error: { code: -32601, message: `method not found: ${message.method}` } }
   try {
-    return { jsonrpc: '2.0', id: message.id, result: await method(message.params) }
+    return { jsonrpc: '2.0', id: message.id, result: await method(message.params, context) }
   } catch (err) {
     return { jsonrpc: '2.0', id: message.id, error: { code: err.rpcCode || -32603, message: err.message } }
   }
