@@ -205,17 +205,16 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
   // fall back to Cursor's runtime default model, not the parent's.
   // Names must not match Cursor's built-in subagent types (explore,
   // generalPurpose, etc.): the built-in wins and ignores our model.
-  const SUBAGENT_MODEL = { id: 'grok-4.7' }
   const subagents = () => ({
     generalPurpose: {
       description: prompts.text('subagentGeneralPurposeDescription'),
       prompt: prompts.text('subagentGeneralPurpose'),
-      model: SUBAGENT_MODEL,
+      model: { id: selectedModel },
     },
     harnessExplore: {
       description: prompts.text('subagentExploreDescription'),
       prompt: prompts.text('subagentExplore'),
-      model: SUBAGENT_MODEL,
+      model: { id: 'grok-4.7' },
     },
   })
 

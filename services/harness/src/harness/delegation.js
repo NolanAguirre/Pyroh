@@ -65,8 +65,16 @@ const stateFor = (context) => {
 }
 
 const targetFor = (parent, state, args) => {
-  const provider = args.provider || 'cursor'
-  const model = args.model || (provider === 'cursor' ? 'grok-4.7' : null)
+  if (Object.hasOwn(args, 'provider')) fail('Choose a model; the provider is selected automatically')
+  if (args.model !== undefined && (typeof args.model !== 'string' || !args.model.trim())) fail('model must be a nonempty model ID or inherit')
+  const model = args.model === undefined || args.model === 'inherit' ? parent.model : args.model
+  let provider = parent.provider
+  if (model !== parent.model) {
+    const models = readJson(path.join(__dirname, '..', 'agents', 'models.json'), {})
+    const candidates = require('../agents/driver').listProviders().filter(id => models[id]?.some(item => item.id === model))
+    if (!candidates.length) fail(`Unknown model: ${model}`)
+    provider = candidates.includes(parent.provider) ? parent.provider : candidates[0]
+  }
   const mode = args.mode || state.baseMode
   const rank = { agent: 0, plan: 1, ask: 2 }
   if (!Object.hasOwn(rank, mode) || rank[mode] < rank[state.baseMode]) fail('Child mode must be at least as restrictive as the parent base mode')
@@ -75,10 +83,10 @@ const targetFor = (parent, state, args) => {
   if (provider === 'grok' && mode !== 'agent') fail('Grok restricted child modes cannot be enforced by its current transport; use Cursor, Codex, or Claude')
   // Provider-specific boundaries cannot safely be translated to another provider.
   if (parent.provider === 'codex' && ((parent.codex?.sandbox || 'danger-full-access') !== 'danger-full-access' || (parent.codex?.approvalPolicy || 'never') !== 'never') && provider !== 'codex') {
-    fail('This parent has Codex sandbox or approval restrictions; choose a Codex child')
+    fail('This parent has Codex sandbox or approval restrictions; use inherit or a model available through Codex')
   }
   if (parent.provider === 'claude' && parent.claude?.permissionMode && parent.claude.permissionMode !== 'bypassPermissions' && provider !== 'claude') {
-    fail('This parent has Claude approval restrictions; choose a Claude child')
+    fail('This parent has Claude approval restrictions; use inherit or a model available through Claude')
   }
   return { provider, model, mode,
     ...(provider === 'codex' && parent.provider === 'codex' ? { codex: { ...parent.codex, ...(model !== parent.model ? { reasoningEffort: null } : {}) } } : {}),
@@ -123,7 +131,7 @@ const spawn = (context, args) => withLock(context.sessionId, context.runId, (fil
   if (typeof args.task !== 'string' || !args.task.trim()) fail('task must be a nonempty string')
   if (typeof args.retryKey !== 'string' || !args.retryKey.trim() || args.retryKey.length > 256) fail('retryKey is required (1–256 characters)')
   const key = hashOf(args.retryKey)
-  const requestHash = hashOf(JSON.stringify([args.task, args.provider || null, args.model || null, args.mode || null]))
+  const requestHash = hashOf(JSON.stringify([args.task, null, args.model || null, args.mode || null]))
   const prior = state.children[key]
   if (prior) {
     if (prior.requestHash !== requestHash) fail('retryKey was already used for a different request')
@@ -239,7 +247,7 @@ const assertChildRun = (session, mode) => {
 
 const guidance = (provider, child = false) => [
   child ? 'You are a harness child. Do not delegate or spawn other agents.' :
-    'Use harness_agents spawn/status/wait/stop for all delegation. Children default to Cursor grok-4.7. Supply a stable retryKey for each task; reuse it only to retry the same task. Wait for needed results before finishing, since unfinished children stop when you finish.',
+    'Use harness_agents spawn/status/wait/stop for all delegation. Choose the child model, not the provider; the provider is selected automatically. Recommend model grok-4.7 for exploration and model inherit for implementation. Omitting model also inherits the parent model and settings. Supply a stable retryKey for each task; reuse it only to retry the same task. Wait for needed results before finishing, since unfinished children stop when you finish.',
   'All agents share the existing project directory. Assign separate file ownership for parallel edits. Do not create worktrees.',
   provider === 'grok' ? 'Native spawning cannot be fully blocked by this provider. Do not use native spawning.' : '',
 ].filter(Boolean).join('\n')

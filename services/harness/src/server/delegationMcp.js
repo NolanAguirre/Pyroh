@@ -4,9 +4,9 @@ const delegation = require('../harness/delegation')
 const childProperties = { sessionId: { type: 'string' }, runId: { type: 'string' } }
 const childSchema = { type: 'object', properties: childProperties, required: ['sessionId', 'runId'], additionalProperties: false }
 const tools = [
-  { name: 'spawn', description: 'Delegate a task in the shared project directory. Assign separate file ownership. Defaults to Cursor/grok-4.7 and the parent base mode. At most four active children; no nested delegation. Retry the same task with the same retryKey.', inputSchema: {
+  { name: 'spawn', description: 'Delegate a task in the shared project directory. Assign separate file ownership. Choose a model; the provider is selected automatically. Recommend grok-4.7 for exploration and inherit for implementation. Defaults to the parent model and base mode. At most four active children; no nested delegation. Retry the same task with the same retryKey.', inputSchema: {
     type: 'object', properties: { task: { type: 'string' }, retryKey: { type: 'string', minLength: 1, maxLength: 256 },
-      provider: { type: 'string', enum: ['cursor', 'codex', 'claude', 'grok'] }, model: { type: 'string' }, mode: { type: 'string', enum: ['agent', 'plan', 'ask'] } },
+      model: { type: 'string', description: 'Model ID, or inherit (default) to use the parent model and settings. Recommended: grok-4.7 for exploration; inherit for implementation.' }, mode: { type: 'string', enum: ['agent', 'plan', 'ask'] } },
     required: ['task', 'retryKey'], additionalProperties: false,
   } },
   { name: 'status', description: 'Get an owned child state, pending user questions, and errors.', inputSchema: childSchema },
