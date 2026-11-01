@@ -44,7 +44,7 @@ const DEPTH_OPTIONS = [
 ]
 
 const LIMIT_OPTIONS = [
-  ...['100', '500'].map((value) => ({ value, displayValue: `Top ${value}` })),
+  ...['20', '100', '500'].map((value) => ({ value, displayValue: `Top ${value}` })),
   { value: ALL, displayValue: 'All files' },
 ]
 
@@ -95,7 +95,7 @@ const CodeStatsView = ({ devId, workspace, providers, onCreated, onClose, onOpen
   const [scope, setScope] = useState('')
   const [depth, setDepth] = useState('2')
   const [bucket, setBucket] = useState(null)
-  const [limit, setLimit] = useState('100')
+  const [limit, setLimit] = useState('20')
 
   useEffect(() => {
     setLanguage(ALL)
