@@ -574,7 +574,7 @@ const recoverSession = (sessionId, writeDir, { excludeRunId } = {}) => {
   if (!session) throw new Error(`session not found: ${sessionId}`)
   const receipts = new Map(jsonRecords(receiptDir(sessionId, writeDir)).map(({ record }) => [record.runId, record]))
   const sdkRuns = new Map()
-  const sdkFile = path.join(paths.sessionSdkStoreDir(sessionId, writeDir), 'runs.ndjson')
+  const sdkFile = path.join(require('./cursorStore').relocate(sessionId, writeDir), 'runs.ndjson')
   if (fs.existsSync(sdkFile)) {
     for (const line of fs.readFileSync(sdkFile, 'utf8').split('\n')) {
       if (line.trim()) { const record = JSON.parse(line); sdkRuns.set(record.runId, record) }

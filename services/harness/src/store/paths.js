@@ -134,8 +134,14 @@ const steerDir = (sessionId, writeDir = config.writeDir) =>
 
 const sdkStoreDir = (writeDir = config.writeDir) => path.join(writeDir, 'sdk-store')
 
-const sessionSdkStoreDir = (sessionId, writeDir = config.writeDir) =>
+const legacySessionSdkStoreDir = (sessionId, writeDir = config.writeDir) =>
   path.join(sessionDir(sessionId, writeDir), 'sdk-store')
+
+const sessionSdkStoreDir = (sessionId, writeDir = config.writeDir) => {
+  const loc = locateSession(sessionId, writeDir)
+  const parent = loc?.workspaceId ? workspaceDir(loc.workspaceId, writeDir) : writeDir
+  return path.join(parent, 'sdk-store', sessionId)
+}
 
 const sourcePlanFile = (sessionId, writeDir = config.writeDir) =>
   path.join(sessionDir(sessionId, writeDir), 'source-plan.md')
@@ -194,6 +200,7 @@ module.exports = {
   steerDir,
   sdkStoreDir,
   sessionSdkStoreDir,
+  legacySessionSdkStoreDir,
   sourcePlanFile,
   phasesFile,
   phaseDir,

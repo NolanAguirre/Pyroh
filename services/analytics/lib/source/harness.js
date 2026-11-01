@@ -32,16 +32,6 @@ const statOrNull = async (file) => {
   }
 }
 
-const walkFiles = async (dir) => {
-  const files = []
-  for (const entry of await listEntries(dir)) {
-    const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) files.push(...await walkFiles(full))
-    else if (entry.isFile()) files.push(full)
-  }
-  return files
-}
-
 const listWorkspaces = async (writeDir = config.harnessWriteDir) => {
   const ids = await listDirs(workspacesDir(writeDir))
   const found = await Promise.all(ids.map(async (id) => {
@@ -113,10 +103,9 @@ const describeSession = async (loc) => {
     .map((entry) => path.join(loc.dir, entry.name))
 
   const runsDir = path.join(loc.dir, 'runs')
-  const [runFiles, usageFiles, sdkFiles, phaseFiles] = await Promise.all([
+  const [runFiles, usageFiles, phaseFiles] = await Promise.all([
     filesIn(runsDir),
     filesIn(path.join(loc.dir, 'usage')),
-    walkFiles(path.join(loc.dir, 'sdk-store')),
     Promise.all(phaseDirs.map(filesIn)).then((lists) => lists.flat()),
   ])
   const rootJson = [...rootNames]
@@ -130,7 +119,6 @@ const describeSession = async (loc) => {
 
   const transcriptPaths = [
     ...runFiles.filter((file) => file.endsWith('.cursor.jsonl')),
-    ...sdkFiles,
     ...rootSteps,
     ...phaseFiles.filter((file) => file.endsWith('.json')),
   ].sort()

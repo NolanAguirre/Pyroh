@@ -3,12 +3,23 @@ const path = require('path')
 const readline = require('readline')
 const paths = require('./paths')
 
+// Called while holding the session lock. Never overwrites an existing target.
+const relocate = (sessionId, writeDir) => {
+  const source = paths.legacySessionSdkStoreDir(sessionId, writeDir)
+  const target = paths.sessionSdkStoreDir(sessionId, writeDir)
+  if (fs.existsSync(source) && !fs.existsSync(target)) {
+    fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 })
+    fs.renameSync(source, target)
+  }
+  return target
+}
+
 // Called while holding the session lock. Migrate only this agent's records;
 // never open the old shared store for writing or fall back to it on errors.
 // A fresh run starts a new agent in the session store, so several saved
 // agents are expected and none is adopted.
 const prepare = async (session, writeDir, { fresh } = {}) => {
-  const target = paths.sessionSdkStoreDir(session.id, writeDir)
+  const target = relocate(session.id, writeDir)
   if (fresh) {
     if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true, mode: 0o700 })
     return target
@@ -61,4 +72,4 @@ const prepare = async (session, writeDir, { fresh } = {}) => {
   }
 }
 
-module.exports = { prepare }
+module.exports = { prepare, relocate }
