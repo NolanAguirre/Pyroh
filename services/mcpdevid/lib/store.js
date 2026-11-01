@@ -49,7 +49,7 @@ const inTransaction = (fn) => {
   }
 }
 
-const issueIds = (count, { workspaceId, sessionId = null }) => {
+const issueIds = (count, { workspaceId, sessionId = null, source = 'mcp' }) => {
   if (!isRouteId(workspaceId)) throw new Error(`invalid workspace id: ${workspaceId}`)
   if (sessionId !== null && !isRouteId(sessionId)) throw new Error(`invalid session id: ${sessionId}`)
   return inTransaction(() => {
@@ -58,7 +58,7 @@ const issueIds = (count, { workspaceId, sessionId = null }) => {
     for (let attempts = 0; ids.length < count; attempts += 1) {
       if (attempts >= MAX_ATTEMPTS) throw new Error(`could not issue ${count} unique ids`)
       const id = genId()
-      if (data.insert.run(id, 'mcp', workspaceId, sessionId, now).changes) ids.push(id)
+      if (data.insert.run(id, source, workspaceId, sessionId, now).changes) ids.push(id)
     }
     return ids
   })
@@ -69,4 +69,16 @@ const importIds = (ids, source) => inTransaction(() => {
   return ids.reduce((added, id) => added + Number(data.insert.run(id, source, null, null, now).changes), 0)
 })
 
-module.exports = { isRouteId, issueIds, importIds }
+// Frees prefetched ids older than the cutoff that no scanned repo uses.
+// MCP-issued and imported ids are never touched.
+const reclaimIds = (foundIds, olderThanMs) => inTransaction(() => {
+  const found = new Set(foundIds)
+  const cutoff = Date.now() - olderThanMs
+  const remove = data.db.prepare('DELETE FROM main.dev_ids WHERE id = ?')
+  return data.db.prepare("SELECT id FROM main.dev_ids WHERE source = 'prefetch' AND created_at < ?")
+    .all(cutoff)
+    .filter((row) => !found.has(row.id))
+    .reduce((deleted, row) => deleted + Number(remove.run(row.id).changes), 0)
+})
+
+module.exports = { isRouteId, issueIds, importIds, reclaimIds }

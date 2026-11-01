@@ -6,7 +6,7 @@
 	services.analytics.install services.analytics.build services.analytics.start services.analytics.sync services.analytics.backfill \
 	services.mcp-memory.install services.mcp-memory.build services.mcp-memory.start services.mcp-memory.help \
 	services.memory.install services.memory.build services.memory.start services.memory.help \
-	services.mcpdevid.install services.mcpdevid.build services.mcpdevid.start services.mcpdevid.import services.mcpdevid.help \
+	services.mcpdevid.install services.mcpdevid.build services.mcpdevid.start services.mcpdevid.import services.mcpdevid.reclaim services.mcpdevid.help \
 	ui.harness.install ui.harness.dev ui.harness.build ui.harness.lint ui.harness.preview \
 	services.nginx.start services.nginx.stop services.nginx.reload services.nginx.status services.nginx.test services.nginx.render
 
@@ -102,6 +102,9 @@ services.mcpdevid.start: ## mcpdevid: Start the dev id MCP server
 
 services.mcpdevid.import: ## mcpdevid: Import dev ids from repos (REPOS="~/a ~/b")
 	$(MAKE) -C services/mcpdevid import REPOS="$(REPOS)"
+
+services.mcpdevid.reclaim: ## mcpdevid: Free unused prefetched ids older than 24h (REPOS="~/a ~/b")
+	$(MAKE) -C services/mcpdevid reclaim REPOS="$(REPOS)"
 
 services.mcpdevid.help: ## mcpdevid: Show service help
 	$(MAKE) -C services/mcpdevid help

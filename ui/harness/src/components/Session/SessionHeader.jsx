@@ -50,7 +50,7 @@ const SessionHeader = ({ session, status, isBusy, disconnected, busy, sideOpen, 
       <Button
         variant="secondary"
         size="sm"
-        onClick={act(() => api.pause(sessionId))}
+        onClick={onPause}
         disabled={busy || !isBusy}
         devId="hr8c4n1"
         title="Pause"
@@ -61,7 +61,7 @@ const SessionHeader = ({ session, status, isBusy, disconnected, busy, sideOpen, 
       <Button
         variant="secondary"
         size="sm"
-        onClick={act(() => api.resume(sessionId))}
+        onClick={onResume}
         disabled={busy || isBusy}
         devId="hr6p0s5"
         title={disconnected ? 'Reconnect and resume' : 'Resume'}
@@ -72,7 +72,7 @@ const SessionHeader = ({ session, status, isBusy, disconnected, busy, sideOpen, 
       <Button
         variant="danger"
         size="sm"
-        onClick={act(() => api.stop(sessionId))}
+        onClick={onStop}
         disabled={busy || status === 'stopped'}
         devId="hr3l7q9"
         title="Stop"
@@ -83,7 +83,7 @@ const SessionHeader = ({ session, status, isBusy, disconnected, busy, sideOpen, 
       <Button
         variant={sideOpen ? 'secondary' : 'ghost'}
         size="sm"
-        onClick={() => setSideOpen((prev) => !prev)}
+        onClick={onToggleSide}
         devId="h8w4c1x"
         title={sideOpen ? 'Collapse inspector' : 'Expand inspector'}
         aria-label={sideOpen ? 'Collapse inspector' : 'Expand inspector'}

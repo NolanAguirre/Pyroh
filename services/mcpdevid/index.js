@@ -1,11 +1,14 @@
 const express = require('express')
 const config = require('./lib/config')
 const { handleMessage } = require('./lib/mcp')
-const { isRouteId } = require('./lib/store')
+const { isRouteId, issueIds } = require('./lib/store')
 
 // Streamable HTTP MCP, JSON responses only. The harness points each agent at
 // /mcp/<workspaceId>[/<sessionId>], so the URL decides who the ids are issued to.
 const MCP_PATH = '/mcp/:workspaceId{/:sessionId}'
+// Plain endpoint the harness uses to pre-issue ids for a turn.
+const IDS_PATH = '/ids/:workspaceId{/:sessionId}'
+const MAX_PREFETCH = 100
 
 const jsonParser = express.json({ limit: '1mb' })
 
@@ -17,13 +20,35 @@ app.all('/health', (_req, res) => {
   res.json({ ok: true })
 })
 
-app.use(MCP_PATH, (req, res, next) => {
+const checkRouteIds = (req, res, next) => {
   const { workspaceId, sessionId } = req.params
   if (!isRouteId(workspaceId) || (sessionId !== undefined && !isRouteId(sessionId))) {
     res.status(400).json({ error: 'invalid workspace or session id' })
     return
   }
   next()
+}
+
+app.use(MCP_PATH, checkRouteIds)
+app.use(IDS_PATH, checkRouteIds)
+
+app.post(IDS_PATH, (req, res) => {
+  const count = Number(req.query.count)
+  if (!Number.isInteger(count) || count < 1) {
+    res.status(400).json({ error: 'count must be a positive integer' })
+    return
+  }
+  const ids = issueIds(Math.min(count, MAX_PREFETCH), {
+    workspaceId: req.params.workspaceId,
+    sessionId: req.params.sessionId || null,
+    source: 'prefetch',
+  })
+  res.json(ids)
+})
+
+app.all(IDS_PATH, (_req, res) => {
+  res.set('Allow', 'POST')
+  res.status(405).json({ error: 'only POST is supported' })
 })
 
 app.post(MCP_PATH, jsonParser, async (req, res) => {

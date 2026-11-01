@@ -161,7 +161,7 @@ const runOneTurn = async ({
 
     let text = await rewritePrompt(prompt, { cwd: settings.cwd })
     if (text !== prompt) onPromptRewrite?.(text)
-    text = prependNotes(fired, session, text)
+    text = await prependNotes(fired, session, text)
     let first = true
     let result
     while (true) {

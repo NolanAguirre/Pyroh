@@ -32,9 +32,9 @@ const TEMPLATES = [
     group: 'flags',
     description: 'Prepended to a turn whose prompt asks to add dev ids. The mcpdevid MCP server is attached on those turns.',
     usedBy: ['harness/runTurn.js'],
-    vars: [],
+    vars: [{ name: 'ids', description: 'Pre-issued ids, comma separated, or "none".' }],
     template: `Dev ids are 7-character [a-z0-9] literals that tag UI elements so the operator can point at them, for example devId="k3x9q2a" or <DevScope id="k3x9q2a">.
-Do not make up dev ids. Call the get_dev_ids tool on the mcpdevid MCP server with the count you need, and use the ids it returns. Ask for all the ids you need in one call. The ids are guaranteed unused, so do not search the codebase to check them. If the tool returns an error, stop and report it. Do not try to fix the server or its database.
+Do not make up dev ids. Pre-issued ids for this turn: {{ids}}. Use these first, in any order. Unused ones are fine. Call get_dev_ids on the mcpdevid MCP server only if you need more, and ask for all the extra ids in one call. All ids are guaranteed unused, so do not search the codebase to check them. If the tool returns an error, stop and report it. Do not try to fix the server or its database.
 
 Where ids go:
 - Wrap with <DevScope id="..."> each row you act on, each card you edit or answer, each distinct input, and loading or error text that renders outside any scope.
