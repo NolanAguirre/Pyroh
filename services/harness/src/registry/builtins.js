@@ -6,6 +6,7 @@
 //   token-waste  analysis turn in a new sibling session
 //   memory       memory extraction turn in a new sibling session
 //   new-chat     handoff summary, then a new session continues it
+//   fork         independent conversation continuing the full source history
 //   decompose    multi-phase decompose pipeline
 //   plugin       plugin buildPrompt/instructions/onComplete
 const MODES = [
@@ -83,6 +84,17 @@ const MODES = [
     sessionName: 'Memories',
     sendLabel: 'Extract memories',
     placeholder: 'Optional focus for memory extraction…',
+  },
+  {
+    id: 'fork',
+    label: 'Fork',
+    hint: 'Starts an independent conversation from this chat’s full history, keeping its current mode and settings.',
+    base: 'agent',
+    kind: 'fork',
+    newSession: true,
+    steerable: false,
+    sendLabel: 'Send to fork',
+    placeholder: 'Start a fork from this conversation…',
   },
   {
     id: 'new-chat',

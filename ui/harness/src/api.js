@@ -144,7 +144,11 @@ const patchSession = (sessionId, body) => {
 
 const sessionPost = (sessionId, suffix, body) => {
   const { machine, url } = sessionUrl(sessionId, suffix)
-  return post(url, body).then((data) => (data && data.session ? { ...data, session: tagSession(data.session, machine) } : data))
+  return post(url, body).then((data) => data ? {
+    ...data,
+    ...(data.session ? { session: tagSession(data.session, machine) } : {}),
+    ...(data.run ? { run: { ...data.run, sessionId: tagId(data.run.sessionId, machine) } } : {}),
+  } : data)
 }
 
 const sortSessions = (sessions, { orderBy = 'createdAt', order = 'desc', limit } = {}) => {

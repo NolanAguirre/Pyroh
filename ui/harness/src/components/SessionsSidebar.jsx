@@ -71,9 +71,38 @@ const SessionsSidebar = ({
       if (!children.has(session.parentSessionId)) children.set(session.parentSessionId, [])
       children.get(session.parentSessionId).push(session)
     }
-    return shownSessions.filter(session => !session.parentSessionId || !ids.has(session.parentSessionId))
-      .flatMap(session => [session, ...(children.get(session.id) || [])])
+    const visited = new Set()
+    const branch = (session) => {
+      if (visited.has(session.id)) return null
+      visited.add(session.id)
+      return { session, children: (children.get(session.id) || []).map(branch).filter(Boolean) }
+    }
+    const roots = shownSessions.filter(session => !session.parentSessionId || !ids.has(session.parentSessionId))
+      .map(branch)
+    // Keep rows visible even if a malformed parent chain contains a cycle.
+    return [...roots, ...shownSessions.filter(session => !visited.has(session.id)).map(branch).filter(Boolean)]
   }, [shownSessions])
+
+  const renderSession = ({ session, children }) => (
+    <div
+      key={session.id}
+      className={session.parentSessionId
+        ? `sidebar__child-session${session.childKind === 'fork' ? ' sidebar__child-session--fork' : ''}`
+        : undefined}
+    >
+      <SessionRow
+        session={session}
+        active={session.id === activeId}
+        onSelect={rowHandlers.onSelect}
+        onRename={rowHandlers.onRename}
+        onArchive={rowHandlers.onArchive}
+        archiveBusy={archiveBusy}
+        onPin={rowHandlers.onPin}
+        pinBusy={pinBusy}
+      />
+      {children.map(renderSession)}
+    </div>
+  )
 
   const archiveOlder = () => {
     if (archiveBusy || !sessionsToArchive.length || !onArchiveOlder) return
@@ -186,20 +215,7 @@ const SessionsSidebar = ({
                 <p className="hint sidebar__empty-hint">No sessions match &ldquo;{searchQuery}&rdquo;</p>
               </DevScope>
             )}
-            {groupedSessions.map((session) => (
-              <div key={session.id} className={session.parentSessionId ? 'sidebar__child-session' : undefined}>
-              <SessionRow
-                session={session}
-                active={session.id === activeId}
-                onSelect={rowHandlers.onSelect}
-                onRename={rowHandlers.onRename}
-                onArchive={rowHandlers.onArchive}
-                archiveBusy={archiveBusy}
-                onPin={rowHandlers.onPin}
-                pinBusy={pinBusy}
-              />
-              </div>
-            ))}
+            {groupedSessions.map(renderSession)}
             {hiddenArchived > 0 && (
               <DevScope id="m4r8s2v" state={{ hidden: hiddenArchived }}>
                 <div className="sidebar__show-more">

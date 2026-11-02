@@ -214,3 +214,7 @@
   border-left: 2px solid currentColor;
   padding-left: 4px;
 }
+
+.sidebar__child-session--fork {
+  border-left-color: #f97316;
+}

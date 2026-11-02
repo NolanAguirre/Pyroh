@@ -201,6 +201,32 @@ const continueInNewChat = (sourceSessionId, prompt, target) => {
   return { session, run }
 }
 
+const forkSession = (sourceSessionId, prompt) => {
+  if (typeof prompt !== 'string' || !prompt.trim()) {
+    throw Object.assign(new Error('prompt is required'), { status: 400 })
+  }
+  const lock = sessionLock.acquire(sourceSessionId, config.writeDir)
+  try {
+    sessionStore.recoverSession(sourceSessionId, config.writeDir)
+    const source = sessionStore.loadSession(sourceSessionId, config.writeDir)
+    if (!source) throw Object.assign(new Error(`session not found: ${sourceSessionId}`), { status: 404 })
+    if (['running', 'awaiting_input', 'queued'].includes(source.status)) {
+      throw Object.assign(new Error('Finish or stop the current turn before forking'), { status: 409 })
+    }
+    const runs = sessionStore.listRuns(sourceSessionId, config.writeDir)
+    if (!runs.length) throw Object.assign(new Error('Start a conversation before forking'), { status: 400 })
+    const latest = runs.findLast(item => registry.turnMode(item.mode, item.plugin)?.kind === 'turn' || item.plugin)
+    const previous = registry.turnMode(latest?.mode || replyMode(source), latest?.plugin)
+    const mode = previous?.base || 'agent'
+    const entry = registry.requireMode(registry.sessionWorkspace(source), mode, { provider: source.provider })
+    const workspaceId = source.workspaceId || workspaceStore.findWorkspaceByCwd(source.cwd, config.writeDir)?.id
+    const session = require('./fork').createFork(source, {
+      workspaceId, ...spawnSessionFields(source, source), mode,
+    })
+    return spawnRun(session.id, mode === 'plan' ? 'plan' : 'run', { mode, prompt, autoName: entry.autoName })
+  } finally { lock.release() }
+}
+
 // Plugin modes come from the session's workspace or global plugins. A fresh
 // sibling session gets the run when the mode asks for one, as token-waste does.
 const runPlugin = async (source, plugin, harness, { prompt, provider, model }) => {
@@ -237,6 +263,11 @@ const run = async (sessionId, { prompt, mode: requested, provider, model, target
   if (!source) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
   if (source.status === 'queued') throw Object.assign(new Error('session is queued'), { status: 409 })
   const mode = requested || replyMode(source)
+  if (mode === 'fork') {
+    registry.requireMode(registry.sessionWorkspace(source), mode, { provider: source.provider })
+    if (runAfterSessionId) throw Object.assign(new Error('Fork cannot be scheduled with run after'), { status: 400 })
+    return forkSession(sessionId, prompt)
+  }
   require('./delegation').assertChildRun(source, mode)
   if (runAfterSessionId != null && runAfterSessionId !== '') {
     const outcome = require('./runAfter').enqueue(source, { prompt, mode, runAfterSessionId })
@@ -396,6 +427,7 @@ module.exports = {
   createMemorySession,
   resolveNewChatTarget,
   continueInNewChat,
+  forkSession,
   replyMode,
   repliesInPlace,
   plan,

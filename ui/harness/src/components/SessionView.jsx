@@ -86,7 +86,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const modes = registryModes?.length ? registryModes : FALLBACK_MODES
   const registryActive = modes.find((item) => item.id === mode) || null
   // Sending a sibling mode to a session already in it replies here instead of spawning.
-  const replyInPlace = Boolean(registryActive?.newSession) && session?.mode === registryActive.id
+  const replyInPlace = Boolean(registryActive?.newSession) && registryActive.kind !== 'fork' && session?.mode === registryActive.id
   const active = replyInPlace
     ? {
         ...registryActive,
@@ -99,6 +99,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
     : registryActive
   const isDecompose = active?.kind === 'decompose'
   const isNewChat = active?.kind === 'new-chat'
+  const isFork = active?.kind === 'fork'
   const picksSpawnTarget = isNewChat || (Boolean(active?.newSession) && SPAWN_TARGET_KINDS.includes(active?.kind))
 
   // A saved mode that this workspace no longer has falls back to the session's mode, then agent.
@@ -120,11 +121,11 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
     : ''
   const latestRun = runs[runs.length - 1]
   const hasFailure = Boolean(session?.lastError?.message || latestRun?.error || latestRun?.transcriptError)
-  const promptRequired = !active?.promptOptional
+  const promptRequired = isFork || !active?.promptOptional
   const spawnsSession = Boolean(active?.newSession)
   const blocksWhileBusy = !spawnsSession
   const steering = isBusy && active?.steerable !== false && !spawnsSession
-  const canQueue = submitted && !session?.parentSessionId && !spawnsSession
+  const canQueue = submitted && (!session?.parentSessionId || session.childKind === 'fork') && !spawnsSession
     && ['turn', 'plugin'].includes(active?.kind)
   const queueDisabled = !canQueue || queued || !prompt.trim()
   const spawnEntry = providers.find((item) => item.id === spawnProvider)
@@ -186,7 +187,15 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
         const result = await api.run(sessionId, isNewChat
           ? { prompt, mode, ...target, targetMode: spawnMode }
           : picksSpawnTarget ? { prompt, mode, ...target } : reply)
-        if (result.session) onCreated?.(result.session)
+        if (isFork && result.run?.sessionId && result.run.sessionId !== sessionId) {
+          // The run identifies the fork; the response session can still be the source.
+          const fork = result.session?.id === result.run.sessionId
+            ? result.session
+            : (await api.getSession(result.run.sessionId)).session
+          saveComposer(sessionId, defaultMode, '', defaultMode)
+          setMode(defaultMode)
+          onCreated?.(fork)
+        } else if (result.session && !isFork) onCreated?.(result.session)
         if (isNewChat) setHandoffRunId(result.run.id)
       }
       if (!isDecompose) setPrompt('')
@@ -287,7 +296,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
               <p className="hint">
                 {session.childKind === 'workflow' && <>{session.name || `Workflow step${session.workflow?.phase ? ` · Phase ${session.workflow.phase}` : ''}${session.workflow?.step ? ` · ${session.workflow.step}` : ''}`} · </>}
                 <a href={urlWithSelection(new URL(window.location.href), session.workspaceId, session.parentSessionId, null, null, null).href}>
-                  {session.childKind === 'workflow' ? 'Parent workflow' : 'Parent session'}{session.parentRunId ? ` · ${session.parentRunId}` : ''}
+                  {session.childKind === 'fork' ? 'Forked from' : session.childKind === 'workflow' ? 'Parent workflow' : 'Parent session'}{session.parentRunId ? ` · ${session.parentRunId}` : ''}
                 </a>
               </p>
             )}
