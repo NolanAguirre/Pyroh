@@ -193,7 +193,7 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
     })
     const turn = active
     emit({ type: 'status', status: 'running' })
-    client.prompt(sessionId, composePrompt(prompt, { mode, terse, instructions }), onUpdate).then((response) => {
+    client.prompt(sessionId, composePrompt(prompt, { mode, terse, instructions, provider: 'grok' }), onUpdate).then((response) => {
       if (turn !== active) return
       const usage = normalizeUsage(response?._meta?.usage)
       if (usage) {

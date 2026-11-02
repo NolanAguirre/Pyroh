@@ -31,7 +31,7 @@ const approvalFor = (mode, configured) => approvalTypes[readOnlyModes.includes(m
 const ASK_TOOL_NAME = 'harness_ask_user'
 const askTool = () => ({
   name: ASK_TOOL_NAME,
-  description: prompts.text('askUserCodex'),
+  description: prompts.text('askUserCodex', 'codex'),
   inputSchema: {
     type: 'object', properties: {
       question: { type: 'string' }, options: { type: 'array', items: { type: 'string' } },
@@ -345,7 +345,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     const sandbox = tools.restrictedChild ? 'read-only' : options.sandbox
     // Codex has no ask collaboration mode. Ask uses the default mode with enforced
     // read-only approvals, plus an instruction explaining the denials.
-    const text = composePrompt(prompt, { mode, terse, instructions })
+    const text = composePrompt(prompt, { mode, terse, instructions, provider: 'codex' })
     for (const message of diagnostics) emit({ type: 'status', status: `Codex diagnostic: ${message}` })
     try {
       const response = await transport.request('turn/start', {

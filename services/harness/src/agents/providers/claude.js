@@ -378,7 +378,7 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     input = createInput()
     // Claude Code has no ask mode. Ask uses the default permission mode, blocks
     // edit tools, and denies every approval request, plus an instruction.
-    const content = composePrompt(prompt, { mode, terse, instructions })
+    const content = composePrompt(prompt, { mode, terse, instructions, provider: 'claude' })
     input.push({ type: 'user', message: { role: 'user', content }, parent_tool_use_id: null })
     const source = query({ prompt: input.iterable, options: {
       ...baseOptions(),

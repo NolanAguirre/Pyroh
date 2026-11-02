@@ -169,7 +169,7 @@ const runOneTurn = async ({
       }
     }
 
-    let text = await rewritePrompt(prompt, { cwd: settings.cwd, first })
+    let text = await rewritePrompt(prompt, { cwd: settings.cwd, first, provider: session.provider })
     if (text !== prompt) onPromptRewrite?.(text)
     text = await prependNotes(fired, session, text)
     let firstSend = true
@@ -205,7 +205,7 @@ const runOneTurn = async ({
       const steers = steering.take()
       if (!steers.length) break
       const steerText = steers.map((steer) => steer.text).join('\n\n')
-      text = await rewritePrompt(steerText, { cwd: settings.cwd, first: false })
+      text = await rewritePrompt(steerText, { cwd: settings.cwd, first: false, provider: session.provider })
       onEvent?.({ type: 'user', steer: true, text, itemId: `steer:${steers[0].id}` })
       if (signal?.aborted) break
     }

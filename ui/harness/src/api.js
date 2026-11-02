@@ -206,9 +206,15 @@ const api = {
     return fetch(at(machine, `/api/workspaces/${encodeURIComponent(id)}/registry`)).then(json)
   },
   // Built-in prompt templates with the vars each one interpolates.
-  listPrompts: ({ signal } = {}) => fetch(at(null, '/api/prompts'), { signal }).then(json),
-  // Saves an edited template; `null` resets to the built-in one.
-  updatePrompt: (id, template) => send('PUT', at(null, `/api/prompts/${encodeURIComponent(id)}`), { template }).then(json),
+  listPrompts: ({ signal, provider } = {}) => {
+    const query = provider ? `?${new URLSearchParams({ provider })}` : ''
+    return fetch(at(null, `/api/prompts${query}`), { signal }).then(json)
+  },
+  // Saves or resets an edited template in the selected provider or shared scope.
+  updatePrompt: (id, template, { provider } = {}) => {
+    const query = provider ? `?${new URLSearchParams({ provider })}` : ''
+    return send('PUT', at(null, `/api/prompts/${encodeURIComponent(id)}${query}`), { template }).then(json)
+  },
 
   // Every registry entry with its decision; global scope when there is no workspace.
   explainRegistry: (workspaceId, { provider } = {}, { signal } = {}) => {

@@ -17,7 +17,7 @@ const Template = ({ template }) => (
   </pre>
 )
 
-const PromptCard = ({ prompt, onSaved }) => {
+const PromptCard = ({ prompt, provider = null, onSaved }) => {
   const [draft, setDraft] = useState(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -26,7 +26,7 @@ const PromptCard = ({ prompt, onSaved }) => {
     setSaving(true)
     setError(null)
     api
-      .updatePrompt(prompt.id, template)
+      .updatePrompt(prompt.id, template, { provider })
       .then((data) => {
         onSaved(data.prompt)
         setDraft(null)
@@ -41,6 +41,7 @@ const PromptCard = ({ prompt, onSaved }) => {
         <CardHeader>
           <strong>{prompt.name}</strong> <code className="registry__id">{prompt.id}</code>
           {prompt.edited && <> <Badge size="small" variant="info">edited</Badge></>}
+          {provider && <> <Badge size="small" variant="info">{prompt.customized ? 'provider version' : 'inherits shared default'}</Badge></>}
         </CardHeader>
         <CardSection>
           <p className="registry__flag-desc">{prompt.description}</p>

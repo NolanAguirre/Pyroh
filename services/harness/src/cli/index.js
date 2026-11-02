@@ -164,7 +164,7 @@ const handleTurn = async (action, sessionId, flags) => {
     let prompt = flags.prompt
     let handoff
     if (mode === newChat.MODE) {
-      prompt = newChat.buildPrompt(prompt)
+      prompt = newChat.buildPrompt(prompt, session.provider)
       try {
         handoff = Harness.resolveNewChatTarget(session, {
           provider: flags.provider,
@@ -175,7 +175,7 @@ const handleTurn = async (action, sessionId, flags) => {
         return fail(`${action}: ${err && err.message}`)
       }
     }
-    if (action === 'resume' && !prompt) prompt = prompts.text('resume')
+    if (action === 'resume' && !prompt) prompt = prompts.text('resume', session.provider)
     if (!prompt) return fail(`${action}: --prompt is required`)
     run = sessionStore.createRun(sessionId, { mode, prompt, handoff })
     if (!session.mode && registry.builtinMode(mode)?.kind === 'turn') sessionStore.updateSession(sessionId, { mode }, config.writeDir)

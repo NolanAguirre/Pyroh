@@ -7,20 +7,20 @@ const prompts = require('../prompts')
 const AGENT_MODES = ['agent', 'plan', 'ask']
 
 // Read on each call so operator edits apply without a restart.
-const askPrompt = () => prompts.text('ask')
+const askPrompt = (provider) => prompts.text('ask', provider)
 
-const tersePrompt = () => prompts.text('terse')
+const tersePrompt = (provider) => prompts.text('terse', provider)
 
-const withAskPrompt = (prompt) => `${askPrompt()}\n\n${prompt}`
+const withAskPrompt = (prompt, provider) => `${askPrompt(provider)}\n\n${prompt}`
 
 // `terse` is the first prompt of a session. Ask and plugin instructions are
 // added on every turn.
-const composePrompt = (prompt, { mode, terse = false, instructions } = {}) => {
+const composePrompt = (prompt, { mode, terse = false, instructions, provider } = {}) => {
   const text = prompt == null ? '' : String(prompt)
   const parts = []
-  const terseText = tersePrompt()
+  const terseText = tersePrompt(provider)
   if (terse && !text.startsWith(terseText)) parts.push(terseText)
-  if (mode === 'ask') parts.push(askPrompt())
+  if (mode === 'ask') parts.push(askPrompt(provider))
   if (instructions) parts.push(String(instructions))
   if (!parts.length) return text
   return `${parts.join('\n\n')}\n\n${text}`

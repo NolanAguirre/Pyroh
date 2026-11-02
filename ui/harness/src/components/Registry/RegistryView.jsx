@@ -35,7 +35,7 @@ const RegistryView = ({ devId, workspaces = [], providers = [], workspaceId = nu
     ...workspaces.map((item) => ({ value: item.id, displayValue: item.name })),
   ]
   const providerOptions = [
-    { value: ANY, displayValue: 'Any provider' },
+    { value: ANY, displayValue: section === PROMPTS_TAB ? 'Shared defaults' : 'Any provider' },
     ...providers.map((item) => ({ value: item.id, displayValue: item.id })),
   ]
 
@@ -64,7 +64,7 @@ const RegistryView = ({ devId, workspaces = [], providers = [], workspaceId = nu
         </nav>
 
         <main className="registry__body">
-          {section === PROMPTS_TAB && <PromptsView />}
+          {section === PROMPTS_TAB && <PromptsView key={provider} provider={provider === ANY ? null : provider} />}
           {section !== PROMPTS_TAB && error && <p className="registry__error">{error}</p>}
           {section !== PROMPTS_TAB && !data && !error && <p className="hint">Loading registry…</p>}
           {data && section === FLAGS_TAB && <FlagsView flags={data.flags || []} modes={data.modes} />}

@@ -17,9 +17,9 @@ const findLocations = (needle, cwd) => new Promise((resolve) => {
   )
 })
 
-const devIdPaths = async ([match, id], { cwd }) => {
+const devIdPaths = async ([match, id], { cwd, provider }) => {
   const locations = await findLocations(id, cwd)
-  return locations.length ? prompts.render('devIdPaths', { match, files: locations.join(' ') }) : match
+  return locations.length ? prompts.render('devIdPaths', { match, files: locations.join(' ') }, provider) : match
 }
 
 const trigger = (id) => TRIGGERS.find((item) => item.id === id)
@@ -44,7 +44,7 @@ const replaceAsync = async (text, pattern, rewrite, context) => {
   return out + text.slice(last)
 }
 
-// context: { cwd, first }. `first: false` skips first-prompt-only rules.
+// context: { cwd, first, provider }. `first: false` skips first-prompt-only rules.
 const rewritePrompt = async (text, context = {}) => {
   if (typeof text !== 'string' || !text) return text
   let out = text

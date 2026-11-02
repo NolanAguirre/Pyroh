@@ -24,10 +24,10 @@ const transcriptFiles = (sessionId, writeDir) => {
   return files
 }
 
-const buildPrompt = (sessionId, focus, writeDir) => prompts.render('memoryExtract', {
+const buildPrompt = (sessionId, focus, writeDir, provider) => prompts.render('memoryExtract', {
   sessionId,
   files: prompts.directoryLines(transcriptFiles(sessionId, writeDir)),
-  focus: prompts.focusBlock(focus),
-})
+  focus: prompts.focusBlock(focus, provider),
+}, provider)
 
 module.exports = { MODE, NAME, buildPrompt }

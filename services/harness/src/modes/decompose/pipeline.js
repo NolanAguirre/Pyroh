@@ -39,7 +39,7 @@ const onceSteps = () => STEPS.filter((step) => step.when === 'once')
 
 const eachPhaseSteps = () => STEPS.filter((step) => step.when === 'eachPhase')
 
-const promptFor = (step, vars) => prompts.render(step.promptKey, vars)
+const promptFor = (step, vars, provider) => prompts.render(step.promptKey, vars, provider)
 
 const parsePhaseCount = (text) => {
   let raw = String(text || '').trim()

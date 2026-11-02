@@ -157,7 +157,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
     if (typeof tools.askUser !== 'function') return undefined
     return {
       ask_user: {
-        description: prompts.text('askUserCursor'),
+        description: prompts.text('askUserCursor', 'cursor'),
         parameters: {
           type: 'object',
           properties: {
@@ -207,13 +207,13 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
   // generalPurpose, etc.): the built-in wins and ignores our model.
   const subagents = () => ({
     generalPurpose: {
-      description: prompts.text('subagentGeneralPurposeDescription'),
-      prompt: prompts.text('subagentGeneralPurpose'),
+      description: prompts.text('subagentGeneralPurposeDescription', 'cursor'),
+      prompt: prompts.text('subagentGeneralPurpose', 'cursor'),
       model: { id: selectedModel },
     },
     harnessExplore: {
-      description: prompts.text('subagentExploreDescription'),
-      prompt: prompts.text('subagentExplore'),
+      description: prompts.text('subagentExploreDescription', 'cursor'),
+      prompt: prompts.text('subagentExplore', 'cursor'),
       model: { id: 'grok-4.7' },
     },
   })
@@ -256,7 +256,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
     // dead prior daemon; force expires it without discarding its checkpoint.
     const options = { ...(mode ? { mode: sdkMode(mode) } : {}), ...(selectedModel ? { model: { id: selectedModel } } : {}),
       ...(resumed ? { local: { force: true } } : {}) }
-    const text = composePrompt(prompt, { mode, terse, instructions })
+    const text = composePrompt(prompt, { mode, terse, instructions, provider: 'cursor' })
     let streamError = null
     const notify = (event) => {
       try { emit(event) } catch (err) { streamError = streamError || errorMessage(err) }

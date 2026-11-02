@@ -169,7 +169,7 @@ const createSiblingSession = (modeId, buildPrompt, sourceSessionId, { focus, pro
   if (!source) throw Object.assign(new Error(`session not found: ${sourceSessionId}`), { status: 404 })
   const target = resolveSpawnTarget(source, { provider, model })
   registry.requireMode(registry.sessionWorkspace(source), entry.id, { provider: target.provider })
-  const prompt = buildPrompt(sourceSessionId, focus, config.writeDir)
+  const prompt = buildPrompt(sourceSessionId, focus, config.writeDir, target.provider)
   const workspaceId = source.workspaceId || workspaceStore.findWorkspaceByCwd(source.cwd, config.writeDir)?.id
   const created = createSession({ workspaceId, ...spawnSessionFields(source, target) })
   const session = sessionStore.updateSession(created.id, {
@@ -247,7 +247,7 @@ const run = async (sessionId, { prompt, mode: requested, provider, model, target
   const entry = registry.requireMode(workspace, mode, { harness, provider: source.provider })
   if (repliesInPlace(source, entry)) {
     const plugin = entry.kind === 'plugin' ? lastPluginRun(sessionId, entry.id) : undefined
-    return spawnRun(sessionId, 'run', { mode, prompt: prompt || prompts.text('resume'), plugin })
+    return spawnRun(sessionId, 'run', { mode, prompt: prompt || prompts.text('resume', source.provider), plugin })
   }
   if (entry.kind === 'turn' && !source.mode) sessionStore.updateSession(sessionId, { mode: entry.id }, config.writeDir)
   switch (entry.kind) {
@@ -264,7 +264,7 @@ const run = async (sessionId, { prompt, mode: requested, provider, model, target
     }
     case 'new-chat': {
       const handoff = resolveNewChatTarget(source, { provider, model, mode: targetMode })
-      return spawnRun(sessionId, 'run', { mode, prompt: newChat.buildPrompt(prompt), handoff })
+      return spawnRun(sessionId, 'run', { mode, prompt: newChat.buildPrompt(prompt, source.provider), handoff })
     }
     case 'decompose':
       return decompose(sessionId, { prompt })
@@ -292,7 +292,7 @@ const resume = (sessionId, { prompt, mode: requested } = {}) => {
   const retry = !prompt && undeliveredRun(sessionId, session)
   if (retry) return spawnRun(sessionId, 'resume', { mode: retry.mode, prompt: retry.prompt, handoff: retry.handoff, plugin: retry.plugin })
   const mode = requested || replyMode(session)
-  return spawnRun(sessionId, 'resume', { mode, prompt: prompt || prompts.text('resume'), plugin: lastPluginRun(sessionId, mode) })
+  return spawnRun(sessionId, 'resume', { mode, prompt: prompt || prompts.text('resume', session?.provider), plugin: lastPluginRun(sessionId, mode) })
 }
 
 const terminate = (sessionId, intent) => require('./delegation').withDeliveryLock(sessionId, () => {

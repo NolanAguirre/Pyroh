@@ -183,13 +183,17 @@ router.get('/prompt-triggers', (_req, res) => {
 })
 
 router.get('/prompts', (req, res) => {
-  res.json({ prompts: prompts.list() })
+  try {
+    res.json({ prompts: prompts.list(providerQuery(req)) })
+  } catch (err) {
+    sendError(res, err)
+  }
 })
 
-// Body `{ template }` saves an edit; `{ template: null }` resets to the built-in.
+// The optional provider query selects a version. Null resets only that scope.
 router.put('/prompts/:id', (req, res) => {
   try {
-    res.json({ prompt: prompts.setOverride(req.params.id, (req.body || {}).template ?? null) })
+    res.json({ prompt: prompts.setOverride(req.params.id, (req.body || {}).template ?? null, providerQuery(req)) })
   } catch (err) {
     sendError(res, err)
   }
@@ -437,7 +441,7 @@ const correctAnswer = async (sessionId, qid, answer) => {
   if (!question || question.secret || question.allowFreeText === false || question.options.includes(answer)) return answer
   const corrected = await correctText(answer, { first: false })
   const session = sessionStore.loadSession(sessionId, config.writeDir)
-  return rewritePrompt(corrected, { cwd: workspaceStore.resolveSessionCwd(session, config.writeDir), first: false })
+  return rewritePrompt(corrected, { cwd: workspaceStore.resolveSessionCwd(session, config.writeDir), first: false, provider: session?.provider })
 }
 
 router.post('/sessions/:id/questions/:qid/answer', async (req, res) => {

@@ -9,6 +9,24 @@ const transcriptVars = [
 
 const TEMPLATES = [
   {
+    id: 'delegationParent',
+    name: 'Subagent: parent guidance',
+    group: 'subagents',
+    description: 'Prepended to the first prompt of a managed parent session.',
+    usedBy: ['harness/delegation.js guidance'],
+    vars: [],
+    template: "Use harness_agents spawn/status/wait/stop for all delegation. Choose the child model, not the provider; the provider is selected automatically. Use model grok-4.7 only for exploration and fact-finding. Use model inherit for decisions, recommendations, planning, design, code review, and implementation, including read-only tasks that require judgment. Keep decisions with the parent or an inherit child; exploration children should return evidence and unresolved gaps. Omitting model or choosing inherit preserves the parent provider, model, and settings. A Codex parent using GPT-6 Astra spawns an inherit child through Codex, not Cursor. Supply a stable retryKey for each task; reuse it only to retry the same task. After spawning, continue editing or doing other useful work that does not depend on the child. Never sleep, use timers, poll, or hold your turn open to wait for a child. When no independent work remains, send a brief final response stating what is done and what child work is pending, then end your turn. Do this even when the overall task still needs the child result; do not claim the task is complete. Children keep working after your turn ends. Completed results automatically append a new message and resume this parent session in batches; continue the remaining work then. status and wait return immediately and must not be used in a waiting loop. Explicit stop cancels children and suppresses their automatic results.\nAll agents share the existing project directory. Assign separate file ownership for parallel edits. Do not create worktrees.\nPrefer delegating bounded questions when a concise answer can replace reading search results or source files in the parent, even across only two or three files. Keep lookups local when you need the source directly for your next action. Choose based on expected context savings and latency, not file count. Each assignment must state the question, relevant context, scope, expected output, and stopping point. Give each agent separate work. Do not repeat delegated searches while waiting. Use automatic result delivery instead of repeated status checks. Use child findings directly; read more only to fill a specific gap or get context needed for an edit. Ask children to search exact symbols first, read relevant sections, broaden only when needed, and return a short answer, paths, brief evidence, and unresolved gaps, not file dumps.",
+  },
+  {
+    id: 'delegationChild',
+    name: 'Subagent: child guidance',
+    group: 'subagents',
+    description: 'Prepended to the first prompt of a managed child session.',
+    usedBy: ['harness/delegation.js guidance'],
+    vars: [],
+    template: "You are a harness child. Do not delegate or spawn other agents.\nAll agents share the existing project directory. Assign separate file ownership for parallel edits. Do not create worktrees.\nStay within the assigned question, context, scope, expected output, and stopping point. Search exact symbols first, read relevant sections, and broaden only when needed. Return a short answer, relevant paths, brief evidence, and unresolved gaps, not file dumps. Stop once the assigned question or task is complete; do not expand into adjacent work.",
+  },
+  {
     id: 'terse',
     name: 'Terse',
     group: 'flags',

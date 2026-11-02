@@ -193,7 +193,7 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
       totalPhases: totalPhases || '',
       planBody: phase ? sessionStore.readPhasePlan(sessionId, phase, writeDir) || '' : '',
     }
-    const prompt = promptFor(step, vars)
+    const prompt = promptFor(step, vars, session.provider)
     const model = step.model || session.model
     const mode = step.agentMode || 'agent'
 

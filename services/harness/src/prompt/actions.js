@@ -35,7 +35,7 @@ const actions = {
     },
     prepend: async (session) => {
       if (!config.devIdMcpUrl || !session.workspaceId) return null
-      return prompts.render('devIds', { ids: await prefetchDevIds(session) })
+      return prompts.render('devIds', { ids: await prefetchDevIds(session) }, session.provider)
     },
   },
 }
