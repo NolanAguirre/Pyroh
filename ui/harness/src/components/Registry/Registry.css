@@ -177,6 +177,134 @@
   gap: 8px;
 }
 
+.registry__prompts-intro {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.registry__prompts-intro > div {
+  flex: 1 1 320px;
+}
+
+.registry__prompts-intro .hint {
+  margin: 6px 0 0;
+}
+
+.registry__prompt-families {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(580px, 100%), 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+.registry__prompt-families > * {
+  min-width: 0;
+}
+
+.registry__prompt-applicability {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+
+.registry__prompt-activation {
+  padding: 10px;
+  border-left: 3px solid var(--accent, #3b82f6);
+  background: var(--bg-elev);
+  font-size: 12px;
+}
+
+.registry__prompt-activation .registry__chips {
+  align-items: center;
+  gap: 6px;
+}
+
+.registry__prompt-activation p {
+  margin: 6px 0 0;
+}
+
+.registry__prompt-patterns {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.registry__prompt-patterns code {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.registry__prompt-versions-label {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 8px;
+  font-size: 12px;
+}
+
+.registry__prompt-versions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(155px, 100%), 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.registry__prompt-versions .button {
+  justify-content: flex-start;
+  min-width: 0;
+  padding: 8px;
+  text-align: left;
+  white-space: normal;
+}
+
+.registry__prompt-versions .button__label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.registry__prompt-version-status {
+  font-size: 11px;
+}
+
+.registry__prompt-editor .fold,
+.registry__prompt-editor .fold__content-inner {
+  border-color: var(--border);
+}
+
+.registry__prompt-editor .fold__trigger {
+  background: var(--bg-elev);
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.registry__prompt-editor .fold__trigger:hover {
+  color: var(--accent, #3b82f6);
+}
+
+.registry__prompt-editor .fold__content-inner {
+  padding: 10px;
+  color: var(--text);
+}
+
+.registry__prompt-editor .registry__prompt {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.registry__prompt-editor .registry__prompt-actions {
+  flex-wrap: wrap;
+}
+
 .registry__group-title {
   margin: 0;
   font-size: 12px;

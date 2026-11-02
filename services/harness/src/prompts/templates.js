@@ -10,6 +10,7 @@ const transcriptVars = [
 const TEMPLATES = [
   {
     id: 'delegationParent',
+    activation: { kind: 'First message', condition: 'First prompt of a managed parent session.' },
     name: 'Subagent: parent guidance',
     group: 'subagents',
     description: 'Prepended to the first prompt of a managed parent session.',
@@ -19,6 +20,7 @@ const TEMPLATES = [
   },
   {
     id: 'delegationChild',
+    activation: { kind: 'First message', condition: 'First prompt of a managed child session.' },
     name: 'Subagent: child guidance',
     group: 'subagents',
     description: 'Prepended to the first prompt of a managed child session.',
@@ -28,6 +30,7 @@ const TEMPLATES = [
   },
   {
     id: 'terse',
+    activation: { kind: 'First message + flag', condition: 'First prompt of a session whose mode enables terse.' },
     name: 'Terse',
     group: 'flags',
     description: 'Prepended to the first prompt of a session when terse is on.',
@@ -37,6 +40,7 @@ const TEMPLATES = [
   },
   {
     id: 'ask',
+    activation: { kind: 'Mode condition', condition: 'Every turn using the ask base mode.' },
     name: 'Ask base',
     group: 'flags',
     description: 'Prepended to every turn in ask mode. Explains why write approvals are denied.',
@@ -46,9 +50,10 @@ const TEMPLATES = [
   },
   {
     id: 'devIds',
+    activation: { kind: 'Text trigger', condition: 'A request for dev ids, such as “add dev ids”. Requires a workspace and a configured dev-id MCP service.' },
     name: 'Dev ids',
     group: 'flags',
-    description: 'Prepended to a turn whose prompt asks to add dev ids. The mcpdevid MCP server is attached on those turns.',
+    description: 'Prepended to the first prompt when it asks for dev ids. Also attaches the mcpdevid MCP server.',
     usedBy: ['harness/runTurn.js'],
     vars: [{ name: 'ids', description: 'Pre-issued ids, comma separated, or "none".' }],
     template: `Dev ids are 7-character [a-z0-9] literals that tag UI elements so the operator can point at them, for example devId="k3x9q2a" or <DevScope id="k3x9q2a">.
@@ -66,6 +71,7 @@ Read the target file and at most one sibling view for patterns. Do not spawn a s
   },
   {
     id: 'devIdPaths',
+    activation: { kind: 'Text trigger', condition: 'A ## token followed by seven lowercase letters or digits, when matching files exist. Already expanded tokens are skipped.' },
     name: 'Dev id paths',
     group: 'rewrites',
     description: 'Replaces each ##id token in a prompt with this text when files contain the id. Tokens with no matching files are left alone.',
@@ -78,6 +84,7 @@ Read the target file and at most one sibling view for patterns. Do not spawn a s
   },
   {
     id: 'resume',
+    activation: { kind: 'Fallback', condition: 'A run or resume has no prompt.' },
     name: 'Resume',
     group: 'shared',
     description: 'Sent as the prompt when a run or resume has no prompt.',
@@ -87,6 +94,7 @@ Read the target file and at most one sibling view for patterns. Do not spawn a s
   },
   {
     id: 'operatorFocus',
+    activation: { kind: 'Optional input', condition: 'Operator focus is supplied for Token waste, Memories, or New chat.' },
     name: 'Operator focus',
     group: 'shared',
     description: 'Appended to analysis and handoff prompts when the operator adds a focus.',
@@ -98,6 +106,7 @@ Read the target file and at most one sibling view for patterns. Do not spawn a s
   },
   {
     id: 'countPhases',
+    activation: { kind: 'Workflow step', condition: 'Decompose: count the phases once, before planning and execution.' },
     name: 'Decompose: count phases',
     group: 'decompose',
     description: 'First decompose step. Asks for the number of phases as JSON.',
@@ -121,6 +130,7 @@ Top-level plan:
   },
   {
     id: 'planPhase',
+    activation: { kind: 'Workflow step', condition: 'Decompose: plan each phase in plan mode.' },
     name: 'Decompose: plan phase',
     group: 'decompose',
     description: 'Runs once per phase in plan mode. Writes a self-contained plan for the executor.',
@@ -142,6 +152,7 @@ Top-level plan:
   },
   {
     id: 'executePhase',
+    activation: { kind: 'Workflow step', condition: 'Decompose: execute each phase in agent mode.' },
     name: 'Decompose: execute phase',
     group: 'decompose',
     description: 'Runs once per phase in agent mode with the plan from the plan step.',
@@ -156,6 +167,7 @@ Top-level plan:
   },
   {
     id: 'tokenWaste',
+    activation: { kind: 'Mode condition', condition: 'Token waste analysis starts a sibling session.' },
     name: 'Token waste',
     group: 'analysis',
     description: 'Sibling session that reads a past session and recommends token savings.',
@@ -176,6 +188,7 @@ Lead with the highest-impact concrete recommendation. Cite run IDs or transcript
   },
   {
     id: 'memoryExtract',
+    activation: { kind: 'Mode condition', condition: 'Memories extraction starts a sibling session.' },
     name: 'Memories',
     group: 'analysis',
     description: 'Sibling session that reads a past session and saves durable memories.',
@@ -201,6 +214,7 @@ The create_memory calls are the deliverable. When you are done, reply with a one
   },
   {
     id: 'newChat',
+    activation: { kind: 'Mode condition', condition: 'New chat requests a handoff from the current session.' },
     name: 'New chat handoff',
     group: 'analysis',
     description: 'Asks the current chat for a self-contained prompt to continue in a fresh chat.',
@@ -223,6 +237,8 @@ Do not modify files or run commands that change state. Do not add a preamble or 
   },
   {
     id: 'subagentGeneralPurpose',
+    applicableProviders: ['cursor'],
+    activation: { kind: 'Subagent definition', condition: 'Cursor generalPurpose Task subagent, when native spawning is enabled.' },
     name: 'Subagent: general purpose',
     group: 'subagents',
     description: 'System prompt for the Cursor generalPurpose Task subagent.',
@@ -232,6 +248,8 @@ Do not modify files or run commands that change state. Do not add a preamble or 
   },
   {
     id: 'subagentExplore',
+    applicableProviders: ['cursor'],
+    activation: { kind: 'Subagent definition', condition: 'Cursor harnessExplore Task subagent, when native spawning is enabled.' },
     name: 'Subagent: explore',
     group: 'subagents',
     description: 'System prompt for the Cursor explore Task subagent.',
@@ -241,6 +259,8 @@ Do not modify files or run commands that change state. Do not add a preamble or 
   },
   {
     id: 'subagentGeneralPurposeDescription',
+    applicableProviders: ['cursor'],
+    activation: { kind: 'Subagent definition', condition: 'Describes the Cursor generalPurpose Task subagent when native spawning is enabled.' },
     name: 'Subagent: general purpose description',
     group: 'subagents',
     description: 'Tells the parent agent when to pick the generalPurpose subagent.',
@@ -250,6 +270,8 @@ Do not modify files or run commands that change state. Do not add a preamble or 
   },
   {
     id: 'subagentExploreDescription',
+    applicableProviders: ['cursor'],
+    activation: { kind: 'Subagent definition', condition: 'Describes the Cursor harnessExplore Task subagent when native spawning is enabled.' },
     name: 'Subagent: explore description',
     group: 'subagents',
     description: 'Tells the parent agent when to pick the harnessExplore subagent.',
@@ -259,6 +281,8 @@ Do not modify files or run commands that change state. Do not add a preamble or 
   },
   {
     id: 'askUserCursor',
+    applicableProviders: ['cursor'],
+    activation: { kind: 'Tool definition', condition: 'Included when the Cursor ask_user custom tool is available.' },
     name: 'Ask user tool (Cursor)',
     group: 'tools',
     description: 'Description of the ask_user tool given to Cursor agents.',
@@ -268,6 +292,8 @@ Do not modify files or run commands that change state. Do not add a preamble or 
   },
   {
     id: 'askUserCodex',
+    applicableProviders: ['codex'],
+    activation: { kind: 'Tool definition', condition: 'Included when the Codex harness_ask_user dynamic tool is available.' },
     name: 'Ask user tool (Codex)',
     group: 'tools',
     description: 'Description of the harness_ask_user tool given to Codex agents.',

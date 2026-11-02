@@ -4,6 +4,7 @@ const { readJson, writeJson } = require('../store/jsonFile')
 const { TEMPLATES } = require('./templates')
 const { listProviders } = require('../agents/driver')
 const { PROVIDER_VERSIONS } = require('./providers')
+const { TRIGGERS } = require('../prompt/triggers')
 
 const PLACEHOLDER = /\{\{(\w+)\}\}/g
 const placeholders = (template) => [...new Set([...template.matchAll(PLACEHOLDER)].map((match) => match[1]))]
@@ -78,14 +79,20 @@ const render = (id, vars = {}, provider) =>
 const focusBlock = (focus, provider) => (focus ? render('operatorFocus', { focus }, provider) : '')
 const directoryLines = (directories) => directories.map((dir) => `- ${JSON.stringify(dir)}`).join('\n')
 
-const describe = ({ id, name, group, description, usedBy, vars }, provider) => {
+const describe = ({ id, name, group, description, usedBy, vars, activation, applicableProviders }, provider) => {
   const version = providerEntries(provider)?.get(id)
+  const trigger = TRIGGERS.find((item) => item.id === id)
   const edits = loadOverrides()
   const edited = (provider == null ? edits[id] : edits.$providers[provider]?.[id]) != null
   return {
     id, name, group, description, usedBy, vars, provider: provider ?? null,
+    applicableProviders: applicableProviders ?? [...providers.keys()],
+    activation: trigger ? {
+      ...activation, scope: trigger.scope,
+      patterns: trigger.patterns.map((pattern) => pattern.toString()),
+    } : activation,
     template: text(id, provider), defaultTemplate: defaultText(id, provider),
-    edited, customized: provider != null && (version != null || edited),
+    edited, builtIn: version != null, customized: provider != null && (version != null || edited),
   }
 }
 const list = (provider) => {

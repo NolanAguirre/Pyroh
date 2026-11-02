@@ -35,7 +35,7 @@ const RegistryView = ({ devId, workspaces = [], providers = [], workspaceId = nu
     ...workspaces.map((item) => ({ value: item.id, displayValue: item.name })),
   ]
   const providerOptions = [
-    { value: ANY, displayValue: section === PROMPTS_TAB ? 'Shared defaults' : 'Any provider' },
+    { value: ANY, displayValue: 'Any provider' },
     ...providers.map((item) => ({ value: item.id, displayValue: item.id })),
   ]
 
@@ -47,13 +47,13 @@ const RegistryView = ({ devId, workspaces = [], providers = [], workspaceId = nu
             ← Sessions
           </Button>
           <strong className="registry__title">Registry</strong>
-          <div className="registry__filters">
+          {section !== PROMPTS_TAB && <div className="registry__filters">
             <SelectDisplay className="registry__select" aria-label="Workspace" selected={scope} options={scopeOptions} select={setScope} />
             <SelectDisplay className="registry__select" aria-label="Provider" selected={provider} options={providerOptions} select={setProvider} />
             <Button devId="r2w5y8g" variant="secondary" size="sm" onClick={refresh} disabled={loading}>
               {loading ? 'Loading…' : 'Refresh'}
             </Button>
-          </div>
+          </div>}
         </header>
         <nav className="registry__subnav">
           <TabsDisplay index={section} select={setSection}>
@@ -64,7 +64,7 @@ const RegistryView = ({ devId, workspaces = [], providers = [], workspaceId = nu
         </nav>
 
         <main className="registry__body">
-          {section === PROMPTS_TAB && <PromptsView key={provider} provider={provider === ANY ? null : provider} />}
+          {section === PROMPTS_TAB && <PromptsView providers={providers} />}
           {section !== PROMPTS_TAB && error && <p className="registry__error">{error}</p>}
           {section !== PROMPTS_TAB && !data && !error && <p className="hint">Loading registry…</p>}
           {data && section === FLAGS_TAB && <FlagsView flags={data.flags || []} modes={data.modes} />}
