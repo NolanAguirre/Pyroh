@@ -35,7 +35,7 @@ Commands:
                                                           Run a turn (prompt optional for token-waste/memory-extract/new-chat)
                                                           Plugin modes always run detached
   token-waste <sid> [--prompt <focus>] [--provider p] [--model m] [--detach]
-                                                          Spawn a new session to analyze token savings
+                                                          Spawn a new session to explain token usage and patterns
   memory <sid> [--prompt <focus>] [--provider p] [--model m] [--detach]
                                                           Spawn a new session to extract memories via mcp-memory
   runs [--mode mode]                                      List indexed runs, metrics, and transcript paths

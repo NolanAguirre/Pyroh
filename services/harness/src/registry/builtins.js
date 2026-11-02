@@ -59,7 +59,7 @@ const MODES = [
   {
     id: 'token-waste',
     label: 'Token waste',
-    hint: 'Analyzes transcript tokens and highlights waste or redundancy.',
+    hint: 'Explains token usage and records patterns for harness investigation over time.',
     base: 'plan',
     kind: 'token-waste',
     terse: true,
