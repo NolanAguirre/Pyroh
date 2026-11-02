@@ -3,3 +3,4 @@
 
 v1.000.0 2026-10-17T01:36:30Z Toolkit <toolkit@localhost> # initial database
 v1.001.0 [v1.000.0] 2026-10-17T01:46:00Z Toolkit <toolkit@localhost> # session index
+v1.002.0 [v1.001.0] 2026-11-02T19:20:00Z Toolkit <toolkit@localhost> # subagent session status

@@ -11,6 +11,7 @@ const STATUS_VARIANT = {
   finished: 'success',
   error: 'danger',
   queued: 'info',
+  subagent: 'info',
 }
 
 const JobRow = ({ job, workspaceName, active, onSelect }) => {

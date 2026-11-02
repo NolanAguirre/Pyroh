@@ -374,6 +374,17 @@ const recoverChild = (child, state) => {
   }
   recoverIdleOwner(session)
 }
+const settleSubagentParent = (sessionId) => {
+  if (store.loadSession(sessionId, config.writeDir)?.status !== 'subagent' || hasPendingChildren(sessionId)) return
+  let lock
+  try {
+    lock = locks.acquire(sessionId, config.writeDir)
+    if (store.loadSession(sessionId, config.writeDir)?.status === 'subagent' && !hasPendingChildren(sessionId)) {
+      store.updateSession(sessionId, { status: 'idle' }, config.writeDir)
+    }
+  } catch (err) { if (err.status !== 409) throw err }
+  finally { lock?.release() }
+}
 
 // The queue is independent of archive/idle state: later messages stay cheap,
 // while child results and interrupted deliveries survive server restarts.
@@ -407,6 +418,7 @@ const recover = async () => {
           const state = readJson(file)
           if (!state || settled(state)) fs.rmSync(pendingFile(sessionId, runId), { force: true })
         })
+        settleSubagentParent(sessionId)
         try { fs.rmdirSync(path.join(pendingDir(), sessionId)) }
         catch (err) { if (!['ENOENT', 'ENOTEMPTY'].includes(err.code)) throw err }
       } catch (err) { if (err.status !== 409) throw err }

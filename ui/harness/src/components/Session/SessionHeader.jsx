@@ -14,12 +14,12 @@ const STATUS_VARIANT = {
   subagent: 'info',
 }
 
-const SessionHeader = ({ session, status, badgeStatus = status, isBusy, disconnected, busy, sideOpen, onPause, onResume, onStop, onToggleSide }) => {
+const SessionHeader = ({ session, status, isBusy, disconnected, busy, sideOpen, onPause, onResume, onStop, onToggleSide }) => {
   const queued = status === 'queued'
   return (
   <header className="session-view__header">
     <div className="session-view__title">
-      <Badge size="small" variant={STATUS_VARIANT[badgeStatus] || 'neutral'}>{badgeStatus}</Badge>
+      <Badge size="small" variant={STATUS_VARIANT[status] || 'neutral'}>{status}</Badge>
       <div className="session-view__headings">
         <div className="session-view__title-row">
           <span className="session-view__provider">

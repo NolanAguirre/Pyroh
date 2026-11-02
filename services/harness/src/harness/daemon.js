@@ -348,9 +348,12 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
   }
 
   logLine(`run finished: ${result.status}`)
+  let waiting = false
+  try { waiting = require('./delegation').hasPendingChildren(sessionId) }
+  catch (err) { logLine(`child check failed: ${formatError(err)}`) }
   finalize(
     { status: 'completed', usage: result.usage, durationMs, result: result.result, ...handoff },
-    'idle',
+    waiting ? 'subagent' : 'idle',
     0,
   )
 }
