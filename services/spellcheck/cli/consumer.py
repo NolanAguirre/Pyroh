@@ -162,6 +162,8 @@ class Handler:
         os.makedirs(tmp_dir, exist_ok=True)
         fd, tmp_path = tempfile.mkstemp(dir=tmp_dir, prefix=descriptor["_name"] + ".", suffix=".result")
         try:
+            # mkstemp ignores umask (0600); the API reads results through the shared queue group.
+            os.fchmod(fd, 0o660)
             with os.fdopen(fd, "w") as handle:
                 json.dump(record, handle)
             os.replace(tmp_path, descriptor["_path"])
