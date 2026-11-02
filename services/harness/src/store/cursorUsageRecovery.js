@@ -10,6 +10,16 @@ const runIndex = require('./runIndexStore')
 
 const pending = new Map()
 const hasTokens = (usage) => usage && usage.inputTokens + usage.outputTokens > 0
+const fetchUsage = async (agentId) => {
+  let timer
+  try {
+    const { Agent } = require('@cursor/sdk')
+    return await Promise.race([
+      Agent.getUsage(agentId, config.cursorApiKey ? { apiKey: config.cursorApiKey } : {}),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Cursor usage request timed out')), 15000) }),
+    ])
+  } finally { clearTimeout(timer) }
+}
 const sdkRecords = (sessionId, writeDir) => {
   const file = path.join(paths.sessionSdkStoreDir(sessionId, writeDir), 'runs.ndjson')
   try {
@@ -56,9 +66,7 @@ const recover = async (sessionId, writeDir) => {
     if (!hasTokens(usage)) {
       if (!singleRun) continue
       if (!billing.has(record.providerAgentId)) {
-        const { Agent } = require('@cursor/sdk')
-        billing.set(record.providerAgentId, await Agent.getUsage(record.providerAgentId,
-          config.cursorApiKey ? { apiKey: config.cursorApiKey } : {}))
+        billing.set(record.providerAgentId, await fetchUsage(record.providerAgentId))
       }
       usage = billing.get(record.providerAgentId)?.usage
       source = 'cursor-billing'

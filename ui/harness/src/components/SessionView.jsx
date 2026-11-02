@@ -254,7 +254,10 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
 
   return (
     <DevScope id={devId} state={{ session: sessionId, status, mode, busy, log: session.logPath, events: session.eventsPath }}>
-      <section className="session-view">
+      <section
+        className="session-view"
+        style={Number.isInteger(transcriptFontSize) ? { '--transcript-font-size': `${transcriptFontSize}px` } : undefined}
+      >
         <SessionHeader
           session={session}
           status={status}

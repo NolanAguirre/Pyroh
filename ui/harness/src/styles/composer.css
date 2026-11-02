@@ -122,7 +122,7 @@
   border-radius: 8px;
   padding: 10px 12px;
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--transcript-font-size, 13px);
   outline: none;
   transition: border-color 0.15s ease;
 }

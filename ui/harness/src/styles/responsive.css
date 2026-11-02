@@ -107,7 +107,10 @@
     flex-shrink: 0;
   }
 
-  .composer__input,
+  .composer__input {
+    font-size: max(16px, var(--transcript-font-size, 16px));
+  }
+
   .text-input {
     font-size: 16px;
   }
