@@ -8,6 +8,7 @@ const useSessionEvents = (sessionId) => {
   const [session, setSession] = useState(null)
   const [runs, setRuns] = useState([])
   const [children, setChildren] = useState([])
+  const [queuedMessages, setQueuedMessages] = useState([])
   const [questions, setQuestions] = useState([])
   const [connected, setConnected] = useState(false)
   const sourceRef = useRef(null)
@@ -18,6 +19,7 @@ const useSessionEvents = (sessionId) => {
     setRuns([])
     setQuestions([])
     setChildren([])
+    setQueuedMessages([])
     setConnected(false)
     if (!sessionId) return undefined
 
@@ -53,6 +55,7 @@ const useSessionEvents = (sessionId) => {
     })
     source.addEventListener('session', (e) => setSession(api.adoptSession(sessionId, JSON.parse(e.data))))
     source.addEventListener('runs', (e) => setRuns(JSON.parse(e.data)))
+    source.addEventListener('queuedMessages', (e) => setQueuedMessages(JSON.parse(e.data)))
     source.addEventListener('children', (e) => setChildren(JSON.parse(e.data).map(child => {
       const tagged = api.adoptSession(sessionId, { id: child.sessionId, workspaceId: child.workspaceId })
       return { ...child, sessionId: tagged.id, workspaceId: tagged.workspaceId }
@@ -73,7 +76,7 @@ const useSessionEvents = (sessionId) => {
 
   const pendingQuestions = questions.filter((q) => q.status === 'pending')
 
-  return { events, session, runs, children, questions, pendingQuestions, connected }
+  return { events, session, runs, children, queuedMessages, questions, pendingQuestions, connected }
 }
 
 export default useSessionEvents

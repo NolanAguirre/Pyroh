@@ -406,6 +406,27 @@ router.post('/sessions/:id/steer', async (req, res) => {
   }
 })
 
+router.post('/sessions/:id/queue', async (req, res) => {
+  const { prompt, mode } = req.body || {}
+  if (typeof prompt !== 'string' || !prompt.trim()) return res.status(400).json({ error: 'prompt is required' })
+  if (mode != null && typeof mode !== 'string') return res.status(400).json({ error: 'mode must be a string' })
+  try {
+    const message = Harness.queue(req.params.id, { prompt: await correctText(prompt), mode })
+    res.status(202).json({ message })
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
+router.delete('/sessions/:id/queue/:messageId', (req, res) => {
+  try {
+    Harness.cancelQueuedMessage(req.params.id, req.params.messageId)
+    res.status(204).end()
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
 // Only free text is spellchecked; secrets, an answer that picks an offered option,
 // or any answer to an options-only question must reach the store unchanged.
 const correctAnswer = async (sessionId, qid, answer) => {

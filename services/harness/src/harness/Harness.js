@@ -73,7 +73,7 @@ const resolveNewChatTarget = (source, target = {}) => {
   return { provider, model, mode }
 }
 
-const spawnRun = (sessionId, action, { mode, prompt, autoName = false, handoff, plugin, onPrepared, allowQueued = false, delegationDelivery }) => {
+const spawnRun = (sessionId, action, { mode, prompt, autoName = false, handoff, plugin, onPrepared, allowQueued = false, delegationDelivery, queuedMessage }) => {
   const owned = !sessionLock.holds(sessionId, config.writeDir)
   const lock = sessionLock.acquire(sessionId, config.writeDir)
   const stopped = () => Object.assign(new Error('stopped'), { code: 'stopped' })
@@ -90,7 +90,7 @@ const spawnRun = (sessionId, action, { mode, prompt, autoName = false, handoff, 
       sessionStore.listRuns(sessionId, config.writeDir).length === 0
     require('fs').rmSync(paths.controlFile(sessionId, config.writeDir), { force: true })
     if (allowQueued && runAfter.cancelled(sessionId)) throw stopped()
-    const run = sessionStore.createRun(sessionId, { mode, prompt, handoff, plugin, delegationDelivery }, config.writeDir)
+    const run = sessionStore.createRun(sessionId, { mode, prompt, handoff, plugin, delegationDelivery, queuedMessage }, config.writeDir)
     onPrepared?.(run)
     sessionStore.updateSession(sessionId, { status: 'running' }, config.writeDir)
     if (allowQueued && runAfter.cancelled(sessionId)) throw stopped()
@@ -295,6 +295,7 @@ const resume = (sessionId, { prompt, mode: requested } = {}) => {
 }
 
 const terminate = (sessionId, intent) => require('./delegation').withDeliveryLock(sessionId, () => {
+  require('../store/queuedMessageStore').clear(sessionId, config.writeDir)
   require('./delegation').cancelChild(sessionId)
   for (const run of sessionStore.listRuns(sessionId, config.writeDir)) require('./delegation').stopChildren(sessionId, run.id)
   writeJson(paths.controlFile(sessionId, config.writeDir), { intent, at: Date.now() })
@@ -404,6 +405,8 @@ module.exports = {
   stop,
   answer,
   steer,
+  queue: (sessionId, options) => require('./queuedMessages').enqueue(sessionId, options),
+  cancelQueuedMessage: (sessionId, messageId) => require('./queuedMessages').cancel(sessionId, messageId),
   status,
   list,
   recoverDeadDaemon,

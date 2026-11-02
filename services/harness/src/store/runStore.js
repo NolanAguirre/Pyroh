@@ -6,7 +6,7 @@ const { readJson, readJsonAsync, writeJson } = require('./jsonFile')
 const { genId, loadSession } = require('./sessionRecord')
 const { writePromptFile, persistRecordPrompt, readRecordPrompt, readRecordPromptAsync } = require('./recordPrompt')
 
-const createRun = (sessionId, { mode, prompt, handoff, plugin, delegationDelivery }, writeDir) => {
+const createRun = (sessionId, { mode, prompt, handoff, plugin, delegationDelivery, queuedMessage }, writeDir) => {
   const session = loadSession(sessionId, writeDir)
   if (session?.parentRunId && listRuns(sessionId, writeDir).length) {
     throw new Error('Harness children have one run; start a new child instead')
@@ -23,6 +23,7 @@ const createRun = (sessionId, { mode, prompt, handoff, plugin, delegationDeliver
     ...(handoff ? { handoff } : {}),
     ...(plugin ? { plugin } : {}),
     ...(delegationDelivery ? { delegationDelivery } : {}),
+    ...(queuedMessage ? { queuedMessage } : {}),
     status: 'running',
     pid: null,
     startedAt: Date.now(),

@@ -260,6 +260,10 @@ const api = {
   pause: (id) => sessionPost(id, '/pause'),
   stop: (id) => sessionPost(id, '/stop'),
   steer: (id, prompt) => sessionPost(id, '/steer', { prompt }),
+  queueMessage: (id, { prompt, mode }) => sessionPost(id, '/queue', { prompt, mode }),
+  removeQueuedMessage: (id, messageId) => fetch(sessionUrl(id, `/queue/${encodeURIComponent(messageId)}`).url, {
+    method: 'DELETE',
+  }).then(empty),
   answerQuestion: (id, qid, answer) => sessionPost(id, `/questions/${qid}/answer`, { answer }),
   getLog: (id, { signal } = {}) =>
     fetch(sessionUrl(id, '/log').url, { signal }).then((res) => res.ok ? res.text() : json(res)),

@@ -7,6 +7,8 @@ const { readJson, writeJson } = require('../store/jsonFile')
 // A run's atomically persisted delegationDelivery is the authoritative receipt.
 // Child records are a recoverable queue, including failures before child launch.
 const recoverParent = (sessionId, { withLock, statesFor, describe, retryableDelivery }) => withLock(sessionId, 'delivery', () => {
+  // User follow-ups get the next idle turn before automatic child results.
+  if (require('../store/queuedMessageStore').hasReadyWork(sessionId, config.writeDir)) return
   const collect = (receipts = new Map()) => {
     const pending = []
     for (const { runId } of statesFor(sessionId)) {

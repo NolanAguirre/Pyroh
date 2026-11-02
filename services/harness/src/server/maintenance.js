@@ -75,6 +75,7 @@ const runMaintenance = () => {
     await require('../harness/delegation').recover()
   })
   schedule('run after', 1000, () => require('../harness/runAfter').pump())
+  schedule('queued messages', 1000, () => require('../harness/queuedMessages').pump())
   schedule('Cursor usage recovery', 60000, async () => {
     await initiallyReconciled
     await require('../store/cursorUsageRecovery').recoverAll()

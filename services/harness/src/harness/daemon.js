@@ -211,6 +211,12 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
   let result
   try {
     if (session.parentRunId && !terminating) require('./delegation').assertChildRun(session, driverMode)
+    const queuedMessage = sessionStore.loadRun(sessionId, runId, writeDir)?.queuedMessage
+    // Beyond this boundary provider delivery may be ambiguous after a crash.
+    // Keep the receipt and never automatically resend an attempted user turn.
+    if (queuedMessage) sessionStore.updateRun(sessionId, runId, {
+      queuedMessage: { ...queuedMessage, attemptStartedAt: Date.now() },
+    }, writeDir)
     const turn = await runOneTurn({
       session,
       runId,

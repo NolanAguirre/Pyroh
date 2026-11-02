@@ -33,7 +33,7 @@ const SPAWN_TARGET_KINDS = ['token-waste', 'memory']
 const QUEUED_RUN_AFTER = { prompt: '' }
 
 const SessionView = ({ devId, sessionId, initialSession, providers = [], workspaces = [], sessions = [], modes: registryModes, onChanged, onCreated, transcriptFontSize }) => {
-  const { events, session: liveSession, runs, children, questions, pendingQuestions, connected } = useSessionEvents(sessionId)
+  const { events, session: liveSession, runs, children, queuedMessages, questions, pendingQuestions, connected } = useSessionEvents(sessionId)
   const session = liveSession || initialSession
   const defaultMode = replyMode(session)
   const [mode, setMode] = useState(() => loadComposer(sessionId, defaultMode).mode)
@@ -124,6 +124,9 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const spawnsSession = Boolean(active?.newSession)
   const blocksWhileBusy = !spawnsSession
   const steering = isBusy && active?.steerable !== false && !spawnsSession
+  const canQueue = submitted && !session?.parentSessionId && !spawnsSession
+    && ['turn', 'plugin'].includes(active?.kind)
+  const queueDisabled = !canQueue || queued || !prompt.trim()
   const spawnEntry = providers.find((item) => item.id === spawnProvider)
   const spawnModelId = spawnModel || spawnEntry?.models?.[0]?.id || null
   const spawnBlocked = picksSpawnTarget && Boolean(spawnEntry) && (spawnEntry.implemented === false || spawnEntry.error)
@@ -160,13 +163,14 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
     if (onChanged) onChanged()
   }
 
-  const send = async () => {
-    if (busy || sendDisabled) return
+  const submitMessage = async (delivery) => {
+    if (busy || (delivery === 'queue' ? queueDisabled : sendDisabled)) return
     speech.stop()
     setBusy(true)
     setActionError('')
     try {
-      if (steering) await api.steer(sessionId, prompt)
+      if (delivery === 'queue') await api.queueMessage(sessionId, { prompt, mode })
+      else if (steering) await api.steer(sessionId, prompt)
       else if (isDecompose) await api.decompose(sessionId, prompt)
       else {
         const target = { provider: spawnProvider || session.provider, model: spawnModelId }
@@ -193,6 +197,9 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
       setBusy(false)
     }
   }
+
+  const send = () => submitMessage('send')
+  const queueMessage = () => submitMessage('queue')
 
   const act = (fn) => async () => {
     setBusy(true)
@@ -320,6 +327,33 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
 
         <DevScope id="hr7a5x3" state={{ mode }}>
           <footer className={`composer${isDecompose ? ' composer--decompose' : ''}`}>
+            {queuedMessages.length > 0 && (
+              <div className="composer__queue" aria-label="Queued messages">
+                <p className="hint" role="status">
+                  {queuedMessages.length} queued {queuedMessages.length === 1 ? 'message' : 'messages'} · Sent in order after the current turn ends
+                </p>
+                <ol className="composer__queue-list">
+                  {queuedMessages.map((message) => (
+                    <li key={message.id} className="composer__queue-item">
+                      <div className="composer__queue-message">
+                        <span className="composer__queue-mode">{modes.find((item) => item.id === message.mode)?.label || message.mode}</span>
+                        <span className="composer__queue-text">{message.text}</span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        onClick={act(() => api.removeQueuedMessage(sessionId, message.id))}
+                        aria-label={`Remove queued message: ${message.text}`}
+                        devId="hqu7r2m"
+                      >
+                        Remove
+                      </Button>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
             <div className="composer__toolbar">
               <div className="composer__toolbar-start">
                 <ModeToggle modes={modes} mode={mode} onChange={changeMode} disabled={busy} />
@@ -355,7 +389,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                   steer={steering}
                   placeholder={
                     steering
-                      ? 'Steer the running agent (⌘↵ to interrupt and send)…'
+                      ? 'Send to interrupt, or Queue for after this turn (⌘↵ to send)…'
                       : active?.placeholder || 'Prompt…'
                   }
                   value={speech.interim ? `${prompt} ${speech.interim}` : prompt}
@@ -367,6 +401,27 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
               </DevScope>
               <div className="composer__actions">
                 <span className="composer__shortcut-hint">⌘↵ / Ctrl↵</span>
+                {canQueue && (
+                  <Button
+                    variant="secondary"
+                    onClick={queueMessage}
+                    disabled={busy || queueDisabled}
+                    title="Send after the current turn ends, without interrupting"
+                    devId="hqu4s8n"
+                  >
+                    Queue
+                  </Button>
+                )}
+                <Button
+                  variant="primary"
+                  onClick={send}
+                  loading={busy}
+                  disabled={sendDisabled}
+                  title={steering ? 'Interrupt the current turn and send' : undefined}
+                  devId="hr2t9h5"
+                >
+                  {steering ? 'Send' : active?.sendLabel || 'Send'}
+                </Button>
                 {speech.supported && (
                   <Button
                     variant={speech.listening ? 'danger' : 'secondary'}
@@ -383,15 +438,6 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                     </span>
                   </Button>
                 )}
-                <Button
-                  variant="primary"
-                  onClick={send}
-                  loading={busy}
-                  disabled={sendDisabled}
-                  devId="hr2t9h5"
-                >
-                  {steering ? 'Steer' : active?.sendLabel || 'Send'}
-                </Button>
               </div>
             </div>
             {actionError ? <p className="composer__error hint hint--error" role="alert">{actionError}</p> : null}
