@@ -163,7 +163,7 @@ const spawn = (context, args) => withLock(context.sessionId, context.runId, (fil
     store.updateSession(session.id, { mode: target.mode, parentSessionId: parent.id, parentRunId: context.runId,
       rootSessionId: parent.rootSessionId || parent.id, delegationMode: target.mode }, config.writeDir)
     require('./Harness').spawnRun(session.id, target.mode === 'plan' ? 'plan' : 'run', {
-      mode: target.mode, prompt: args.task,
+      mode: target.mode, prompt: args.task, autoName: true,
       onPrepared: (run) => { child.runId = run.id; writeJson(file, state) },
     })
   } catch (err) {
