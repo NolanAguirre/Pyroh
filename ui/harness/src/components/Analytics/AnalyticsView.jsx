@@ -14,8 +14,21 @@ import SubagentsCard from './cards/SubagentsCard'
 import BreakdownCard from './cards/BreakdownCard'
 import './Analytics.css'
 
+const toDateInput = (date) => {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+const defaultCustomRange = () => {
+  const today = new Date()
+  const weekAgo = new Date(today)
+  weekAgo.setDate(today.getDate() - 6)
+  return { from: toDateInput(weekAgo), to: toDateInput(today) }
+}
+
 const AnalyticsView = ({ devId, workspaces = [], providers = [], onBack, onOpenSession }) => {
   const [range, setRange] = useState('7d')
+  const [customRange, setCustomRange] = useState(defaultCustomRange)
   const [bucket, setBucket] = useState('day')
   const [workspace, setWorkspace] = useState(ALL)
   const [provider, setProvider] = useState(ALL)
@@ -41,13 +54,15 @@ const AnalyticsView = ({ devId, workspaces = [], providers = [], onBack, onOpenS
   const perRun = stats?.perRun
 
   return (
-    <DevScope id={devId} state={{ range, bucket, workspace, provider, by, tool, loading }}>
+    <DevScope id={devId} state={{ range, customRange, bucket, workspace, provider, by, tool, loading }}>
       <div className="analytics">
         <AnalyticsTopbar
           workspaces={workspaces}
           providers={providers}
           range={range}
           setRange={setRange}
+          customRange={customRange}
+          setCustomRange={setCustomRange}
           bucket={bucket}
           setBucket={setBucket}
           workspace={workspace}

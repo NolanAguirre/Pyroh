@@ -44,6 +44,18 @@
   font-size: 12px;
 }
 
+.analytics__daterange {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.analytics__daterange .form__input--date {
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
 .analytics__body {
   padding: 16px;
   display: flex;

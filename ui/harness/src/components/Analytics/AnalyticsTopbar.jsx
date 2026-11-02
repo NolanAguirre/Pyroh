@@ -1,5 +1,5 @@
-import { Badge, Button, DevScope, SelectDisplay } from 'component-library'
-import { ALL, BUCKET_OPTIONS, GROUP_OPTIONS, RANGE_OPTIONS } from './constants'
+import { Badge, Button, DevScope, FormDate, SelectDisplay } from 'component-library'
+import { ALL, BUCKET_OPTIONS, CUSTOM, GROUP_OPTIONS, RANGE_OPTIONS } from './constants'
 
 const FilterSelect = ({ label, selected, options, select }) => (
   <SelectDisplay
@@ -16,6 +16,8 @@ const AnalyticsTopbar = ({
   providers,
   range,
   setRange,
+  customRange,
+  setCustomRange,
   bucket,
   setBucket,
   workspace,
@@ -38,6 +40,8 @@ const AnalyticsTopbar = ({
     { value: ALL, displayValue: 'All providers' },
     ...providers.map((item) => ({ value: item.id, displayValue: item.id })),
   ]
+  const setFrom = (event) => setCustomRange({ ...customRange, from: event.target.value })
+  const setTo = (event) => setCustomRange({ ...customRange, to: event.target.value })
 
   return (
     <DevScope id="96o3xtd" state={{ loading }}>
@@ -50,6 +54,23 @@ const AnalyticsTopbar = ({
           <DevScope id="zi5v3he" state={{ range }}>
             <FilterSelect label="Time range" selected={range} options={RANGE_OPTIONS} select={setRange} />
           </DevScope>
+          {range === CUSTOM && (
+            <DevScope id="r7k2dfa" state={customRange}>
+              <span className="analytics__daterange">
+                <FormDate
+                  aria-label="From date"
+                  field={{ name: 'analytics-from', value: customRange.from, onChange: setFrom }}
+                  max={customRange.to}
+                />
+                <span>–</span>
+                <FormDate
+                  aria-label="To date"
+                  field={{ name: 'analytics-to', value: customRange.to, onChange: setTo }}
+                  min={customRange.from}
+                />
+              </span>
+            </DevScope>
+          )}
           <DevScope id="065qgcq" state={{ bucket }}>
             <FilterSelect label="Bucket" selected={bucket} options={BUCKET_OPTIONS} select={setBucket} />
           </DevScope>

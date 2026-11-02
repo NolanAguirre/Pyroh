@@ -1,6 +1,7 @@
 export const ALL = 'all'
 export const NONE = 'none'
 export const OTHER = '__other'
+export const CUSTOM = 'custom'
 
 export const RANGE_OPTIONS = [
   { value: '24h', displayValue: 'Last 24 hours' },
@@ -8,6 +9,7 @@ export const RANGE_OPTIONS = [
   { value: '30d', displayValue: 'Last 30 days' },
   { value: '12w', displayValue: 'Last 12 weeks' },
   { value: ALL, displayValue: 'All time' },
+  { value: CUSTOM, displayValue: 'Custom range…' },
 ]
 
 export const BUCKET_OPTIONS = ['hour', 'day', 'week'].map((value) => ({ value, displayValue: `Per ${value}` }))
