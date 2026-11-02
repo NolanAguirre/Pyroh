@@ -169,12 +169,12 @@ const runOneTurn = async ({
     let text = await rewritePrompt(prompt, { cwd: settings.cwd, first })
     if (text !== prompt) onPromptRewrite?.(text)
     text = await prependNotes(fired, session, text)
-    let first = true
+    let firstSend = true
     let result
     while (true) {
       const segmentStart = Date.now()
-      const inflight = first ? await driver.send(text, firstSendOptions) : await sendFollowUp(text)
-      first = false
+      const inflight = firstSend ? await driver.send(text, firstSendOptions) : await sendFollowUp(text)
+      firstSend = false
       if (typeof onInflight === 'function') onInflight(inflight)
       if (signal?.aborted) await inflight.cancel()
 
