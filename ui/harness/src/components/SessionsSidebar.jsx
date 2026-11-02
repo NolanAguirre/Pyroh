@@ -67,7 +67,7 @@ const SessionsSidebar = ({
     const ids = new Set(shownSessions.map(session => session.id))
     const children = new Map()
     for (const session of shownSessions) {
-      if (!session.parentSessionId || !ids.has(session.parentSessionId)) continue
+      if (session.childKind === 'fork' || !session.parentSessionId || !ids.has(session.parentSessionId)) continue
       if (!children.has(session.parentSessionId)) children.set(session.parentSessionId, [])
       children.get(session.parentSessionId).push(session)
     }
@@ -77,7 +77,7 @@ const SessionsSidebar = ({
       visited.add(session.id)
       return { session, children: (children.get(session.id) || []).map(branch).filter(Boolean) }
     }
-    const roots = shownSessions.filter(session => !session.parentSessionId || !ids.has(session.parentSessionId))
+    const roots = shownSessions.filter(session => session.childKind === 'fork' || !session.parentSessionId || !ids.has(session.parentSessionId))
       .map(branch)
     // Keep rows visible even if a malformed parent chain contains a cycle.
     return [...roots, ...shownSessions.filter(session => !visited.has(session.id)).map(branch).filter(Boolean)]
@@ -86,7 +86,7 @@ const SessionsSidebar = ({
   const renderSession = ({ session, children }) => (
     <div
       key={session.id}
-      className={session.parentSessionId
+      className={session.parentSessionId && session.childKind !== 'fork'
         ? `sidebar__child-session${session.childKind === 'fork' ? ' sidebar__child-session--fork' : ''}`
         : undefined}
     >

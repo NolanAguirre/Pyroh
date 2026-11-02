@@ -26,9 +26,15 @@ const lockPath = (sessionId, writeDir) => path.join(paths.sessionDir(sessionId, 
 
 const holds = (sessionId, writeDir) => held.has(lockPath(sessionId, writeDir))
 
-const acquire = (sessionId, writeDir) => {
+const acquire = (sessionId, writeDir, { exclusive = false } = {}) => {
   const file = lockPath(sessionId, writeDir)
-  if (held.has(file)) return held.get(file)
+  if (held.has(file)) {
+    const existing = held.get(file)
+    if (exclusive || existing.exclusive) {
+      throw Object.assign(new Error(`Session ${sessionId} is busy`), { status: 409 })
+    }
+    return existing
+  }
   if (!fs.existsSync(paths.sessionFile(sessionId, writeDir))) throw new Error(`session not found: ${sessionId}`)
   const inherited = process.env.HARNESS_LOCK_FILE === file
   if (!inherited) {
@@ -54,6 +60,7 @@ const acquire = (sessionId, writeDir) => {
   }
   delete process.env.HARNESS_LOCK_FILE
   const lock = {
+    exclusive,
     spawnOptions: () => ({ stdio: ['ignore', 'ignore', 'ignore', fd], env: { ...process.env, HARNESS_LOCK_FILE: file } }),
     release: () => {
       if (held.get(file) !== lock) return

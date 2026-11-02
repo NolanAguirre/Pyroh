@@ -80,6 +80,9 @@ const spawnRun = (sessionId, action, { mode, prompt, autoName = false, handoff, 
   try {
     sessionStore.recoverSession(sessionId, config.writeDir)
     const session = sessionStore.loadSession(sessionId, config.writeDir)
+    if (session?.fork?.kind === 'native' && (session.fork.state !== 'ready' || !session.providerAgentId)) {
+      throw Object.assign(new Error('Native fork creation must finish before starting a turn; retry the original fork request'), { status: 409 })
+    }
     if (session?.status === 'queued' && !allowQueued) {
       throw Object.assign(new Error('session is queued'), { status: 409 })
     }
@@ -201,11 +204,11 @@ const continueInNewChat = (sourceSessionId, prompt, target) => {
   return { session, run }
 }
 
-const forkSession = (sourceSessionId, prompt) => {
+const forkSession = async (sourceSessionId, prompt, forkRetryKey) => {
   if (typeof prompt !== 'string' || !prompt.trim()) {
     throw Object.assign(new Error('prompt is required'), { status: 400 })
   }
-  const lock = sessionLock.acquire(sourceSessionId, config.writeDir)
+  const lock = sessionLock.acquire(sourceSessionId, config.writeDir, { exclusive: true })
   try {
     sessionStore.recoverSession(sourceSessionId, config.writeDir)
     const source = sessionStore.loadSession(sourceSessionId, config.writeDir)
@@ -220,10 +223,17 @@ const forkSession = (sourceSessionId, prompt) => {
     const mode = previous?.base || 'agent'
     const entry = registry.requireMode(registry.sessionWorkspace(source), mode, { provider: source.provider })
     const workspaceId = source.workspaceId || workspaceStore.findWorkspaceByCwd(source.cwd, config.writeDir)?.id
-    const session = require('./fork').createFork(source, {
-      workspaceId, ...spawnSessionFields(source, source), mode,
+    const { session, requestFile } = await require('./nativeFork').ensureNativeFork(source, {
+      workspaceId, sessionFields: spawnSessionFields(source, source), mode, prompt, retryKey: forkRetryKey,
     })
-    return spawnRun(session.id, mode === 'plan' ? 'plan' : 'run', { mode, prompt, autoName: entry.autoName })
+    // A persisted first run means delivery may already have happened. A lost
+    // HTTP response or failed daemon launch must not resend the user's message.
+    const existing = sessionStore.listRuns(session.id, config.writeDir)[0]
+    if (existing) return existing
+    return spawnRun(session.id, session.mode === 'plan' ? 'plan' : 'run', {
+      mode: session.mode, prompt, autoName: entry.autoName,
+      onPrepared: (run) => writeJson(requestFile, { ...readJson(requestFile), firstRunId: run.id }),
+    })
   } finally { lock.release() }
 }
 
@@ -258,7 +268,7 @@ const decompose = (sessionId, { prompt }) => {
 }
 
 // Every mode is looked up in the registry, which also enforces deny rules.
-const run = async (sessionId, { prompt, mode: requested, provider, model, targetMode, runAfterSessionId } = {}) => {
+const run = async (sessionId, { prompt, mode: requested, provider, model, targetMode, runAfterSessionId, forkRetryKey } = {}) => {
   const source = sessionStore.loadSession(sessionId, config.writeDir)
   if (!source) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
   if (source.status === 'queued') throw Object.assign(new Error('session is queued'), { status: 409 })
@@ -266,7 +276,7 @@ const run = async (sessionId, { prompt, mode: requested, provider, model, target
   if (mode === 'fork') {
     registry.requireMode(registry.sessionWorkspace(source), mode, { provider: source.provider })
     if (runAfterSessionId) throw Object.assign(new Error('Fork cannot be scheduled with run after'), { status: 400 })
-    return forkSession(sessionId, prompt)
+    return forkSession(sessionId, prompt, forkRetryKey)
   }
   require('./delegation').assertChildRun(source, mode)
   if (runAfterSessionId != null && runAfterSessionId !== '') {

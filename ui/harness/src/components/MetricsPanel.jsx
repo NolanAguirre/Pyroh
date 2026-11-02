@@ -20,7 +20,8 @@ const MetricsPanel = ({ devId, session, runs }) => {
   const total = tokens.total || 0
   const cacheRead = tokens.cacheRead || 0
   const cacheWrite = tokens.cacheWrite || 0
-  const newInput = Math.max(0, (tokens.input || 0) - cacheRead - cacheWrite)
+  const freshInput = Math.max(0, (tokens.input || 0) - cacheRead)
+  const ownRuns = runs.filter((run) => !run.inherited)
   const durationMs = session?.totals?.durationMs || 0
   const context = session?.context
   const used = context?.usedTokens
@@ -33,9 +34,9 @@ const MetricsPanel = ({ devId, session, runs }) => {
         : ['codex', 'grok', 'claude'].includes(session?.provider) ? 'Waiting for a provider context report'
           : 'Context size unavailable from this provider'
 
-  const base = runs.length ? Math.min(...runs.map((r) => r.startedAt)) : 0
+  const base = ownRuns.length ? Math.min(...ownRuns.map((r) => r.startedAt)) : 0
   const now = Date.now()
-  const points = runs.map((r) => ({
+  const points = ownRuns.map((r) => ({
     id: r.id,
     start: Math.max(0, Math.round(((r.startedAt || base) - base) / 1000)),
     end: Math.max(1, Math.round(((r.endedAt || now) - base) / 1000)),
@@ -85,19 +86,20 @@ const MetricsPanel = ({ devId, session, runs }) => {
             </CardSection>
             <CardSection>
               <CardLabel>Runs</CardLabel>
-              <div className="metrics__stat-val">{runs.length}</div>
+              <div className="metrics__stat-val">{ownRuns.length}</div>
               <div className="metrics__stat-sub">turns</div>
             </CardSection>
           </CardRow>
           <CardSection>
             <CardLabel>Token Distribution</CardLabel>
             <div className="metrics__bars">
-              <TokenBar label="New input" value={newInput} total={total} />
-              <TokenBar label="Cache read" value={cacheRead} total={total} />
-              <TokenBar label="Cache write" value={cacheWrite} total={total} />
+              <TokenBar label="Fresh input" value={freshInput} total={total} />
+              <TokenBar label="Cached input (measured)" value={cacheRead} total={total} />
               <TokenBar label="Output" value={tokens.output || 0} total={total} />
-              <TokenBar label="Reasoning (within output)" value={tokens.reasoning || 0} total={total} />
             </div>
+            <p className="metrics__lbl">Cache reuse is measured from provider reports, not guaranteed. Fresh input includes cache writes.</p>
+            {cacheWrite > 0 && <p className="metrics__lbl">Cache writes within fresh input: {formatNumber(cacheWrite)} tokens</p>}
+            {(tokens.reasoning || 0) > 0 && <p className="metrics__lbl">Reasoning within output: {formatNumber(tokens.reasoning)} tokens</p>}
           </CardSection>
         </Card>
 

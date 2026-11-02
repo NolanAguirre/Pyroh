@@ -10,7 +10,7 @@ const { recoverSession } = require('./sessionRecovery')
 const descendantsFromDisk = (sessionId, writeDir) => {
   const children = new Map()
   for (const item of listSessions(writeDir)) {
-    if (!item.parentSessionId) continue
+    if (!item.parentSessionId || item.childKind === 'fork') continue
     if (!children.has(item.parentSessionId)) children.set(item.parentSessionId, [])
     children.get(item.parentSessionId).push(item)
   }

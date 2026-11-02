@@ -338,7 +338,11 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
     agent = null
   }
 
-  return { create, resume, send, listModels, providerAgentId, close }
+  const fork = async () => {
+    throw Object.assign(new Error('Cursor native conversation fork is not supported by this driver'), { code: 'PROVIDER_FORK_UNSUPPORTED' })
+  }
+
+  return { create, resume, fork, send, listModels, providerAgentId, close }
 }
 
 module.exports = { createDriver }

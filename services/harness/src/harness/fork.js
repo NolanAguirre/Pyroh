@@ -35,15 +35,20 @@ const createFork = (source, options, writeDir = config.writeDir) => {
     .map(event => ({ ...event, inherited: true }))
   const created = store.createSession(options, writeDir)
   try {
-    const fork = { sourceSessionId: source.id, sourceRunId: ownRuns.at(-1)?.id || null, createdAt: Date.now() }
+    const fork = { sourceSessionId: source.id, sourceRunId: ownRuns.at(-1)?.id || null, createdAt: Date.now(), ...options.fork }
     writeJson(historyFile(created.id, writeDir), { ...fork, runs, questions: inheritedQuestions, events })
     fs.writeFileSync(paths.eventsFile(created.id, writeDir), events.map(event => `${JSON.stringify(event)}\n`).join(''), { mode: 0o600 })
     return store.updateSession(created.id, {
       mode: options.mode,
       sourceSessionId: source.id,
       parentSessionId: source.id,
-      rootSessionId: source.rootSessionId || source.id,
+      rootSessionId: fork.kind === 'native' ? created.id : source.rootSessionId || source.id,
       childKind: 'fork',
+      ...(fork.kind === 'native' ? {
+        status: 'preparing',
+        claudePermissions: source.claudePermissions,
+        providerConfiguration: source.providerConfiguration,
+      } : {}),
       fork,
     }, writeDir)
   } catch (err) {

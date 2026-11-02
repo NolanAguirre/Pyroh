@@ -111,6 +111,8 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
   let input = null
   let active = null
   let contextWindow = null
+  let forking = false
+  let forkAttempted = false
   const diagnostics = []
 
   const emit = (event) => active?.emit({ ...event, runId: active.id })
@@ -348,6 +350,46 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     resumable = Boolean(await getSessionInfo(id).catch(() => true))
   }
 
+  const fork = async (sourceProviderAgentId, next = {}) => {
+    if (typeof sourceProviderAgentId !== 'string' || !sourceProviderAgentId.trim()) throw new Error('Claude fork requires a source session id')
+    if (sessionId || active || forking || forkAttempted) throw new Error('Claude fork requires a fresh driver; do not retry an attempted fork')
+    if (Array.isArray(next.tools) && next.tools.length) {
+      throw new Error('Claude does not support the Cursor tools allowlist. Use plan mode for read-only work.')
+    }
+    if (next.childProviderAgentId != null) {
+      throw Object.assign(new Error('Claude native forkSession() does not support preallocated child ids'), { code: 'PROVIDER_FORK_ID_UNSUPPORTED' })
+    }
+    forking = true
+    try {
+      const { forkSession } = await loadSdk()
+      if (typeof forkSession !== 'function') {
+        throw Object.assign(new Error('Installed Claude Agent SDK does not support native forkSession()'), { code: 'PROVIDER_FORK_UNSUPPORTED' })
+      }
+      // SDK 0.3.282 forkSession() remaps transcript UUIDs and awaits the new
+      // session file's write before returning. Unlike query({ forkSession: true,
+      // resume, sessionId }), this API materializes history without a prompt or
+      // a live query. Its ForkSessionOptions has no caller-selected session id.
+      forkAttempted = true
+      try {
+        const child = await forkSession(sourceProviderAgentId, { dir: next.cwd })
+        if (typeof child?.sessionId !== 'string' || !child.sessionId || child.sessionId === sourceProviderAgentId) {
+          throw new Error('Claude did not return an independent child session id')
+        }
+        settings = { ...next }
+        sessionId = child.sessionId
+        resumable = true
+        contextWindow = null
+        return sessionId
+      } catch (cause) {
+        throw Object.assign(new Error(`Claude fork outcome is unknown; do not retry automatically: ${cause.message}`, { cause }), {
+          code: 'PROVIDER_FORK_OUTCOME_UNKNOWN', retryable: false, sourceProviderAgentId,
+        })
+      }
+    } finally {
+      forking = false
+    }
+  }
+
   const send = async (prompt, { mode = 'agent', onEvent, outputSchema, terse = false, instructions } = {}) => {
     if (!sessionId) throw new Error('Claude session not created')
     if (active && !active.done) throw new Error('Claude turn already running')
@@ -423,7 +465,7 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     closeStream()
   }
 
-  return { create: (next) => openSession(null, next), resume: openSession,
+  return { create: (next) => openSession(null, next), resume: openSession, fork,
     send, listModels, providerAgentId: () => sessionId, close }
 }
 

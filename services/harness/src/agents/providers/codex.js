@@ -59,6 +59,8 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
   let active = null
   let requestQueue = Promise.resolve()
   let cumulativeUsage = null
+  let forking = false
+  let forkAttempted = false
   const serverRequests = new Map()
   const diagnostics = []
 
@@ -93,7 +95,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
       return
     }
     if (method === 'thread/tokenUsage/updated' && (!threadId || params.threadId === threadId)) {
-      if (!active) cumulativeUsage = params.tokenUsage?.total || cumulativeUsage
+      if (!active && !forking) cumulativeUsage = params.tokenUsage?.total || cumulativeUsage
     }
     if (!active || active.done || (params.threadId && params.threadId !== threadId)) return
     const eventTurnId = params.turnId || params.turn?.id
@@ -308,7 +310,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     return models.sort((a, b) => Number(Boolean(b.isDefault)) - Number(Boolean(a.isDefault)))
   }
 
-  const openThread = async (id, settings = {}) => {
+  const openThread = async (id, settings = {}, method = id ? 'thread/resume' : 'thread/start') => {
     if (Array.isArray(settings.tools)) {
       throw new Error('Codex does not support the Cursor tools allowlist. Use native plan mode for read-only decomposition.')
     }
@@ -336,8 +338,45 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
       },
       dynamicTools: typeof tools.askUser === 'function' ? [askTool()] : [],
     }
-    const response = await transport.request(id ? 'thread/resume' : 'thread/start', id ? { ...params, threadId: id } : params)
-    threadId = response.thread.id
+    if (method === 'thread/fork') {
+      // Fork inherits persisted dynamic tools; the fork RPC does not accept a
+      // replacement dynamicTools list. Other provider configuration is reapplied.
+      delete params.dynamicTools
+      forkAttempted = true
+      try {
+        const response = await transport.request(method, { ...params, threadId: id, excludeTurns: true })
+        const childId = response?.thread?.id
+        if (typeof childId !== 'string' || !childId || childId === id) {
+          throw new Error('Codex did not return an independent child thread id')
+        }
+        threadId = childId
+        // Do not carry source totals into the child's first turn. The first
+        // token update establishes the inherited baseline using total - last.
+        cumulativeUsage = null
+      } catch (cause) {
+        throw Object.assign(new Error(`Codex fork outcome is unknown; do not retry automatically: ${cause.message}`, { cause }), {
+          code: 'PROVIDER_FORK_OUTCOME_UNKNOWN', retryable: false, sourceProviderAgentId: id,
+        })
+      }
+    } else {
+      const response = await transport.request(method, id ? { ...params, threadId: id } : params)
+      threadId = response.thread.id
+    }
+  }
+
+  const fork = async (sourceProviderAgentId, settings = {}) => {
+    if (typeof sourceProviderAgentId !== 'string' || !sourceProviderAgentId.trim()) throw new Error('Codex fork requires a source thread id')
+    if (threadId || active || forking || forkAttempted) throw new Error('Codex fork requires a fresh driver; do not retry an attempted fork')
+    if (settings.childProviderAgentId != null) {
+      throw Object.assign(new Error('Codex thread/fork does not support preallocated child ids'), { code: 'PROVIDER_FORK_ID_UNSUPPORTED' })
+    }
+    forking = true
+    try {
+      await openThread(sourceProviderAgentId, settings, 'thread/fork')
+      return threadId
+    } finally {
+      forking = false
+    }
   }
 
   const send = async (prompt, { mode = 'agent', onEvent, outputSchema, terse = false, instructions } = {}) => {
@@ -387,7 +426,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     await transport?.close()
     transport = null
   }
-  return { create: (settings) => openThread(null, settings), resume: openThread,
+  return { create: (settings) => openThread(null, settings), resume: openThread, fork,
     send, listModels, providerAgentId: () => threadId, close }
 }
 

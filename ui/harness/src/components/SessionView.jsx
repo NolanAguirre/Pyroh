@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, DevScope, Popup, PromptInput, useSpeechRecognition } from 'component-library'
 import { TRIGGERS } from 'prompt-triggers'
 import useSessionEvents from '../useSessionEvents'
@@ -31,6 +31,23 @@ const FALLBACK_MODES = [{
 // Sibling analysis modes that may run on a different provider and model than the source.
 const SPAWN_TARGET_KINDS = ['token-waste', 'memory']
 const QUEUED_RUN_AFTER = { prompt: '' }
+const forkRetryStorageKey = (sessionId) => `harness.forkRetry.${sessionId}`
+const loadForkRetry = (sessionId) => {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(forkRetryStorageKey(sessionId)) || 'null')
+    return typeof saved?.key === 'string' && typeof saved?.prompt === 'string' ? saved : null
+  } catch {
+    return null
+  }
+}
+const saveForkRetry = (sessionId, retry) => {
+  try {
+    if (retry) sessionStorage.setItem(forkRetryStorageKey(sessionId), JSON.stringify(retry))
+    else sessionStorage.removeItem(forkRetryStorageKey(sessionId))
+  } catch {
+    // Keep the in-memory key when browser storage is unavailable.
+  }
+}
 
 const SessionView = ({ devId, sessionId, initialSession, providers = [], workspaces = [], sessions = [], modes: registryModes, onChanged, onCreated, transcriptFontSize }) => {
   const { events, session: liveSession, runs, children, queuedMessages, questions, pendingQuestions, connected } = useSessionEvents(sessionId)
@@ -38,6 +55,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const defaultMode = replyMode(session)
   const [mode, setMode] = useState(() => loadComposer(sessionId, defaultMode).mode)
   const [prompt, setPromptState] = useState(() => loadComposer(sessionId, defaultMode).prompt)
+  const forkRetry = useRef({ sessionId, retry: loadForkRetry(sessionId) })
   const [spawnMode, setSpawnMode] = useState('agent')
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
@@ -83,6 +101,16 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
     saveComposer(sessionId, mode, prompt, defaultMode)
   }, [sessionId, mode, prompt, defaultMode])
 
+  useEffect(() => {
+    if (forkRetry.current.sessionId !== sessionId) {
+      forkRetry.current = { sessionId, retry: loadForkRetry(sessionId) }
+    }
+    if (forkRetry.current.retry && forkRetry.current.retry.prompt !== prompt) {
+      forkRetry.current.retry = null
+      saveForkRetry(sessionId, null)
+    }
+  }, [sessionId, prompt])
+
   const modes = registryModes?.length ? registryModes : FALLBACK_MODES
   const registryActive = modes.find((item) => item.id === mode) || null
   // Sending a sibling mode to a session already in it replies here instead of spawning.
@@ -100,6 +128,10 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const isDecompose = active?.kind === 'decompose'
   const isNewChat = active?.kind === 'new-chat'
   const isFork = active?.kind === 'fork'
+  const nativeForkUnavailable = isFork && ['cursor', 'grok'].includes(session?.provider)
+  const modeHint = nativeForkUnavailable
+    ? `Native forks are unavailable for ${session.provider === 'cursor' ? 'Cursor' : 'Grok'}. Existing fork sessions still accept replies.`
+    : isFork ? `${active?.hint || ''} Cache reuse is measured by the provider and is not guaranteed.` : active?.hint
   const picksSpawnTarget = isNewChat || (Boolean(active?.newSession) && SPAWN_TARGET_KINDS.includes(active?.kind))
 
   // A saved mode that this workspace no longer has falls back to the session's mode, then agent.
@@ -132,7 +164,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const spawnModelId = spawnModel || spawnEntry?.models?.[0]?.id || null
   const spawnBlocked = picksSpawnTarget && Boolean(spawnEntry) && (spawnEntry.implemented === false || spawnEntry.error)
   const runAfterBlocked = showRunAfter && runAfterOn && !dependencyId
-  const sendDisabled = queued || runAfterBlocked || (isFork && !submitted) || (steering
+  const sendDisabled = queued || runAfterBlocked || nativeForkUnavailable || (isFork && !submitted) || (steering
     ? !prompt.trim()
     : (blocksWhileBusy && isBusy) || (promptRequired && !prompt.trim()) || spawnBlocked)
 
@@ -184,6 +216,13 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
               runAfterSessionId: dependencyId,
             }
           : { prompt, mode }
+        if (isFork) {
+          const saved = forkRetry.current.sessionId === sessionId ? forkRetry.current.retry : loadForkRetry(sessionId)
+          const retry = saved?.prompt === prompt ? saved : { prompt, key: crypto.randomUUID() }
+          forkRetry.current = { sessionId, retry }
+          saveForkRetry(sessionId, retry)
+          reply.forkRetryKey = retry.key
+        }
         const result = await api.run(sessionId, isNewChat
           ? { prompt, mode, ...target, targetMode: spawnMode }
           : picksSpawnTarget ? { prompt, mode, ...target } : reply)
@@ -196,6 +235,10 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
           setMode(defaultMode)
           onCreated?.(fork)
         } else if (result.session && !isFork) onCreated?.(result.session)
+        if (isFork) {
+          forkRetry.current.retry = null
+          saveForkRetry(sessionId, null)
+        }
         if (isNewChat) setHandoffRunId(result.run.id)
       }
       if (!isDecompose) setPrompt('')
@@ -383,7 +426,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                   />
                 )}
               </div>
-              <span className="composer__mode-hint">{active?.hint}</span>
+              <span className="composer__mode-hint">{modeHint}</span>
             </div>
             {picksSpawnTarget && (
               <NewChatTarget
@@ -433,7 +476,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                   onClick={send}
                   loading={busy}
                   disabled={sendDisabled}
-                  title={steering ? 'Interrupt the current turn and send' : undefined}
+                  title={nativeForkUnavailable ? modeHint : steering ? 'Interrupt the current turn and send' : undefined}
                   devId="hr2t9h5"
                 >
                   {steering ? 'Send' : active?.sendLabel || 'Send'}

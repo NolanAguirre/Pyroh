@@ -178,6 +178,7 @@ const descendants = (sessionId) => {
       UNION
       SELECT s.session_id FROM main.session s
       JOIN tree ON json_extract(s.data, '$.parentSessionId') = tree.id
+      WHERE COALESCE(json_extract(s.data, '$.childKind'), '') != 'fork'
     )
     SELECT session_id AS id, archived FROM main.session
     WHERE session_id IN (SELECT id FROM tree) AND session_id != ?

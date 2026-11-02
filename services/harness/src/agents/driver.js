@@ -14,6 +14,19 @@
 //     each driver converts to its provider's config and auto-approves.
 //   resume(providerAgentId, { model, cwd, mode, tools }) -> Promise<void>
 //     Rehydrate an existing agent by its provider-specific id and restore settings.
+//   fork(sourceProviderAgentId, { model, cwd, mode, tools, childProviderAgentId? })
+//     -> Promise<string>
+//     On a fresh driver, persist a native child before sending any prompt; return
+//     its id and expose it through providerAgentId(). Pass the source settings
+//     and construct the driver with the same provider options and harness tools.
+//     Current native materialization APIs allocate their own ids and reject
+//     childProviderAgentId with PROVIDER_FORK_ID_UNSUPPORTED. Unsupported providers
+//     throw PROVIDER_FORK_UNSUPPORTED. No replay or parent-resume fallback.
+//     Persist fork intent before calling and the returned id before send(). An
+//     interrupted call (including a process crash) must not be blindly retried:
+//     PROVIDER_FORK_OUTCOME_UNKNOWN has retryable=false and may have left a child.
+//     Resume a known child id on recovery. Start child usage accounting at zero;
+//     inherited provider totals are context/baseline, not new billable usage.
 //   send(prompt, { mode, onEvent, outputSchema?, terse? }) -> Promise<{ cancel, wait }>
 //     Kick off a run. `onEvent(event)` receives normalized events as they stream.
 //     `cancel()` cancels the in-flight run. `wait()` resolves the terminal result:

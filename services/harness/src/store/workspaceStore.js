@@ -89,6 +89,7 @@ const updateWorkspace = (workspaceId, patch, writeDir) => {
 
 const resolveSessionCwd = (session, writeDir) => {
   if (!session) return config.workBase
+  if (session.fork?.kind === 'native' && session.fork.cwd) return session.fork.cwd
   if (session.workspaceId) {
     const workspace = loadWorkspace(session.workspaceId, writeDir)
     if (workspace && workspace.cwd) return workspace.cwd
@@ -99,6 +100,7 @@ const resolveSessionCwd = (session, writeDir) => {
 // `workspaces` memoizes workspace loads across a batch of sessions.
 const resolveSessionCwdAsync = async (session, writeDir, workspaces = new Map()) => {
   if (!session) return config.workBase
+  if (session.fork?.kind === 'native' && session.fork.cwd) return session.fork.cwd
   if (session.workspaceId) {
     if (!workspaces.has(session.workspaceId)) {
       workspaces.set(session.workspaceId, loadWorkspaceAsync(session.workspaceId, writeDir))

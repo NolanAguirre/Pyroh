@@ -43,7 +43,7 @@ const useSidebarSessions = ({ sessions, searchQuery, showArchived, workspaceId }
     const rootOf = (session) => {
       const seen = new Set()
       let current = session
-      while (current.parentSessionId && byId.has(current.parentSessionId) && !seen.has(current.id)) {
+      while (current.childKind !== 'fork' && current.parentSessionId && byId.has(current.parentSessionId) && !seen.has(current.id)) {
         seen.add(current.id)
         current = byId.get(current.parentSessionId)
       }

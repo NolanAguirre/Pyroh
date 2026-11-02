@@ -223,7 +223,11 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
     client = null
   }
 
-  return { create: (settings) => openSession(null, settings), resume: openSession,
+  const fork = async () => {
+    throw Object.assign(new Error('Grok native conversation fork is not supported by this driver'), { code: 'PROVIDER_FORK_UNSUPPORTED' })
+  }
+
+  return { create: (settings) => openSession(null, settings), resume: openSession, fork,
     send, listModels, providerAgentId: () => sessionId, close }
 }
 

@@ -79,13 +79,23 @@ const runOneTurn = async ({
   const entry = registry.turnMode(mode ?? session.mode, plugin)
   mode = entry?.base || mode || session.mode
   const primitive = AGENT_MODES.includes(mode)
+  const nativeFork = session.fork?.kind === 'native'
+  if (nativeFork && (fresh || session.fork.state !== 'ready' || !session.providerAgentId || session.providerAgentId === session.fork.sourceProviderAgentId || session.provider !== session.fork.sourceConfiguration?.provider)) {
+    throw new Error('Native forks require their saved child provider thread; fresh creation and transcript replay are unavailable')
+  }
   const first = !session.fork && (!session.providerAgentId || fresh)
   terse = terse === undefined ? first && Boolean(entry?.terse) : terse
-  if (instructions === undefined) instructions = entry?.instructions
+  if (instructions === undefined) instructions = nativeFork && session.fork.sourceConfiguration?.settings.mode === mode
+    ? session.fork.sourceConfiguration.instructions ?? entry?.instructions : entry?.instructions
+  if (outputSchema === undefined && nativeFork && session.fork.sourceConfiguration?.settings.mode === mode) {
+    outputSchema = session.fork.sourceConfiguration.outputSchema
+  }
   const child = Boolean(session.parentRunId) && session.childKind !== 'workflow'
   const managed = primitive || child
   const canDelegate = primitive && !child && (delegationEligible ?? entry?.delegationEligible ?? true)
-  const settings = { model: model || session.model, cwd: workspaceStore.resolveSessionCwd(session, writeDir), mode, tools }
+  const inheritedConfiguration = nativeFork ? session.fork.sourceConfiguration : null
+  if (tools === undefined && inheritedConfiguration?.settings.tools !== undefined) tools = inheritedConfiguration.settings.tools
+  const settings = { model: model || session.model || inheritedConfiguration?.settings.model, cwd: workspaceStore.resolveSessionCwd(session, writeDir), mode, tools }
   // Each daemon owns one session. Set its cwd before loading SDKs so shell
   // initialization and provider subprocesses inherit the workspace directory.
   process.chdir(settings.cwd)
@@ -98,9 +108,29 @@ const runOneTurn = async ({
   const delegation = require('./delegation')
   // Trigger actions fire only on the first prompt to a new agent or subagent.
   const fired = textOnly || !first ? [] : firedActions(findTriggers(prompt))
-  const extraMcpServers = triggerMcpServers(fired, session)
+  const previousTools = session.providerConfiguration?.tools
+  const extraMcpServers = [...(previousTools?.mcpServers || []).filter(server => !['harness_agents', MEMORY_SERVER_NAME].includes(server.name))]
+  for (const server of triggerMcpServers(fired, session)) {
+    if (!extraMcpServers.some(previous => previous.name === server.name)) extraMcpServers.push(server)
+  }
   if (canDelegate && !textOnly) extraMcpServers.push(delegation.open(session, runId, mode))
   if (managed && session.provider === 'grok') onEvent?.({ type: 'status', status: 'Native spawning cannot be fully blocked by Grok; harness-only delegation is instructed.' })
+  const allowedTools = inheritedConfiguration?.tools.list && Array.isArray(harnessTools)
+    ? inheritedConfiguration.tools.list.filter(id => harnessTools.includes(id)) : harnessTools
+  const configuredTools = {
+    ...(textOnly ? {} : driverTools({ askUser, harnessTools: allowedTools, session, extraMcpServers })),
+    disableNativeSpawning: managed || Boolean(inheritedConfiguration?.tools.disableNativeSpawning),
+    restrictedChild: (child && mode !== 'agent') || Boolean(inheritedConfiguration?.tools.restrictedChild),
+  }
+  const configuration = require('./providerConfiguration').snapshot(session.provider, settings, configuredTools, { instructions, outputSchema })
+  sessionStore.updateSession(session.id, { providerConfiguration: configuration }, writeDir)
+  if (nativeFork) {
+    const comparison = require('./providerConfiguration').compare(session.fork.configurationKnown ? inheritedConfiguration : null, configuration)
+    const cacheConfiguration = { ...comparison, runId, updatedAt: Date.now() }
+    sessionStore.updateSession(session.id, { cacheConfiguration }, writeDir)
+    if (runId) sessionStore.updateRun(session.id, runId, { cacheConfiguration }, writeDir)
+    onEvent?.({ type: 'cache_configuration', ...cacheConfiguration })
+  }
   const makeDriver = () => createDriver({
     provider: session.provider,
     writeDir,
@@ -110,7 +140,7 @@ const runOneTurn = async ({
     claude: session.claude,
     permissions: session.claudePermissions,
     onPermissions: (claudePermissions) => sessionStore.updateSession(session.id, { claudePermissions }, writeDir),
-    tools: { ...(textOnly ? {} : driverTools({ askUser, harnessTools, session, extraMcpServers })), disableNativeSpawning: managed, restrictedChild: child && mode !== 'agent' },
+    tools: configuredTools,
   })
   let driver = makeDriver()
   let usage = null
@@ -127,11 +157,12 @@ const runOneTurn = async ({
       await driver.create(named)
     }
     let providerAgentId = driver.providerAgentId()
+    if (nativeFork && providerAgentId !== session.providerAgentId) throw new Error('Native fork resume returned a different provider thread')
     if (typeof onCreated === 'function') onCreated(providerAgentId)
 
     if (signal?.aborted) return { result: { status: 'cancelled' }, providerAgentId }
     const seed = session.fork ? sessionStore.loadSession(session.id, writeDir)?.forkHistorySeed : null
-    let needsHistory = Boolean(session.fork) && (fresh || !seed
+    let needsHistory = Boolean(session.fork) && !nativeFork && (fresh || !seed
       || seed.provider !== session.provider || seed.providerAgentId !== providerAgentId)
     let historySent = false
     let historyObserved = false
