@@ -286,7 +286,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
       } catch (err) {
         result = { status: 'error', error: errorMessage(err), errorStack: err?.stack, usage: run.usage || null, id: runId }
       }
-      const normalized = normalizeResult(result)
+      const normalized = normalizeResult({ ...result, usage: result?.usage || run.usage })
       normalized.providerRunId = runId
       normalized.transcriptStatus = streamError ? 'incomplete' : 'complete'
       normalized.transcriptError = streamError

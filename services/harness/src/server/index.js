@@ -28,6 +28,16 @@ const start = () => {
   workspaceStore.ensureLayout(config.writeDir)
   reconcileSessions()
   setInterval(reconcileSessions, RECONCILE_INTERVAL_MS).unref()
+  let recoveringUsage = false
+  const recoverUsage = async () => {
+    if (recoveringUsage) return
+    recoveringUsage = true
+    try { await require('../store/cursorUsageRecovery').recoverAll() }
+    catch (err) { process.stderr.write(`Cursor usage recovery failed: ${err.message}\n`) }
+    finally { recoveringUsage = false }
+  }
+  recoverUsage()
+  setInterval(recoverUsage, RECONCILE_INTERVAL_MS).unref()
   const recoverChildren = () => require('../harness/delegation').recover().catch(err => process.stderr.write(`child recovery failed: ${err.message}\n`))
   recoverChildren()
   setInterval(recoverChildren, 5000).unref()

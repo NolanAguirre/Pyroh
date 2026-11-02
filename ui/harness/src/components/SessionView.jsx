@@ -367,8 +367,9 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                     onClick={speech.toggle}
                     aria-pressed={speech.listening}
                     devId="hr5v2m8"
-                    title={speech.listening ? 'Stop dictation' : 'Start dictation'}
-                    aria-label={speech.listening ? 'Stop dictation' : 'Start dictation'}
+                    title={speech.preparing ? 'Cancel dictation setup' : speech.listening ? 'Stop dictation' : 'Start dictation'}
+                    aria-label={speech.preparing ? 'Cancel dictation setup' : speech.listening ? 'Stop dictation' : 'Start dictation'}
+                    aria-busy={speech.preparing}
                   >
                     <span className={`composer__mic${speech.listening ? ' composer__mic--listening' : ''}`}>
                       <Icon d={ICONS.mic} />
@@ -387,6 +388,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
               </div>
             </div>
             {actionError ? <p className="composer__error hint hint--error" role="alert">{actionError}</p> : null}
+            {speech.status ? <p className="hint" role="status">{speech.status}</p> : null}
             {speech.error ? <p className="composer__error hint hint--error" role="alert">Dictation error: {speech.error}</p> : null}
           </footer>
         </DevScope>

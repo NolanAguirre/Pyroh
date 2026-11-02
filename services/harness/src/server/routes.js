@@ -330,6 +330,13 @@ router.post('/sessions/:id/auto-name', (req, res) => {
   res.json({ session: sessionStore.updateSession(req.params.id, { name }, config.writeDir), applied: true })
 })
 
+router.post('/sessions/:id/recover-usage', async (req, res) => {
+  if (!sessionStore.loadSession(req.params.id, config.writeDir)) return res.status(404).json({ error: 'session not found' })
+  try {
+    res.json(await require('../store/cursorUsageRecovery').recoverMissingUsage(req.params.id))
+  } catch (err) { sendError(res, err) }
+})
+
 router.get('/sessions/:id', async (req, res) => {
   const status = await Harness.status(req.params.id)
   if (!status) return res.status(404).json({ error: 'session not found' })
