@@ -13,9 +13,10 @@ const STATUS_VARIANT = {
   finished: 'success',
   error: 'danger',
   queued: 'info',
+  subagent: 'info',
 }
 
-const SessionRow = memo(({ session, active, onSelect, onRename, onArchive, archiveBusy, onPin, pinBusy }) => {
+const SessionRow = memo(({ session, status = session.status, active, onSelect, onRename, onArchive, archiveBusy, onPin, pinBusy }) => {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(session.name || '')
   const [busy, setBusy] = useState(false)
@@ -161,11 +162,11 @@ const SessionRow = memo(({ session, active, onSelect, onRename, onArchive, archi
               </DevScope>
             </div>
           )}
-          <DevScope id="l9d2h6e" state={{ status: session.status, live: isLive }}>
+          <DevScope id="l9d2h6e" state={{ status, live: isLive }}>
             <div className="session-row__top-right">
               {isLive && <span className="session-row__pulse" aria-hidden="true" />}
-              <Badge size="small" variant={STATUS_VARIANT[session.status] || 'neutral'}>
-                {session.status}
+              <Badge size="small" variant={STATUS_VARIANT[status] || 'neutral'}>
+                {status}
               </Badge>
             </div>
           </DevScope>

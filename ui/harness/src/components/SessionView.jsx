@@ -12,6 +12,7 @@ import NewChatTarget from './Session/NewChatTarget'
 import ModeToggle from './Session/ModeToggle'
 import RunAfterControl, { eligibleRunAfterSessions } from './Session/RunAfterControl'
 import SessionHeader from './Session/SessionHeader'
+import { displayStatus } from '../sessionStatus'
 import SessionInspector from './Session/SessionInspector'
 import ChildRuns from './Session/ChildRuns'
 import { urlWithSelection } from '../appUrl'
@@ -323,6 +324,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
         <SessionHeader
           session={session}
           status={status}
+          badgeStatus={displayStatus(session, sessions)}
           isBusy={isBusy}
           disconnected={disconnected}
           busy={busy}

@@ -13,6 +13,7 @@ import SidebarHeader from './Sidebar/SidebarHeader'
 import WorkspaceSection from './Sidebar/WorkspaceSection'
 import useSidebarSessions, { LATEST_KEPT } from './Sidebar/useSidebarSessions'
 import { ICONS, Icon } from './Sidebar/icons'
+import { displayStatuses } from '../sessionStatus'
 
 const SessionsSidebar = ({
   devId,
@@ -63,6 +64,8 @@ const SessionsSidebar = ({
     onPin: (...args) => handlers.current.onPin(...args),
   }), [])
 
+  const statuses = useMemo(() => displayStatuses(sessions), [sessions])
+
   const groupedSessions = useMemo(() => {
     const ids = new Set(shownSessions.map(session => session.id))
     const children = new Map()
@@ -92,6 +95,7 @@ const SessionsSidebar = ({
     >
       <SessionRow
         session={session}
+        status={statuses.get(session.id) || session.status}
         active={session.id === activeId}
         onSelect={rowHandlers.onSelect}
         onRename={rowHandlers.onRename}
