@@ -5,6 +5,7 @@ const config = require('../config')
 const paths = require('../store/paths')
 const Harness = require('../harness/Harness')
 const sessionStore = require('../store/sessionStore')
+const { readForkHistory } = require('../harness/fork')
 const uiSettings = require('../store/uiSettings')
 const { resolveWorkDir, listWorkDirs, renameWorkDir } = require('../store/workDir')
 const { streamSession } = require('./sse')
@@ -456,7 +457,9 @@ router.post('/sessions/:id/questions/:qid/answer', async (req, res) => {
 })
 
 router.get('/sessions/:id/runs', async (req, res) => {
-  res.json({ runs: await sessionStore.listRunsAsync(req.params.id, config.writeDir) })
+  const inherited = readForkHistory(req.params.id, config.writeDir)
+  const runs = await sessionStore.listRunsAsync(req.params.id, config.writeDir)
+  res.json({ runs: [...(inherited?.runs || []), ...runs] })
 })
 
 router.get('/sessions/:id/runs/:runId/plan', async (req, res) => {

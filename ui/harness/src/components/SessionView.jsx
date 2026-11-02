@@ -123,7 +123,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const hasFailure = Boolean(session?.lastError?.message || latestRun?.error || latestRun?.transcriptError)
   const promptRequired = isFork || !active?.promptOptional
   const spawnsSession = Boolean(active?.newSession)
-  const blocksWhileBusy = !spawnsSession
+  const blocksWhileBusy = isFork || !spawnsSession
   const steering = isBusy && active?.steerable !== false && !spawnsSession
   const canQueue = submitted && (!session?.parentSessionId || session.childKind === 'fork') && !spawnsSession
     && ['turn', 'plugin'].includes(active?.kind)
@@ -132,7 +132,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const spawnModelId = spawnModel || spawnEntry?.models?.[0]?.id || null
   const spawnBlocked = picksSpawnTarget && Boolean(spawnEntry) && (spawnEntry.implemented === false || spawnEntry.error)
   const runAfterBlocked = showRunAfter && runAfterOn && !dependencyId
-  const sendDisabled = queued || runAfterBlocked || (steering
+  const sendDisabled = queued || runAfterBlocked || (isFork && !submitted) || (steering
     ? !prompt.trim()
     : (blocksWhileBusy && isBusy) || (promptRequired && !prompt.trim()) || spawnBlocked)
 

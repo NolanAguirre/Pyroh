@@ -400,7 +400,14 @@ const status = async (sessionId) => {
     sessionStore.listRunsAsync(sessionId, config.writeDir),
     questionStore.listQuestionsAsync(sessionId, config.writeDir),
   ])
-  return { session, runs, questions, daemonPid: pid, daemonAlive: proc.isAlive(pid) }
+  const inherited = session.fork ? require('./fork').readForkHistory(sessionId, config.writeDir) : null
+  return {
+    session,
+    runs: [...(inherited?.runs || []), ...runs],
+    questions: [...(inherited?.questions || []), ...questions],
+    daemonPid: pid,
+    daemonAlive: proc.isAlive(pid),
+  }
 }
 
 // Lists read the persisted index immediately. The maintenance process repairs

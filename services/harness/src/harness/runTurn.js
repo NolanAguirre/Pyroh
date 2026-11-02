@@ -79,7 +79,7 @@ const runOneTurn = async ({
   const entry = registry.turnMode(mode ?? session.mode, plugin)
   mode = entry?.base || mode || session.mode
   const primitive = AGENT_MODES.includes(mode)
-  const first = !session.providerAgentId || fresh
+  const first = !session.fork && (!session.providerAgentId || fresh)
   terse = terse === undefined ? first && Boolean(entry?.terse) : terse
   if (instructions === undefined) instructions = entry?.instructions
   const child = Boolean(session.parentRunId) && session.childKind !== 'workflow'
@@ -118,6 +118,7 @@ const runOneTurn = async ({
 
   try {
     if (signal?.aborted) return { result: { status: 'cancelled' }, providerAgentId: session.providerAgentId }
+    if (session.fork && fresh) sessionStore.updateSession(session.id, { forkHistorySeed: null }, writeDir)
     if (session.providerAgentId && !fresh) {
       await driver.resume(session.providerAgentId, settings)
     } else {
@@ -129,9 +130,28 @@ const runOneTurn = async ({
     if (typeof onCreated === 'function') onCreated(providerAgentId)
 
     if (signal?.aborted) return { result: { status: 'cancelled' }, providerAgentId }
+    const seed = session.fork ? sessionStore.loadSession(session.id, writeDir)?.forkHistorySeed : null
+    let needsHistory = Boolean(session.fork) && (fresh || !seed
+      || seed.provider !== session.provider || seed.providerAgentId !== providerAgentId)
+    let historySent = false
+    let historyObserved = false
+    const markHistorySeeded = () => {
+      if (!needsHistory || !historySent) return
+      providerAgentId = driver.providerAgentId() || providerAgentId
+      sessionStore.updateSession(session.id, {
+        forkHistorySeed: { provider: session.provider, providerAgentId },
+      }, writeDir)
+      needsHistory = false
+    }
     // Persist snapshots separately from totals so reconnects retain the latest
     // context size, including decreases after compaction, in every run mode.
     const handleEvent = (event) => {
+      // Some drivers return an inflight handle even when the request failed.
+      // Provider output confirms acceptance, including turns later cancelled.
+      if (needsHistory && ['text', 'thinking', 'tool_call', 'question'].includes(event.type)) {
+        historyObserved = true
+        markHistorySeeded()
+      }
       if (event.type === 'context' && event.context) {
         const { usedTokens, maxTokens, status } = event.context
         const context = {
@@ -184,7 +204,17 @@ const runOneTurn = async ({
     let result
     while (true) {
       const segmentStart = Date.now()
-      const inflight = firstSend ? await driver.send(text, firstSendOptions) : await sendFollowUp(text)
+      let sendText = text
+      if (needsHistory) {
+        const history = require('./fork').historyPrompt(session.id, writeDir)
+        if (typeof history !== 'string' || !history.trim()) throw new Error(`Fork history unavailable: ${session.id}`)
+        sendText = `${history}\n\n${text}`
+        historySent = false
+        historyObserved = false
+      }
+      const inflight = firstSend ? await driver.send(sendText, firstSendOptions) : await sendFollowUp(sendText)
+      historySent = true
+      if (historyObserved) markHistorySeeded()
       firstSend = false
       if (typeof onInflight === 'function') onInflight(inflight)
       if (signal?.aborted) await inflight.cancel()
@@ -204,6 +234,7 @@ const runOneTurn = async ({
       } finally {
         stopWatch?.()
       }
+      if (segment.status === 'completed') markHistorySeeded()
 
       usage = addUsage(usage, segment.usage)
       durationMs = (durationMs || 0) + (segment.durationMs ?? Date.now() - segmentStart)

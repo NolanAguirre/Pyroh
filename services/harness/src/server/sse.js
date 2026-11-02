@@ -6,6 +6,7 @@ const eventLog = require('../store/eventLog')
 const sessionStore = require('../store/sessionStore')
 const questionStore = require('../store/questionStore')
 const queuedMessageStore = require('../store/queuedMessageStore')
+const { readForkHistory } = require('../harness/fork')
 
 const feeds = new Map()
 const fingerprint = (stat) => stat ? `${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}` : 'missing'
@@ -17,6 +18,7 @@ const statOrMissing = async (file) => {
 // Share metadata reads and watches across browser tabs viewing the same session.
 // Atomic record writes change the containing directory; idle histories need only stats.
 const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
+  const inherited = readForkHistory(sessionId, writeDir)
   const dir = paths.sessionDir(sessionId, writeDir)
   const locations = {
     session: paths.sessionFile(sessionId, writeDir),
@@ -88,8 +90,8 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
       if (stamps.get('workspace') !== workspaceStamp) changed.add('session')
       const updates = await Promise.all([
         changed.has('session') ? sessionStore.loadSessionAsync(sessionId, writeDir).then(value => ['session', value]) : null,
-        changed.has('runs') ? sessionStore.listRunsAsync(sessionId, writeDir).then(value => ['runs', value]) : null,
-        changed.has('questions') ? questionStore.listQuestionsAsync(sessionId, writeDir).then(value => ['questions', value]) : null,
+        changed.has('runs') ? sessionStore.listRunsAsync(sessionId, writeDir).then(value => ['runs', [...(inherited?.runs || []), ...value]]) : null,
+        changed.has('questions') ? questionStore.listQuestionsAsync(sessionId, writeDir).then(value => ['questions', [...(inherited?.questions || []), ...value]]) : null,
         changed.has('queuedMessages') ? queuedMessageStore.listAsync(sessionId, writeDir).then(value => ['queuedMessages', value]) : null,
         changed.has('children') || changed.has('runs') || children.some(child => !child.done)
           ? require('../harness/delegation').childrenForAsync(sessionId).then(value => ['children', value]) : null,
