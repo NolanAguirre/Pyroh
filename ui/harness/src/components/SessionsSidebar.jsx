@@ -81,8 +81,8 @@ const SessionsSidebar = ({
   }
 
   const archiveOlderTitle = sessionsToArchive.length
-    ? `Archive ${sessionsToArchive.length} older session${sessionsToArchive.length === 1 ? '' : 's'}, keeping the ${LATEST_KEPT} latest. Pinned sessions stay.`
-    : `The ${LATEST_KEPT} latest sessions are already kept. Pinned sessions stay.`
+    ? `Archive ${sessionsToArchive.length} session${sessionsToArchive.length === 1 ? '' : 's'} from older runs. Any run with a session in the ${LATEST_KEPT} latest is kept whole. Pinned sessions stay.`
+    : `No older runs to archive. Any run with a session in the ${LATEST_KEPT} latest is kept whole. Pinned sessions stay.`
 
   return (
     <DevScope id={devId} state={{ workspace: workspace?.id, session: activeId, search: Boolean(searchQuery) }}>

@@ -39,7 +39,18 @@ const useSidebarSessions = ({ sessions, searchQuery, showArchived, workspaceId }
     const unpinned = sessions
       .filter(session => !session.pinned && !session.archived)
       .sort(byLatest)
-    return unpinned.slice(LATEST_KEPT)
+    const byId = new Map(unpinned.map(session => [session.id, session]))
+    const rootOf = (session) => {
+      const seen = new Set()
+      let current = session
+      while (current.parentSessionId && byId.has(current.parentSessionId) && !seen.has(current.id)) {
+        seen.add(current.id)
+        current = byId.get(current.parentSessionId)
+      }
+      return current.id
+    }
+    const keptRoots = new Set(unpinned.slice(0, LATEST_KEPT).map(rootOf))
+    return unpinned.filter(session => !keptRoots.has(rootOf(session)))
   }, [sessions])
 
   const showMoreArchived = () => setArchivedLimit(limit => limit + ARCHIVED_PAGE)
