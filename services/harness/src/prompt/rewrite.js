@@ -1,5 +1,5 @@
 const { execFile } = require('child_process')
-const { TRIGGERS } = require('./triggers')
+const { TRIGGERS, inScope } = require('./triggers')
 const prompts = require('../prompts')
 
 // --null puts a NUL after the path so paths containing ':' still parse.
@@ -22,12 +22,13 @@ const devIdPaths = async ([match, id], { cwd }) => {
   return locations.length ? prompts.render('devIdPaths', { match, files: locations.join(' ') }) : match
 }
 
-const triggerPattern = (id) => TRIGGERS.find((trigger) => trigger.id === id).patterns[0]
+const trigger = (id) => TRIGGERS.find((item) => item.id === id)
 
 // Applied in order. Patterns need the `g` flag; rewrite(match, context)
-// resolves to the replacement text for that match.
+// resolves to the replacement text for that match. `trigger` supplies the
+// pattern and scope.
 const rules = [
-  { name: 'devId', pattern: triggerPattern('devIdPaths'), rewrite: devIdPaths },
+  { name: 'devId', trigger: trigger('devIdPaths'), rewrite: devIdPaths },
 ]
 
 const replaceAsync = async (text, pattern, rewrite, context) => {
@@ -43,11 +44,12 @@ const replaceAsync = async (text, pattern, rewrite, context) => {
   return out + text.slice(last)
 }
 
+// context: { cwd, first }. `first: false` skips first-prompt-only rules.
 const rewritePrompt = async (text, context = {}) => {
   if (typeof text !== 'string' || !text) return text
   let out = text
-  for (const { pattern, rewrite } of rules) {
-    out = await replaceAsync(out, pattern, rewrite, context)
+  for (const { trigger: { patterns }, rewrite } of rules.filter((rule) => inScope(rule.trigger, context))) {
+    out = await replaceAsync(out, patterns[0], rewrite, context)
   }
   return out
 }

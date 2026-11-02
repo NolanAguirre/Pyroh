@@ -9,8 +9,9 @@ export const devIds = {
   id: 'devIds',
   label: 'Dev ids',
   description: 'Attaches the mcpdevid MCP server and explains dev ids.',
-  // The MCP list is fixed per turn, so steers cannot fire it.
-  steer: false,
+  // The MCP list is fixed when the agent is created, so only its first
+  // prompt can fire it.
+  scope: 'first',
   patterns: [
     new RegExp(`${VERBS}[^.?!\\n]{0,60}?${DEV_ID}`, 'gi'),
     new RegExp(`${DEV_ID}[^.?!\\n]{0,30}?\\b(?:needed|missing|required|please)\\b`, 'gi'),

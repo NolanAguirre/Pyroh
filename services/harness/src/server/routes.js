@@ -13,8 +13,10 @@ const { listProviders } = require('../agents/driver')
 const registry = require('../registry')
 const prompts = require('../prompts')
 const { TRIGGERS } = require('../prompt/triggers')
+const { rewritePrompt } = require('../prompt/rewrite')
 const { correctText } = require('../spellcheck')
 const questionStore = require('../store/questionStore')
+const workspaceStore = require('../store/workspaceStore')
 
 const router = express.Router()
 
@@ -170,11 +172,11 @@ router.get('/registry/explain', (req, res) => {
 // RegExps become { source, flags } so clients can rebuild them.
 router.get('/prompt-triggers', (_req, res) => {
   res.json({
-    triggers: TRIGGERS.map(({ id, label, description, steer, patterns }) => ({
+    triggers: TRIGGERS.map(({ id, label, description, scope, patterns }) => ({
       id,
       label,
       description,
-      steer,
+      scope,
       patterns: patterns.map(({ source, flags }) => ({ source, flags })),
     })),
   })
@@ -398,7 +400,7 @@ router.post('/sessions/:id/stop', (req, res) => {
 router.post('/sessions/:id/steer', async (req, res) => {
   const { prompt } = req.body || {}
   if (typeof prompt !== 'string' || !prompt.trim()) return res.status(400).json({ error: 'prompt is required' })
-  const corrected = await correctText(prompt, { steer: true })
+  const corrected = await correctText(prompt, { first: false })
   try {
     res.status(202).json({ steer: Harness.steer(req.params.id, corrected) })
   } catch (err) {
@@ -427,13 +429,15 @@ router.delete('/sessions/:id/queue/:messageId', (req, res) => {
   }
 })
 
-// Only free text is spellchecked; secrets, an answer that picks an offered option,
-// or any answer to an options-only question must reach the store unchanged.
+// Only free text is spellchecked and rewritten; secrets, an answer that picks an
+// offered option, or any answer to an options-only question must reach the store unchanged.
 const correctAnswer = async (sessionId, qid, answer) => {
   if (typeof answer !== 'string') return answer
   const question = questionStore.loadQuestion(sessionId, qid, config.writeDir)
   if (!question || question.secret || question.allowFreeText === false || question.options.includes(answer)) return answer
-  return correctText(answer)
+  const corrected = await correctText(answer, { first: false })
+  const session = sessionStore.loadSession(sessionId, config.writeDir)
+  return rewritePrompt(corrected, { cwd: workspaceStore.resolveSessionCwd(session, config.writeDir), first: false })
 }
 
 router.post('/sessions/:id/questions/:qid/answer', async (req, res) => {

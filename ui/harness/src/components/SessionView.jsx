@@ -386,7 +386,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                 <PromptInput
                   className={`composer__input${isDecompose ? ' composer__input--plan' : ''}`}
                   triggers={TRIGGERS}
-                  steer={steering}
+                  first={!steering && (spawnsSession || !session?.providerAgentId)}
                   placeholder={
                     steering
                       ? 'Send to interrupt, or Queue for after this turn (⌘↵ to send)…'

@@ -1,4 +1,5 @@
 const sessionRecord = require('./sessionRecord')
+const sessionIndex = require('./sessionIndex')
 const { listSessions, listSessionsAsync } = require('./sessionList')
 const { readRecordPrompt } = require('./recordPrompt')
 const runStore = require('./runStore')
@@ -6,10 +7,7 @@ const planStore = require('./planStore')
 const usageStore = require('./usageStore')
 const { recoverSession } = require('./sessionRecovery')
 
-const updateSession = (sessionId, patch, writeDir) => {
-  const session = sessionRecord.updateSession(sessionId, patch, writeDir)
-  if (patch.archived !== true) return session
-
+const descendantsFromDisk = (sessionId, writeDir) => {
   const children = new Map()
   for (const item of listSessions(writeDir)) {
     if (!item.parentSessionId) continue
@@ -18,13 +16,32 @@ const updateSession = (sessionId, patch, writeDir) => {
   }
   const seen = new Set([sessionId])
   const pending = [sessionId]
+  const found = []
   while (pending.length) {
     for (const child of children.get(pending.pop()) || []) {
       if (seen.has(child.id)) continue
       seen.add(child.id)
       pending.push(child.id)
-      if (!child.archived) sessionRecord.updateSession(child.id, { archived: true }, writeDir)
+      found.push(child)
     }
+  }
+  return found
+}
+
+// The index answers in one query; the full disk scan is only a fallback.
+const findDescendants = (sessionId, writeDir) => {
+  try {
+    return sessionIndex.descendants(sessionId)
+  } catch {
+    return descendantsFromDisk(sessionId, writeDir)
+  }
+}
+
+const updateSession = (sessionId, patch, writeDir) => {
+  const session = sessionRecord.updateSession(sessionId, patch, writeDir)
+  if (patch.archived !== true) return session
+  for (const child of findDescendants(sessionId, writeDir)) {
+    if (!child.archived) sessionRecord.updateSession(child.id, { archived: true }, writeDir)
   }
   return session
 }

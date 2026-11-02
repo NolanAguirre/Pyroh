@@ -84,13 +84,13 @@ const runOneTurn = async ({
     ? await require('../store/cursorStore').prepare(session, writeDir, { fresh })
     : undefined
   const textOnly = Array.isArray(tools) && tools.length === 0
-  // The MCP list is fixed when the driver is created, so steers on this turn
-  // cannot fire trigger actions.
   const child = Boolean(session.parentRunId)
   const managed = child || delegationEligible
   const delegation = require('./delegation')
   if (managed) instructions = [instructions, delegation.guidance(session.provider, child)].filter(Boolean).join('\n\n')
-  const fired = textOnly || child ? [] : firedActions(findTriggers(prompt))
+  // Trigger actions fire only on the first prompt to a new agent or subagent.
+  const first = !session.providerAgentId || fresh
+  const fired = textOnly || !first ? [] : firedActions(findTriggers(prompt))
   const extraMcpServers = triggerMcpServers(fired, session)
   if (delegationEligible && !textOnly) extraMcpServers.push(delegation.open(session, runId, mode))
   if (managed && session.provider === 'grok') onEvent?.({ type: 'status', status: 'Native spawning cannot be fully blocked by Grok; harness-only delegation is instructed.' })
@@ -166,7 +166,7 @@ const runOneTurn = async ({
       }
     }
 
-    let text = child ? prompt : await rewritePrompt(prompt, { cwd: settings.cwd })
+    let text = await rewritePrompt(prompt, { cwd: settings.cwd, first })
     if (text !== prompt) onPromptRewrite?.(text)
     text = await prependNotes(fired, session, text)
     let first = true
@@ -202,7 +202,7 @@ const runOneTurn = async ({
       const steers = steering.take()
       if (!steers.length) break
       const steerText = steers.map((steer) => steer.text).join('\n\n')
-      text = child ? steerText : await rewritePrompt(steerText, { cwd: settings.cwd })
+      text = await rewritePrompt(steerText, { cwd: settings.cwd, first: false })
       onEvent?.({ type: 'user', steer: true, text, itemId: `steer:${steers[0].id}` })
       if (signal?.aborted) break
     }

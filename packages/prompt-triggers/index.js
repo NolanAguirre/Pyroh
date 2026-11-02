@@ -3,15 +3,22 @@ import { devIdPaths } from './triggers/devIdPaths.js'
 
 // Pure and synchronous: the UI runs this on every keystroke and the server
 // runs it before each turn. Patterns need the `g` flag.
+//
+// scope: 'message' applies to every user message (prompts, follow-ups,
+// queued messages, steers, answers); 'first' only to the first prompt sent
+// to a new agent or subagent.
 export const TRIGGERS = [devIds, devIdPaths]
 
+export const inScope = (trigger, { first = true } = {}) => first || trigger.scope !== 'first'
+
 // Matches from every applicable trigger, sorted by position. When matches
-// overlap, the earlier (then longer) one wins.
-export const findTriggers = (text, { steer = false } = {}) => {
+// overlap, the earlier (then longer) one wins. `first: false` skips
+// first-prompt-only triggers.
+export const findTriggers = (text, options = {}) => {
   if (typeof text !== 'string' || !text) return []
   const matches = []
   for (const trigger of TRIGGERS) {
-    if (steer && trigger.steer === false) continue
+    if (!inScope(trigger, options)) continue
     for (const pattern of trigger.patterns) {
       for (const match of text.matchAll(pattern)) {
         if (!match[0]) continue

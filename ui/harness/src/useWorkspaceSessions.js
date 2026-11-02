@@ -7,6 +7,27 @@ const sameSessionRow = (a, b) => a.updatedAt === b.updatedAt
   && Boolean(a.pinned) === Boolean(b.pinned)
   && Boolean(a.archived) === Boolean(b.archived)
 
+// The server archives descendants with the parent; mirror that without a refetch.
+const withDescendantsArchived = (sessions, rootId) => {
+  const children = new Map()
+  for (const item of sessions) {
+    if (!item.parentSessionId) continue
+    if (!children.has(item.parentSessionId)) children.set(item.parentSessionId, [])
+    children.get(item.parentSessionId).push(item.id)
+  }
+  const ids = new Set()
+  const pending = [rootId]
+  while (pending.length) {
+    for (const childId of children.get(pending.pop()) || []) {
+      if (ids.has(childId) || childId === rootId) continue
+      ids.add(childId)
+      pending.push(childId)
+    }
+  }
+  if (!ids.size) return sessions
+  return sessions.map(item => ids.has(item.id) && !item.archived ? { ...item, archived: true } : item)
+}
+
 // Sessions for the active workspace plus rename, archive, and pin actions.
 // `leaveSession` runs when the active session gets hidden by archiving.
 const useWorkspaceSessions = (activeWorkspaceId, activeId, leaveSession, searchingSessionId = false) => {
@@ -81,7 +102,10 @@ const useWorkspaceSessions = (activeWorkspaceId, activeId, leaveSession, searchi
     setArchiveError(null)
     try {
       const { session } = await api.setSessionArchived(id, archived)
-      setSessions(current => current.map(item => item.id === id ? session : item))
+      setSessions(current => {
+        const next = current.map(item => item.id === id ? session : item)
+        return archived ? withDescendantsArchived(next, id) : next
+      })
       if (archived && !showArchived && activeId === id) leaveSession()
     } catch (error) { setArchiveError(error.message) }
     finally { setArchiveBusy(false) }

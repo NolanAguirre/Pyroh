@@ -31,7 +31,7 @@ const cachedIgnoreWords = () => {
 
 // Waits for the spellcheck service and returns the corrected text. Any
 // failure, timeout or missing URL returns the text unchanged.
-const correctText = async (text, { steer = false } = {}) => {
+const correctText = async (text, { first = true } = {}) => {
   if (!config.spellcheckUrl || typeof text !== 'string' || !text.trim()) return text
   const controller = new AbortController()
   let timer
@@ -44,8 +44,8 @@ const correctText = async (text, { steer = false } = {}) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text,
-          steer,
-          triggers: findTriggers(text, { steer }).map(({ start, end }) => ({ start, end })),
+          first,
+          triggers: findTriggers(text, { first }).map(({ start, end }) => ({ start, end })),
           ignore,
         }),
         signal: controller.signal,

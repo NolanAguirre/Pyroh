@@ -15,16 +15,16 @@ app.get(['/health', '/spellcheck/health'], (_req, res) => {
   res.json({ status: 'ok', queue_dir: process.env.QUEUE_DIR || null })
 })
 
-// Body: { text, triggers: [{ start, end }], ignore: [word], steer }.
+// Body: { text, triggers: [{ start, end }], ignore: [word], first }.
 // Replies { text, fixes }; any failure replies with the text unchanged.
 app.post(['/check', '/spellcheck/check'], async (req, res) => {
-  const { text, triggers, ignore, steer } = req.body || {}
+  const { text, triggers, ignore, first } = req.body || {}
   if (typeof text !== 'string') return res.status(400).json({ error: 'text must be a string' })
   try {
     res.json(await checkText(text, {
       triggers: Array.isArray(triggers) ? triggers : [],
       ignore: Array.isArray(ignore) ? ignore : [],
-      steer: steer === true,
+      first: first !== false,
       timeoutMs: JOB_TIMEOUT_MS,
     }))
   } catch (error) {

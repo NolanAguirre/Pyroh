@@ -169,6 +169,23 @@ const query = ({ workspaceId, includeArchived = false, active, statuses, provide
   return fields === 'list' ? sessions.map(listRow) : sessions
 }
 
+// UNION (not UNION ALL) stops on parent cycles.
+const descendants = (sessionId) => {
+  open()
+  data.statements.descendants ??= data.db.prepare(`
+    WITH RECURSIVE tree(id) AS (
+      SELECT ?
+      UNION
+      SELECT s.session_id FROM main.session s
+      JOIN tree ON json_extract(s.data, '$.parentSessionId') = tree.id
+    )
+    SELECT session_id AS id, archived FROM main.session
+    WHERE session_id IN (SELECT id FROM tree) AND session_id != ?
+  `)
+  return data.statements.descendants.all(sessionId, sessionId)
+    .map((row) => ({ id: row.id, archived: Boolean(row.archived) }))
+}
+
 const statMtime = async (file) => {
   try {
     return (await fs.promises.stat(file)).mtimeMs
@@ -285,6 +302,7 @@ const waitForInitialSeed = (ready) => {
 module.exports = {
   upsert,
   query,
+  descendants,
   reconcile,
   whenReady,
   waitForInitialSeed,
