@@ -87,7 +87,6 @@ const runOneTurn = async ({
   const child = Boolean(session.parentRunId)
   const managed = child || delegationEligible
   const delegation = require('./delegation')
-  if (managed) instructions = [instructions, delegation.guidance(session.provider, child)].filter(Boolean).join('\n\n')
   // Trigger actions fire only on the first prompt to a new agent or subagent.
   const first = !session.providerAgentId || fresh
   const fired = textOnly || !first ? [] : firedActions(findTriggers(prompt))
@@ -146,7 +145,11 @@ const runOneTurn = async ({
     }
 
     const sendOptions = { mode, onEvent: handleEvent, outputSchema, instructions }
-    const firstSendOptions = terse ? { ...sendOptions, terse: true } : sendOptions
+    const firstSendOptions = { ...sendOptions }
+    if (terse) firstSendOptions.terse = true
+    if (first && managed) {
+      firstSendOptions.instructions = [instructions, delegation.guidance(session.provider, child)].filter(Boolean).join('\n\n')
+    }
     // Codex and Grok drop their transport when a cancel overruns its grace
     // period, so a follow-up send may need a fresh driver on the same agent.
     const sendFollowUp = async (text) => {
