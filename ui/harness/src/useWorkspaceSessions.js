@@ -9,11 +9,12 @@ const sameSessionRow = (a, b) => a.updatedAt === b.updatedAt
 
 // Sessions for the active workspace plus rename, archive, and pin actions.
 // `leaveSession` runs when the active session gets hidden by archiving.
-const useWorkspaceSessions = (activeWorkspaceId, activeId, leaveSession) => {
+const useWorkspaceSessions = (activeWorkspaceId, activeId, leaveSession, searchingSessionId = false) => {
   const [sessions, setSessions] = useState([])
   const [sessionsReadyFor, setSessionsReadyFor] = useState(null)
   const [sessionsHaveArchived, setSessionsHaveArchived] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
+  const includeArchived = showArchived || searchingSessionId
   const [archiveBusy, setArchiveBusy] = useState(false)
   const [archiveError, setArchiveError] = useState(null)
   const [pinBusy, setPinBusy] = useState(false)
@@ -29,7 +30,7 @@ const useWorkspaceSessions = (activeWorkspaceId, activeId, leaveSession) => {
     const workspaceId = activeWorkspaceId
     const request = ++sessionsRequest.current
     api
-      .listSessions(workspaceId, showArchived)
+      .listSessions(workspaceId, includeArchived)
       .then(({ sessions: list }) => {
         if (request !== sessionsRequest.current) return
         setSessions(prev => {
@@ -39,7 +40,7 @@ const useWorkspaceSessions = (activeWorkspaceId, activeId, leaveSession) => {
             return old && sameSessionRow(old, item) ? old : item
           })
         })
-        setSessionsHaveArchived(showArchived)
+        setSessionsHaveArchived(includeArchived)
         setSessionsReadyFor(workspaceId)
       })
       .catch(() => {
@@ -47,7 +48,7 @@ const useWorkspaceSessions = (activeWorkspaceId, activeId, leaveSession) => {
         setSessions([])
         setSessionsReadyFor(null)
       })
-  }, [activeWorkspaceId, showArchived])
+  }, [activeWorkspaceId, includeArchived])
 
   useEffect(() => {
     loadSessions()

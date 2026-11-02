@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef } from 'react'
 import {
   Badge,
   Popup,
@@ -20,6 +20,8 @@ const SessionsSidebar = ({
   workspace,
   providers,
   sessions = [],
+  searchQuery = '',
+  onSearchQueryChange,
   activeId,
   onSelectWorkspace,
   onSelect,
@@ -44,7 +46,6 @@ const SessionsSidebar = ({
   onTranscriptFontSize,
   settingsError = '',
 }) => {
-  const [searchQuery, setSearchQuery] = useState('')
   const { filteredSessions, shownSessions, hiddenArchived, sessionsToArchive, showMoreArchived } = useSidebarSessions({
     sessions,
     searchQuery,
@@ -111,7 +112,7 @@ const SessionsSidebar = ({
           <DevScope id="a9f4k8s" state={{ search: Boolean(searchQuery) }}>
             <div className="sidebar__search-row">
               <FormSearch
-                field={{ value: searchQuery, onChange: (e) => setSearchQuery(e.target.value) }}
+                field={{ value: searchQuery, onChange: (e) => onSearchQueryChange(e.target.value) }}
                 placeholder="Search sessions…"
               />
             </div>

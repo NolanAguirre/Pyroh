@@ -14,12 +14,14 @@ const useSidebarSessions = ({ sessions, searchQuery, showArchived, workspaceId }
 
   const filteredSessions = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
+    const searchingSessionId = query.startsWith('s_')
     const matched = query
       ? sessions.filter((s) => {
         const name = (s.name || '').toLowerCase()
         const provider = (s.provider || '').toLowerCase()
         const model = (s.model || '').toLowerCase()
         const id = (s.id || '').toLowerCase()
+        if (searchingSessionId) return id.includes(query)
         return name.includes(query) || provider.includes(query) || model.includes(query) || id.includes(query)
       })
       : sessions

@@ -37,6 +37,8 @@ const App = () => {
   const showChat = () => setMobilePane(MOBILE_CHAT)
   const [providers, setProviders] = useState([])
   const [jobsCollapsed, setJobsCollapsed] = useState(false)
+  const [sessionSearchQuery, setSessionSearchQuery] = useState('')
+  const searchingSessionId = sessionSearchQuery.trim().toLowerCase().startsWith('s_')
 
   const go = useCallback((workspaceId, sessionId, { replace = false, view: nextView, file: nextFile, term: nextTerm } = {}) => {
     const workspaceChanged = workspaceId !== activeWorkspaceId
@@ -84,7 +86,7 @@ const App = () => {
     archiveSession,
     archiveOlderSessions,
     pinSession,
-  } = useWorkspaceSessions(activeWorkspaceId, activeId, leaveSession)
+  } = useWorkspaceSessions(activeWorkspaceId, activeId, leaveSession, searchingSessionId)
   const registry = useRegistry(activeWorkspaceId)
   const { runningJobs, loadRunningJobs } = useRunningJobs()
 
@@ -189,7 +191,9 @@ const App = () => {
       devId="hr5r1c6"
       workspaces={workspaces}
       workspace={workspace}
-      sessions={workspaceSessions.filter(session => showArchived || !session.archived)}
+      sessions={workspaceSessions.filter(session => searchingSessionId || showArchived || !session.archived)}
+      searchQuery={sessionSearchQuery}
+      onSearchQueryChange={setSessionSearchQuery}
       showArchived={showArchived}
       onShowArchived={(value) => {
         setShowArchived(value)
