@@ -19,8 +19,8 @@
 //     `cancel()` cancels the in-flight run. `wait()` resolves the terminal result:
 //       { status, result, usage, durationMs, error }
 //     `mode` is one of modes.AGENT_MODES. Each driver maps it to the provider's
-//     native mode or emulates it. Ask is enforced: drivers auto-deny approval
-//     requests for anything not read-only, and inject modes.askPrompt().
+//     native mode or emulates it through the provider mode registry. Ask
+//     restrictions depend on the provider; Codex permits shell reads by prompt.
 //     `terse` prefixes modes.tersePrompt(). The caller sets it on the first prompt
 //     of an execute, ask, plan, or token-waste session.
 //   listModels() -> Promise<Array<{ id, displayName? }>>

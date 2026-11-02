@@ -43,7 +43,7 @@ const TEMPLATES = [
     activation: { kind: 'Mode condition', condition: 'Every turn using the ask base mode.' },
     name: 'Ask base',
     group: 'flags',
-    description: 'Prepended to every turn in ask mode. Explains why write approvals are denied.',
+    description: 'Prepended to every ask turn. Provider versions explain available read tools and no-change limits.',
     usedBy: ['agents/modes.js composePrompt'],
     vars: [],
     template: 'This is a question, do not change code, do not run commands that will change things, only explore what is required to answer the question.',

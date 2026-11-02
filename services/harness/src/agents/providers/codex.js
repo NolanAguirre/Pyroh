@@ -5,6 +5,7 @@ const config = require('../../config')
 const { createTransport } = require('./codexTransport')
 const { normalizeCodexOptions } = require('./codexOptions')
 const { composePrompt } = require('../modes')
+const { providerMode } = require('../providerModes')
 const prompts = require('../../prompts')
 
 // The live catalog can lag a launch. Keep GPT 6.1 Sol selectable until model/list returns it.
@@ -24,10 +25,7 @@ const GPT_61_SOL = {
 
 const sandboxTypes = { 'read-only': 'readOnly', 'workspace-write': 'workspaceWrite', 'danger-full-access': 'dangerFullAccess' }
 const approvalTypes = { 'on-request': 'on-request', never: 'never', untrusted: 'untrusted' }
-const readOnlyModes = ['ask']
-// Ask enforces read-only approvals. Native plan mode keeps the configured
-// approval policy so repository inspection is not automatically declined.
-const approvalFor = (mode, configured) => approvalTypes[readOnlyModes.includes(mode) ? 'untrusted' : configured]
+const approvalFor = (mode, configured) => approvalTypes[providerMode('codex', mode).approvalPolicy || configured]
 const ASK_TOOL_NAME = 'harness_ask_user'
 const askTool = () => ({
   name: ASK_TOOL_NAME,
@@ -203,9 +201,15 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
       const value = await ask(input, signal)
       return { success: true, contentItems: [{ type: 'inputText', text: typeof value === 'string' ? value : JSON.stringify(value) }] }
     }
-    const readOnly = tools.restrictedChild || readOnlyModes.includes(active?.mode)
+    const policy = providerMode('codex', active?.mode)
+    const readOnly = tools.restrictedChild || policy.tools.permissions === 'deny'
     if (method === 'item/commandExecution/requestApproval' || method === 'item/fileChange/requestApproval') {
-      if (readOnly) return { decision: 'decline' }
+      const command = method === 'item/commandExecution/requestApproval'
+      // Codex uses commandExecution for reads too. Ask relies on its prompt
+      // for command intent; restricted children still retain their sandbox.
+      const action = command ? policy.tools.commands : policy.tools.fileChanges
+      if (action === 'allow') return { decision: !params.availableDecisions || params.availableDecisions.includes('accept') ? 'accept' : 'decline' }
+      if (tools.restrictedChild || action === 'deny') return { decision: 'decline' }
       const choices = (params.availableDecisions || ['accept', 'decline', 'cancel'])
         .filter((value) => typeof value === 'string' && ['accept', 'acceptForSession', 'decline', 'cancel'].includes(value))
       const labels = { accept: 'Allow once', acceptForSession: 'Allow for session', decline: 'Decline', cancel: 'Cancel turn' }
@@ -321,7 +325,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     threadOptions = settings
     cumulativeUsage = null
     const params = { model, cwd: settings.cwd,
-      sandbox: tools.restrictedChild ? 'read-only' : options.sandbox,
+      sandbox: tools.restrictedChild ? 'read-only' : providerMode('codex', settings.mode).sandbox || options.sandbox,
       approvalPolicy: approvalFor(settings.mode, options.approvalPolicy),
       approvalsReviewer: 'user',
       config: {
@@ -342,9 +346,9 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
       active = { id: null, emit: onEvent || (() => {}), resolve, mode, startedAt: Date.now(), done: false,
         messages: new Map(), items: new Map(), plan: '', usage: null, baseline: cumulativeUsage }
     })
-    const sandbox = tools.restrictedChild ? 'read-only' : options.sandbox
-    // Codex has no ask collaboration mode. Ask uses the default mode with enforced
-    // read-only approvals, plus an instruction explaining the denials.
+    const policy = providerMode('codex', mode)
+    const sandbox = tools.restrictedChild ? 'read-only' : policy.sandbox || options.sandbox
+    // Ask keeps shell reads available and injects the provider's no-change prompt.
     const text = composePrompt(prompt, { mode, terse, instructions, provider: 'codex' })
     for (const message of diagnostics) emit({ type: 'status', status: `Codex diagnostic: ${message}` })
     try {
@@ -356,7 +360,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
         sandboxPolicy: sandbox === 'workspace-write'
           ? { type: 'workspaceWrite', writableRoots: [threadOptions.cwd], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false }
           : { type: sandboxTypes[sandbox] },
-        collaborationMode: { mode: mode === 'plan' ? 'plan' : 'default', settings: {
+        collaborationMode: { mode: policy.nativeMode, settings: {
           model: selectedModel, reasoning_effort: selectedEffort, developer_instructions: null,
         } },
         ...(outputSchema ? { outputSchema } : {}),

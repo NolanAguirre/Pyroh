@@ -1,5 +1,6 @@
 const { formatError } = require('../store/formatError')
 const builtins = require('./builtins')
+const { describeProviderModes } = require('../agents/providerModes')
 const { describeFlags } = require('./flags')
 const { modeDefaults, normalizeMode } = require('./schema')
 const { loadPlugins } = require('./sources')
@@ -137,7 +138,8 @@ const decide = (resolved, { kind, id, mode, provider }) => {
 }
 
 const withDecision = (resolved, kind, provider) => (entry) =>
-  ({ ...entry, decision: decide(resolved, { kind, id: entry.id, provider }) })
+  ({ ...entry, ...(kind === 'mode' ? { providerModes: describeProviderModes(entry.base, provider) } : {}),
+    decision: decide(resolved, { kind, id: entry.id, provider }) })
 
 const findMode = (workspace, id, { harness, provider } = {}) => {
   const resolved = resolve(workspace, { harness })

@@ -67,6 +67,39 @@
   font-size: 12px;
 }
 
+.registry__mode-providers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 240px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.registry__mode-provider + .registry__mode-provider {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.registry__mode-provider p {
+  margin: 4px 0;
+}
+
+.registry__mode-provider dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 8px;
+  margin: 4px 0 0;
+}
+
+.registry__mode-provider dt {
+  color: var(--text-dim);
+}
+
+.registry__mode-provider dd {
+  margin: 0;
+}
+
 .registry__decision {
   display: inline-flex;
   align-items: center;
