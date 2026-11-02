@@ -194,9 +194,10 @@ const continueInNewChat = (sourceSessionId, prompt, target) => {
   const workspaceId = source.workspaceId || workspaceStore.findWorkspaceByCwd(source.cwd, config.writeDir)?.id
   const next = resolveNewChatTarget(source, target)
   const created = createSession({ workspaceId, ...spawnSessionFields(source, next) })
-  const mode = target?.mode || 'agent'
+  const { mode } = next
+  const { autoName } = registry.requireMode(registry.sessionWorkspace(source), mode, { provider: next.provider })
   const session = sessionStore.updateSession(created.id, { sourceSessionId, mode }, config.writeDir)
-  const run = spawnRun(session.id, mode === 'plan' ? 'plan' : 'run', { mode, prompt })
+  const run = spawnRun(session.id, mode === 'plan' ? 'plan' : 'run', { mode, prompt, autoName })
   return { session, run }
 }
 
