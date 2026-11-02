@@ -73,7 +73,7 @@ const resolveNewChatTarget = (source, target = {}) => {
   return { provider, model, mode }
 }
 
-const spawnRun = (sessionId, action, { mode, prompt, autoName = false, handoff, plugin, onPrepared, allowQueued = false }) => {
+const spawnRun = (sessionId, action, { mode, prompt, autoName = false, handoff, plugin, onPrepared, allowQueued = false, delegationDelivery }) => {
   const owned = !sessionLock.holds(sessionId, config.writeDir)
   const lock = sessionLock.acquire(sessionId, config.writeDir)
   const stopped = () => Object.assign(new Error('stopped'), { code: 'stopped' })
@@ -90,7 +90,7 @@ const spawnRun = (sessionId, action, { mode, prompt, autoName = false, handoff, 
       sessionStore.listRuns(sessionId, config.writeDir).length === 0
     require('fs').rmSync(paths.controlFile(sessionId, config.writeDir), { force: true })
     if (allowQueued && runAfter.cancelled(sessionId)) throw stopped()
-    const run = sessionStore.createRun(sessionId, { mode, prompt, handoff, plugin })
+    const run = sessionStore.createRun(sessionId, { mode, prompt, handoff, plugin, delegationDelivery }, config.writeDir)
     onPrepared?.(run)
     sessionStore.updateSession(sessionId, { status: 'running' }, config.writeDir)
     if (allowQueued && runAfter.cancelled(sessionId)) throw stopped()

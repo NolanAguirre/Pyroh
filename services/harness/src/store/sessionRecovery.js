@@ -57,7 +57,7 @@ const recoverSession = (sessionId, writeDir, { excludeRunId } = {}) => {
         transcriptStatus: 'incomplete', error: message })
       rememberError(message, record, endedAt)
     }
-    if (readJson(file)?.endedAt) require('../harness/delegation').stopChildren(sessionId, record.id)
+    if (readJson(file)?.endedAt) require('../harness/delegation').closeRun(sessionId, record.id)
     runIndexStore.recordRun(readJson(file), session, writeDir, file)
   }
   const patch = {}

@@ -145,7 +145,7 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
     if (exiting) return
     exiting = true
     clearInterval(parentWatch)
-    try { require('./delegation').stopChildren(sessionId, runId) }
+    try { require('./delegation').closeRun(sessionId, runId) }
     catch (err) { logLine(`child cleanup failed: ${formatError(err)}`) }
     try {
       sessionStore.updateRun(sessionId, runId, { endedAt: Date.now(), ...patch }, writeDir)
@@ -194,7 +194,7 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
   if (readControlIntent(sessionId, writeDir)) onSignal().catch(err => fail(err, 'stop failed', 2))
   if (session.parentRunId) {
     const checkParent = () => {
-      if (!require('./delegation').parentActive(session.parentSessionId, session.parentRunId)) {
+      if (!require('./delegation').parentAllowed(session.parentSessionId, session.parentRunId)) {
         writeJson(paths.controlFile(sessionId, writeDir), { intent: 'stop', at: Date.now() })
         onSignal().catch(err => fail(err, 'parent cleanup failed', 2))
       }

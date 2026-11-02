@@ -4,16 +4,16 @@ const delegation = require('../harness/delegation')
 const childProperties = { sessionId: { type: 'string' }, runId: { type: 'string' } }
 const childSchema = { type: 'object', properties: childProperties, required: ['sessionId', 'runId'], additionalProperties: false }
 const tools = [
-  { name: 'spawn', description: 'Delegate a task in the shared project directory. Assign separate file ownership. Choose a model; the provider is selected automatically. Recommend grok-4.7 for exploration and inherit for implementation. Defaults to the parent model and base mode. At most four active children; no nested delegation. Retry the same task with the same retryKey.', inputSchema: {
+  { name: 'spawn', description: 'Delegate a task in the shared project directory. Assign separate file ownership. Choose a model; the provider is selected automatically. Recommend grok-4.7 for exploration and inherit for implementation. Defaults to the parent model and base mode. At most four active children; no nested delegation. Retry the same task with the same retryKey. You may end your turn while children run; completed results automatically start a parent follow-up when it is idle. Use status or wait when you need a result now.', inputSchema: {
     type: 'object', properties: { task: { type: 'string' }, retryKey: { type: 'string', minLength: 1, maxLength: 256 },
       model: { type: 'string', description: 'Model ID, or inherit (default) to use the parent model and settings. Recommended: grok-4.7 for exploration; inherit for implementation.' }, mode: { type: 'string', enum: ['agent', 'plan', 'ask'] } },
     required: ['task', 'retryKey'], additionalProperties: false,
   } },
-  { name: 'status', description: 'Get an owned child state, pending user questions, and errors.', inputSchema: childSchema },
+  { name: 'status', description: 'Get a child state, pending user questions, and errors, including children from earlier turns in this session.', inputSchema: childSchema },
   { name: 'wait', description: 'Wait up to 20 seconds for a child final response. Timeouts and disconnects do not cancel the child. Finished results can be read repeatedly.', inputSchema: {
     ...childSchema, properties: { ...childProperties, seconds: { type: 'number', minimum: 0, maximum: 20 } },
   } },
-  { name: 'stop', description: 'Cancel an owned child.', inputSchema: childSchema },
+  { name: 'stop', description: 'Cancel a child owned by this session, including one started in an earlier turn.', inputSchema: childSchema },
 ]
 const router = express.Router()
 router.use('/:token', (req, res, next) => {

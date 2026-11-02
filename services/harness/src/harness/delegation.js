@@ -109,12 +109,12 @@ const describe = (child) => {
   }
   const session = child.sessionId && store.loadSession(child.sessionId, config.writeDir)
   const run = child.runId && store.loadRun(child.sessionId, child.runId, config.writeDir)
-  const done = Boolean(run?.endedAt || child.error)
+  const done = Boolean(run?.endedAt || child.error || child.cancelRequestedAt)
   return {
     sessionId: child.sessionId || null, runId: child.runId || null,
     workspaceId: session?.workspaceId, parentRunId: session?.parentRunId,
     transcriptLink: session ? `/?workspace=${encodeURIComponent(session.workspaceId)}&session=${encodeURIComponent(session.id)}` : null,
-    state: child.error ? 'error' : done ? run.status : session?.status === 'awaiting_input' ? 'awaiting_input' : run?.status || 'starting',
+    state: child.cancelRequestedAt ? 'cancelled' : child.error ? 'error' : done ? run.status : session?.status === 'awaiting_input' ? 'awaiting_input' : run?.status || 'starting',
     done, provider: session?.provider, model: session?.model, mode: run?.mode,
     pendingQuestions: session ? questions.listQuestions(session.id, config.writeDir).filter(q => q.runId === child.runId && q.status === 'pending') : [],
     error: child.error || run?.error || null,
@@ -122,7 +122,7 @@ const describe = (child) => {
     ...(session?.provider === 'grok' ? { warning: 'Native spawning cannot be fully blocked by Grok; the child is instructed not to spawn.' } : {}),
     usage: run?.usage ?? null, normalizedUsage: store.normalizeUsage(run?.usage, session?.provider),
     durationMs: run?.durationMs || (run ? Math.max(0, (run.endedAt || Date.now()) - run.startedAt) : 0),
-    ...(done ? { finalResponse: run?.result ?? null } : {}),
+    ...(done ? { finalResponse: child.cancelRequestedAt ? null : run?.result ?? null } : {}),
   }
 }
 
@@ -148,7 +148,7 @@ const spawn = (context, args) => withLock(context.sessionId, context.runId, (fil
   if (Object.values(state.children).filter(child => !describe(child).done).length >= 4) fail('Child limit reached: at most four active children per parent run')
   const parent = store.loadSession(context.sessionId, config.writeDir)
   const target = targetFor(parent, state, args)
-  const child = { requestHash, createdAt: Date.now() }
+  const child = { requestHash, task: args.task, parentSessionId: parent.id, parentRunId: context.runId, resultId: `${context.runId}:${key}`, createdAt: Date.now() }
   state.children[key] = child
   // Reserve the key durably before creating a session or launching any worker.
   writeJson(file, state)
@@ -170,38 +170,85 @@ const spawn = (context, args) => withLock(context.sessionId, context.runId, (fil
   return describe(child)
 })
 
+const statesFor = (sessionId) => store.listRuns(sessionId, config.writeDir).map(run => ({
+  runId: run.id, state: readJson(fileFor(sessionId, run.id)),
+})).filter(item => item.state)
+
 const ownedChild = (context, args) => {
-  const state = stateFor(context)
-  const child = Object.values(state.children).find(item => item.sessionId === args.sessionId && item.runId === args.runId)
-  if (!child || !child.sessionId || !child.runId) fail('Child does not belong to this parent run')
+  stateFor(context)
+  const child = statesFor(context.sessionId).flatMap(({ state }) => Object.values(state.children || {}))
+    .find(item => item.sessionId === args.sessionId && item.runId === args.runId)
+  if (!child || !child.sessionId || !child.runId) fail('Child does not belong to this parent session')
   return child
 }
 const status = (context, args) => describe(ownedChild(context, args))
+const cancelChild = (sessionId) => {
+  const session = store.loadSession(sessionId, config.writeDir)
+  if (!session?.parentRunId) return
+  withLock(session.parentSessionId, session.parentRunId, (file) => {
+    const state = readJson(file)
+    if (!state) return
+    for (const child of Object.values(state.children || {})) {
+      if (child.sessionId === sessionId && !child.result && !describe(child).done) child.cancelRequestedAt = Date.now()
+    }
+    writeJson(file, state)
+  })
+}
 const stop = (context, args) => {
   const child = ownedChild(context, args)
-  if (!describe(child).done) require('./Harness').stop(child.sessionId)
-  return describe(child)
-}
-const wait = async (context, args) => {
-  const seconds = args.seconds === undefined ? 20 : args.seconds
-  if (!Number.isFinite(seconds) || seconds < 0 || seconds > 20) fail('seconds must be between 0 and 20')
-  const deadline = Date.now() + seconds * 1000
-  while (true) {
-    const result = status(context, args)
-    if (result.done || Date.now() >= deadline) return result
-    await new Promise(resolve => setTimeout(resolve, Math.min(250, deadline - Date.now())))
+  if (!describe(child).done) {
+    cancelChild(child.sessionId)
+    require('./Harness').stop(child.sessionId)
   }
+  return status(context, args)
+}
+// Waiting is a snapshot: automatic delivery resumes the parent when results arrive.
+const wait = async (context, args) => {
+  if (args.seconds !== undefined && (!Number.isFinite(args.seconds) || args.seconds < 0 || args.seconds > 20)) fail('seconds must be between 0 and 20')
+  return status(context, args)
 }
 
-const stopChildren = (sessionId, runId) => {
+const closeState = (state) => {
+  if (state.credentialHash) fs.rmSync(credentialFile(state.credentialHash), { force: true })
+  state.closed = true
+  state.closedAt ||= Date.now()
+}
+const closeRun = (sessionId, runId) => {
   if (!fs.existsSync(fileFor(sessionId, runId))) return
   withLock(sessionId, runId, (file) => {
     const state = readJson(file)
     if (!state) return
-    writeJson(file, { ...state, closed: true })
-    for (const child of Object.values(state.children)) {
-      if (child.sessionId && !describe(child).done) require('./Harness').stop(child.sessionId)
-    }
+    closeState(state)
+    writeJson(file, state)
+  })
+}
+const parentAllowed = (sessionId, runId) => {
+  const parent = store.loadSession(sessionId, config.writeDir)
+  const state = readJson(fileFor(sessionId, runId))
+  return Boolean(parent && !parent.parentRunId && state && !state.cancelledAt && store.loadRun(sessionId, runId, config.writeDir))
+}
+
+const stopChildren = (sessionId, runId) => {
+  if (!fs.existsSync(fileFor(sessionId, runId))) return
+  // The scheduler uses this same lock, so stop cannot race a new delivery batch.
+  withLock(sessionId, 'delivery', () => {
+    const sessions = []
+    withLock(sessionId, runId, (file) => {
+      const state = readJson(file)
+      if (!state) return
+      closeState(state)
+      state.cancelledAt ||= Date.now()
+      for (const child of Object.values(state.children || {})) {
+        child.delivery = { ...child.delivery, status: 'suppressed', suppressedAt: Date.now() }
+        if (!describe(child).done) {
+          child.cancelRequestedAt ||= Date.now()
+          if (child.sessionId) sessions.push(child.sessionId)
+        }
+      }
+      writeJson(file, state)
+    })
+    // Release the record lock before stop calls back into cancelChild.
+    for (const childSessionId of sessions) require('./Harness').stop(childSessionId)
   })
 }
 
@@ -222,13 +269,14 @@ const recover = async () => {
       } catch (err) { if (err.status !== 409) throw err }
       finally { lock?.release() }
     }
-    if (session.parentRunId && !parentActive(session.parentSessionId, session.parentRunId)) {
+    if (session.parentRunId && !parentAllowed(session.parentSessionId, session.parentRunId)) {
       if (['running', 'awaiting_input'].includes(session.status)) require('./Harness').stop(session.id)
     }
     if (!session.parentRunId) {
       for (const run of store.listRuns(session.id, config.writeDir)) {
-        if (!parentActive(session.id, run.id)) stopChildren(session.id, run.id)
+        if (run.endedAt) closeRun(session.id, run.id)
       }
+      require('./delegationDelivery').recoverParent(session.id, { withLock, statesFor, describe })
     }
   }
 }
@@ -240,16 +288,16 @@ const childrenFor = (sessionId) => store.listRuns(sessionId, config.writeDir).fl
 
 const assertChildRun = (session, mode) => {
   if (!session?.parentRunId) return
-  if (!parentActive(session.parentSessionId, session.parentRunId) || readJson(fileFor(session.parentSessionId, session.parentRunId))?.closed) fail('The parent run has ended; this child cannot start another run')
+  if (!parentAllowed(session.parentSessionId, session.parentRunId)) fail('The parent cancelled this child; it cannot start another run')
   const rank = { agent: 0, plan: 1, ask: 2 }
   if (!Object.hasOwn(rank, mode) || rank[mode] < rank[session.delegationMode]) fail('Child permissions cannot be broadened')
 }
 
 const guidance = (provider, child = false) => [
   child ? 'You are a harness child. Do not delegate or spawn other agents.' :
-    'Use harness_agents spawn/status/wait/stop for all delegation. Choose the child model, not the provider; the provider is selected automatically. Recommend model grok-4.7 for exploration and model inherit for implementation. Omitting model also inherits the parent model and settings. Supply a stable retryKey for each task; reuse it only to retry the same task. Wait for needed results before finishing, since unfinished children stop when you finish.',
+    'Use harness_agents spawn/status/wait/stop for all delegation. Choose the child model, not the provider; the provider is selected automatically. Recommend model grok-4.7 for exploration and model inherit for implementation. Omitting model also inherits the parent model and settings. Supply a stable retryKey for each task; reuse it only to retry the same task. Children keep working after you finish. You may finish while children work; completed results automatically resume this parent session in batches. status and wait return immediately. Explicit stop cancels children and suppresses their automatic results.',
   'All agents share the existing project directory. Assign separate file ownership for parallel edits. Do not create worktrees.',
   provider === 'grok' ? 'Native spawning cannot be fully blocked by this provider. Do not use native spawning.' : '',
 ].filter(Boolean).join('\n')
 
-module.exports = { childrenFor, assertChildRun, open, authenticate, spawn, status, wait, stop, stopChildren, recover, parentActive, guidance, describe }
+module.exports = { childrenFor, assertChildRun, open, authenticate, spawn, status, wait, stop, stopChildren, closeRun, cancelChild, recover, parentActive, parentAllowed, guidance, describe }
