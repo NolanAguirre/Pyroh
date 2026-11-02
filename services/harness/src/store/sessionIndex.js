@@ -57,7 +57,9 @@ const open = () => {
   if (data.db) return data.db
   const db = new DatabaseSync(config.dbPath)
   try {
-    db.exec('PRAGMA busy_timeout = 5000')
+    // This is a rebuildable mirror. API writes must not freeze requests while
+    // another process holds the writer lock; reconciliation repairs a miss.
+    db.exec(`PRAGMA busy_timeout = ${process.env.HARNESS_MAINTENANCE_WORKER === '1' ? 1000 : 50}`)
     db.exec('PRAGMA journal_mode = WAL')
     db.exec('PRAGMA foreign_keys = ON')
     const table = db.prepare("SELECT 1 FROM main.sqlite_master WHERE type = 'table' AND name = 'session'").get()
@@ -102,11 +104,18 @@ const writeRow = (session, mtimeMs, workspaceId) => {
 // Never throws: a failed index write must not break the caller's file write.
 const upsert = (session, mtimeMs, writeDir = config.writeDir) => {
   try {
-    open()
+    const db = open()
     const workspaceId = paths.locateSession(session.id, writeDir)?.workspaceId ||
       session.workspaceId ||
       ownerByCwd(session, workspaceStore.listWorkspaces(writeDir))
-    writeRow(session, mtimeMs, workspaceId)
+    db.exec('BEGIN IMMEDIATE')
+    try {
+      writeRow(session, mtimeMs, workspaceId)
+      db.exec('COMMIT')
+    } catch (err) {
+      db.exec('ROLLBACK')
+      throw err
+    }
   } catch (err) {
     report(err)
   }
@@ -121,7 +130,7 @@ const listRow = (session) => {
   return row
 }
 
-const query = ({ workspaceId, includeArchived = false, active, orderBy = 'createdAt', order = 'desc', limit, fields } = {}) => {
+const query = ({ workspaceId, includeArchived = false, active, statuses, provider, updatedSince, orderBy = 'createdAt', order = 'desc', limit, fields } = {}) => {
   const db = open()
   const where = []
   const params = {}
@@ -130,6 +139,21 @@ const query = ({ workspaceId, includeArchived = false, active, orderBy = 'create
     params.workspaceId = workspaceId
   }
   if (!includeArchived) where.push('archived = 0')
+  if (statuses) {
+    if (!statuses.length) return []
+    where.push(`status IN (${statuses.map((status, index) => {
+      params[`status${index}`] = status
+      return `:status${index}`
+    }).join(', ')})`)
+  }
+  if (provider) {
+    where.push('provider = :provider')
+    params.provider = provider
+  }
+  if (updatedSince !== undefined) {
+    where.push('updated_at >= :updatedSince')
+    params.updatedSince = updatedSince
+  }
   const busy = BUSY.map((status) => `'${status}'`).join(', ')
   if (active === true) where.push(`status IN (${busy})`)
   if (active === false) where.push(`COALESCE(status, '') NOT IN (${busy})`)
@@ -199,36 +223,46 @@ const readChanged = async (source) => {
   }
 }
 
+const inBatches = async (items, visit, size = 32) => {
+  const results = []
+  for (let at = 0; at < items.length; at += size) {
+    results.push(...await Promise.all(items.slice(at, at + size).map(visit)))
+  }
+  return results
+}
+
 // Rows are read before the directory walk so sessions created mid-walk are never deleted.
 const reconcileOnce = async (writeDir, force) => {
   const db = open()
   const rows = new Map(data.statements.mtimes.all().map((row) => [row.session_id, row.source_mtime_ms]))
   const workspaces = await workspaceStore.listWorkspacesAsync(writeDir)
   const sources = await listSources(writeDir, workspaces)
-  const present = (await Promise.all(sources.map(async (source) => ({ ...source, mtimeMs: await statMtime(source.file) }))))
+  const present = (await inBatches(sources, async (source) => ({ ...source, mtimeMs: await statMtime(source.file) })))
     .filter((source) => source.mtimeMs !== null)
-  const changed = (await Promise.all(present
-    .filter((source) => force || rows.get(source.id) !== source.mtimeMs)
-    .map(readChanged)))
+  const changed = (await inBatches(present
+    .filter((source) => force || rows.get(source.id) !== source.mtimeMs), readChanged))
     .filter(Boolean)
   const keep = new Set(present.map((source) => source.id))
-  let removed = 0
-  db.exec('BEGIN IMMEDIATE')
-  try {
-    for (const { source, session } of changed) {
-      writeRow(session, source.mtimeMs, source.workspaceId || session.workspaceId || ownerByCwd(session, workspaces))
+  const removed = [...rows.keys()].filter(id => !keep.has(id))
+  const changes = [
+    ...changed.map(({ source, session }) => () => writeRow(session, source.mtimeMs,
+      source.workspaceId || session.workspaceId || ownerByCwd(session, workspaces))),
+    ...removed.map(id => () => data.statements.remove.run(id)),
+  ]
+  // Short transactions allow API writes between batches; an unchanged sweep
+  // never takes the SQLite writer lock.
+  for (let at = 0; at < changes.length; at += 64) {
+    db.exec('BEGIN IMMEDIATE')
+    try {
+      for (const change of changes.slice(at, at + 64)) change()
+      db.exec('COMMIT')
+    } catch (err) {
+      db.exec('ROLLBACK')
+      throw err
     }
-    for (const id of rows.keys()) {
-      if (keep.has(id)) continue
-      data.statements.remove.run(id)
-      removed += 1
-    }
-    db.exec('COMMIT')
-  } catch (err) {
-    db.exec('ROLLBACK')
-    throw err
+    await new Promise(resolve => setImmediate(resolve))
   }
-  return { indexed: changed.length, removed, total: present.length }
+  return { indexed: changed.length, removed: removed.length, total: present.length }
 }
 
 const reconcile = (writeDir = config.writeDir, { force = false } = {}) => {
@@ -241,9 +275,17 @@ const reconcile = (writeDir = config.writeDir, { force = false } = {}) => {
 
 const whenReady = () => data.ready || Promise.resolve()
 
+// Existing installations can serve their saved index immediately. A genuinely
+// empty index must finish its first seed before the UI decides a chat is gone.
+const waitForInitialSeed = (ready) => {
+  if (open().prepare('SELECT 1 FROM main.session LIMIT 1').get()) return
+  data.ready = ready
+}
+
 module.exports = {
   upsert,
   query,
   reconcile,
   whenReady,
+  waitForInitialSeed,
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import api from './api'
 
 const JOB_LIST_LIMIT = 20
@@ -8,9 +8,11 @@ export const ACTIVE_JOB = (session) => session.status === 'running' || session.s
 // Active jobs across all workspaces, filled up with recent chats.
 const useRunningJobs = () => {
   const [runningJobs, setRunningJobs] = useState([])
+  const inFlight = useRef(null)
 
   const loadRunningJobs = useCallback(() => {
-    api
+    if (inFlight.current) return inFlight.current
+    inFlight.current = api
       .listSessions(null, false, { orderBy: 'createdAt', order: 'desc', active: true, limit: JOB_LIST_LIMIT })
       .then(async ({ sessions: activeJobs }) => {
         if (activeJobs.length >= JOB_LIST_LIMIT) {
@@ -25,6 +27,8 @@ const useRunningJobs = () => {
         setRunningJobs([...activeJobs, ...recentChats.filter(job => !activeIds.has(job.id))].sort(byRecent))
       })
       .catch(() => {})
+      .finally(() => { inFlight.current = null })
+    return inFlight.current
   }, [])
 
   useEffect(() => {

@@ -370,11 +370,10 @@ const status = async (sessionId) => {
   return { session, runs, questions, daemonPid: pid, daemonAlive: proc.isAlive(pid) }
 }
 
-// Busy rows are recovered first so their write-through updates are visible to the filtered query.
+// Lists read the persisted index immediately. The maintenance process repairs
+// interrupted runs and reconciles file changes independently of page loads.
 const list = async (workspaceId, { includeArchived = false, orderBy = 'createdAt', order = 'desc', limit, active, fields } = {}) => {
   await sessionIndex.whenReady()
-  const busy = sessionIndex.query({ workspaceId, includeArchived, active: true })
-  await Promise.all(busy.map(async session => recoverDeadDaemon(session, await daemonPidOfAsync(session.id))))
   const workspaces = new Map((await workspaceStore.listWorkspacesAsync(config.writeDir))
     .map(workspace => [workspace.id, workspace]))
   return sessionIndex.query({ workspaceId, includeArchived, active, orderBy, order, limit, fields })

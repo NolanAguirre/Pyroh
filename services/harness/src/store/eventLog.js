@@ -13,21 +13,23 @@ const append = (sessionId, event, writeDir) => {
 }
 
 const parseChunk = (buf, offset) => {
-  const text = buf.toString('utf8')
-  const lines = text.split('\n')
-  // The last element is either '' (clean end) or a partial line.
-  const trailing = lines.pop()
-  const consumed = buf.length - Buffer.byteLength(trailing, 'utf8')
   const events = []
-  for (const line of lines) {
+  const offsets = []
+  let consumed = 0
+  let newline
+  // Find boundaries in bytes so a partial UTF-8 character cannot move the cursor.
+  while ((newline = buf.indexOf(10, consumed)) !== -1) {
+    const line = buf.subarray(consumed, newline).toString('utf8')
+    consumed = newline + 1
     if (!line) continue
     try {
       events.push(JSON.parse(line))
+      offsets.push(offset + consumed)
     } catch {
       // skip malformed line
     }
   }
-  return { events, offset: offset + consumed }
+  return { events, offsets, offset: offset + consumed }
 }
 
 // Read events starting from a byte offset. Returns parsed events, the new byte
@@ -54,7 +56,7 @@ const readFrom = (sessionId, offset = 0, writeDir) => {
   }
 }
 
-const readFromAsync = async (sessionId, offset = 0, writeDir) => {
+const readFromAsync = async (sessionId, offset = 0, writeDir, { maxBytes = Infinity, end = Infinity } = {}) => {
   let handle
   try {
     handle = await fs.promises.open(paths.eventsFile(sessionId, writeDir), 'r')
@@ -63,11 +65,21 @@ const readFromAsync = async (sessionId, offset = 0, writeDir) => {
     throw err
   }
   try {
-    const { size } = await handle.stat()
+    const size = Math.min((await handle.stat()).size, end)
     if (offset >= size) return { events: [], offset }
-    const buf = Buffer.alloc(size - offset)
-    const { bytesRead } = await handle.read(buf, 0, buf.length, offset)
-    return parseChunk(buf.subarray(0, bytesRead), offset)
+    const chunks = []
+    let bytes = 0
+    // A single large event must remain intact, but ordinary replay reads are bounded.
+    while (offset + bytes < size) {
+      const buf = Buffer.alloc(Math.min(size - offset - bytes, Math.max(1, maxBytes)))
+      const { bytesRead } = await handle.read(buf, 0, buf.length, offset + bytes)
+      if (!bytesRead) break
+      const chunk = buf.subarray(0, bytesRead)
+      chunks.push(chunk)
+      bytes += bytesRead
+      if (chunk.includes(10)) break
+    }
+    return parseChunk(chunks.length === 1 ? chunks[0] : Buffer.concat(chunks, bytes), offset)
   } finally {
     await handle.close()
   }

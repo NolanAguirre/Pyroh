@@ -4,12 +4,7 @@ const workspaceStore = require('../store/workspaceStore')
 const sessionIndex = require('../store/sessionIndex')
 const routes = require('./routes')
 const analyticsRoutes = require('./analyticsRoutes')
-
-const RECONCILE_INTERVAL_MS = 60000
-
-const reconcileSessions = () => sessionIndex.reconcile(config.writeDir).catch((err) => {
-  process.stderr.write(`session index reconcile failed: ${err.message}\n`)
-})
+const { startMaintenance } = require('./maintenance')
 
 const createApp = () => {
   const app = express()
@@ -26,32 +21,29 @@ const createApp = () => {
 
 const start = () => {
   workspaceStore.ensureLayout(config.writeDir)
-  reconcileSessions()
-  setInterval(reconcileSessions, RECONCILE_INTERVAL_MS).unref()
-  let recoveringUsage = false
-  const recoverUsage = async () => {
-    if (recoveringUsage) return
-    recoveringUsage = true
-    try { await require('../store/cursorUsageRecovery').recoverAll() }
-    catch (err) { process.stderr.write(`Cursor usage recovery failed: ${err.message}\n`) }
-    finally { recoveringUsage = false }
-  }
-  recoverUsage()
-  setInterval(recoverUsage, RECONCILE_INTERVAL_MS).unref()
-  const recoverChildren = () => require('../harness/delegation').recover().catch(err => process.stderr.write(`child recovery failed: ${err.message}\n`))
-  recoverChildren()
-  setInterval(recoverChildren, 5000).unref()
-  const pumpRunAfter = () => {
-    try { require('../harness/runAfter').pump() }
-    catch (err) { process.stderr.write(`run after failed: ${err.message}\n`) }
-  }
-  pumpRunAfter()
-  setInterval(pumpRunAfter, 1000).unref()
+  let reconciled
+  sessionIndex.waitForInitialSeed(new Promise(resolve => { reconciled = resolve }))
   const app = createApp()
-  app.listen(config.port, config.host, () => {
+  let stopMaintenance = () => {}
+  const server = app.listen(config.port, config.host, () => {
     process.stdout.write(`harness API listening on http://${config.host}:${config.port}\n`)
     process.stdout.write(`write-dir: ${config.writeDir}\n`)
+    stopMaintenance = startMaintenance({ onReconciled: reconciled })
   })
+  const stop = () => {
+    stopMaintenance()
+    server.close()
+    server.closeAllConnections()
+  }
+  process.once('SIGINT', stop)
+  process.once('SIGTERM', stop)
+  process.once('exit', () => stopMaintenance())
+  server.once('close', () => {
+    stopMaintenance()
+    process.removeListener('SIGINT', stop)
+    process.removeListener('SIGTERM', stop)
+  })
+  return server
 }
 
 if (require.main === module) start()

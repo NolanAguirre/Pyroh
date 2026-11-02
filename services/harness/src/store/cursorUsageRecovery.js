@@ -7,10 +7,13 @@ const locks = require('./sessionLock')
 const { runRecords, receiptDir } = require('./usageStore')
 const { readJson, writeJson } = require('./jsonFile')
 const runIndex = require('./runIndexStore')
+const sessionIndex = require('./sessionIndex')
 
 const pending = new Map()
+let billingUnavailable = false
 const hasTokens = (usage) => usage && usage.inputTokens + usage.outputTokens > 0
 const fetchUsage = async (agentId) => {
+  if (billingUnavailable) return null
   let timer
   try {
     const { Agent } = require('@cursor/sdk')
@@ -18,6 +21,18 @@ const fetchUsage = async (agentId) => {
       Agent.getUsage(agentId, config.cursorApiKey ? { apiKey: config.cursorApiKey } : {}),
       new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Cursor usage request timed out')), 15000) }),
     ])
+  } catch (err) {
+    const unavailable = err?.code === 'feature_unavailable' ||
+      err?.cause?.code === 'feature_unavailable' ||
+      String(err?.message || '').includes('[feature_unavailable]')
+    if (!unavailable) throw err
+    // Account capability does not vary by session. Stop probing until this
+    // process restarts; local SDK usage remains usable without this endpoint.
+    if (!billingUnavailable) {
+      process.stderr.write('Cursor billing usage is unavailable for this account; remote usage recovery disabled until restart. Local usage recovery remains enabled.\n')
+    }
+    billingUnavailable = true
+    return null
   } finally { clearTimeout(timer) }
 }
 const sdkRecords = (sessionId, writeDir) => {
@@ -76,7 +91,7 @@ const recover = async (sessionId, writeDir) => {
     if (!hasTokens(usage)) continue
     patches.push({ file, record, usage: { ...usage, totalTokens: usage.inputTokens + usage.outputTokens }, source })
   }
-  if (!patches.length) return { recovered: [], pending: true }
+  if (!patches.length) return { recovered: [], pending: !billingUnavailable, billingUnavailable }
   // Do not hold a reentrant process lock across network awaits. Recheck under
   // the lock so a new run cannot race attribution of an agent-wide total.
   if (locks.holds(sessionId, writeDir)) return { recovered: [], pending: true }
@@ -105,7 +120,13 @@ const recover = async (sessionId, writeDir) => {
     if (err.status !== 409) throw err
   } finally { lock?.release() }
   if (recovered.length) await require('../analytics/client').notifySession(sessionId)
-  return { recovered, pending: recovered.length < missing.length }
+  return {
+    recovered,
+    // Retry a failed local write even if remote billing is unavailable. Once
+    // local repairs finish, unchanged sessions need no further polling.
+    pending: recovered.length < patches.length || (!billingUnavailable && recovered.length < missing.length),
+    billingUnavailable,
+  }
 }
 
 const recoverMissingUsage = (sessionId, writeDir = config.writeDir) => {
@@ -114,12 +135,43 @@ const recoverMissingUsage = (sessionId, writeDir = config.writeDir) => {
   return pending.get(key)
 }
 
+const checked = new Map()
+let sweeping = false
 const recoverAll = async () => {
-  for (const session of await store.listSessionsAsync(config.writeDir)) {
-    if (session.provider !== 'cursor') continue
-    try { await recoverMissingUsage(session.id) }
-    catch (err) { process.stderr.write(`Cursor usage recovery for ${session.id}: ${err.message}\n`) }
-  }
+  if (sweeping) return
+  sweeping = true
+  try {
+    // The index is cheap to read and includes late reconciliation of older
+    // writes. Only changed sessions or unresolved billing revisit run files.
+    const sessions = sessionIndex.query({ provider: 'cursor', includeArchived: true })
+    const present = new Set(sessions.map(session => session.id))
+    for (const id of checked.keys()) if (!present.has(id)) checked.delete(id)
+    const due = sessions.filter(session => {
+      const version = `${session.updatedAt}:${session.status}:${session.providerAgentId}`
+      const previous = checked.get(session.id)
+      if (['running', 'awaiting_input', 'queued'].includes(session.status)) return false
+      return !previous || previous.version !== version || previous.retryAt <= Date.now()
+    })
+    let next = 0
+    const drain = async () => {
+      while (next < due.length) {
+        const session = due[next++]
+        const version = `${session.updatedAt}:${session.status}:${session.providerAgentId}`
+        const previous = checked.get(session.id)
+        let retry = true
+        try { retry = Boolean((await recoverMissingUsage(session.id)).pending) }
+        catch (err) { process.stderr.write(`Cursor usage recovery for ${session.id}: ${err.message}\n`) }
+        const attempts = retry ? (previous?.version === version ? previous.attempts : 0) + 1 : 0
+        checked.set(session.id, {
+          version,
+          attempts,
+          retryAt: retry ? Date.now() + Math.min(1800000, 60000 * 2 ** Math.min(attempts - 1, 5)) : Infinity,
+        })
+        await new Promise(resolve => setImmediate(resolve))
+      }
+    }
+    await Promise.all([drain(), drain()])
+  } finally { sweeping = false }
 }
 
 module.exports = { recoverMissingUsage, recoverAll }

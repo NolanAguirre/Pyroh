@@ -6,7 +6,7 @@ const { readJson, writeJson } = require('../store/jsonFile')
 
 // A run's atomically persisted delegationDelivery is the authoritative receipt.
 // Child records are a recoverable queue, including failures before child launch.
-const recoverParent = (sessionId, { withLock, statesFor, describe }) => withLock(sessionId, 'delivery', () => {
+const recoverParent = (sessionId, { withLock, statesFor, describe, retryableDelivery }) => withLock(sessionId, 'delivery', () => {
   const collect = (receipts = new Map()) => {
     const pending = []
     for (const { runId } of statesFor(sessionId)) {
@@ -15,6 +15,7 @@ const recoverParent = (sessionId, { withLock, statesFor, describe }) => withLock
         if (!state) return
         let changed = false
         for (const [key, child] of Object.entries(state.children || {})) {
+          if (['delivered', 'suppressed'].includes(child.delivery?.status)) continue
           if (!child.resultId) {
             Object.assign(child, { resultId: `${runId}:${key}`, parentSessionId: sessionId, parentRunId: runId })
             changed = true
@@ -49,15 +50,19 @@ const recoverParent = (sessionId, { withLock, statesFor, describe }) => withLock
     }
     return pending
   }
-  const receiptsFor = () => {
+  const receiptsFor = (runs = store.listRuns(sessionId, config.writeDir)) => {
     const receipts = new Map()
-    for (const run of store.listRuns(sessionId, config.writeDir)) {
+    for (const run of runs) {
       for (const id of run.delegationDelivery?.resultIds || []) receipts.set(id, { batchId: run.delegationDelivery.batchId, runId: run.id })
     }
     return receipts
   }
-  // Collect while busy too: results survive process restarts and stay inspectable.
-  collect(receiptsFor())
+  // Ordinary sweeps inspect only outstanding child records. Historical receipts
+  // matter only when a finished result is ready to dispatch or launch is retried.
+  const ready = collect()
+  const retry = statesFor(sessionId).some(({ state }) =>
+    Object.values(state?.children || {}).some(retryableDelivery))
+  if (!ready.length && !retry) return
   if (locks.holds(sessionId, config.writeDir)) return
   let lock
   try {
@@ -70,13 +75,14 @@ const recoverParent = (sessionId, { withLock, statesFor, describe }) => withLock
     store.recoverSession(sessionId, config.writeDir)
     const parent = store.loadSession(sessionId, config.writeDir)
     if (!parent || parent.parentRunId || ['queued', 'stopped'].includes(parent.status)) return
+    const runs = store.listRuns(sessionId, config.writeDir)
     // A committed receipt may precede worker launch. Retry that same run,
     // preserving its ID and prompt instead of delivering the batch twice.
-    const lastRun = store.listRuns(sessionId, config.writeDir).at(-1)
+    const lastRun = runs.at(-1)
     const unstarted = lastRun?.delegationDelivery && !lastRun.pid && !lastRun.providerRunId &&
       ['interrupted', 'disconnected'].includes(lastRun.status) ? lastRun : null
     if (unstarted) {
-      const cancelled = statesFor(sessionId).some(({ state }) => state.cancelledAt &&
+      const cancelled = statesFor(sessionId).some(({ state }) => state?.cancelledAt &&
         Object.values(state.children || {}).some(child => unstarted.delegationDelivery.resultIds.includes(child.resultId)))
       if (!cancelled) {
         store.updateRun(sessionId, unstarted.id, { status: 'running', endedAt: null, error: null }, config.writeDir)
@@ -85,11 +91,10 @@ const recoverParent = (sessionId, { withLock, statesFor, describe }) => withLock
         return
       }
     }
-    const pending = collect(receiptsFor())
+    const pending = collect(receiptsFor(runs))
     if (!pending.length) return
     const resultIds = pending.map(result => result.resultId).sort()
     const batchId = crypto.createHash('sha256').update(JSON.stringify([sessionId, resultIds])).digest('hex')
-    const runs = store.listRuns(sessionId, config.writeDir)
     const latest = runs.at(-1)
     const source = latest || store.loadRun(sessionId, pending[0].parentRunId, config.writeDir)
     // Resume the latest parent's permissions and plugin instructions, not a

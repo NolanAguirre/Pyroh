@@ -3,6 +3,7 @@ const config = require('../config')
 const paths = require('../store/paths')
 const { readJson, writeJson } = require('../store/jsonFile')
 const sessionStore = require('../store/sessionStore')
+const sessionIndex = require('../store/sessionIndex')
 const sessionLock = require('../store/sessionLock')
 const workspaceStore = require('../store/workspaceStore')
 const eventLog = require('../store/eventLog')
@@ -241,16 +242,16 @@ const enqueue = (session, { prompt, mode, runAfterSessionId }) => {
 
 let pumping = false
 
-const pump = () => {
+const pump = async () => {
   if (pumping) return
   pumping = true
   try {
-    for (const session of sessionStore.listSessions(config.writeDir)) {
-      if (session.status !== 'queued') continue
+    for (const session of sessionIndex.query({ statuses: ['queued'], includeArchived: true })) {
       try { dispatchOne(session.id) }
       catch (err) {
         process.stderr.write(`run after ${session.id}: ${err && err.message ? err.message : err}\n`)
       }
+      await new Promise(resolve => setImmediate(resolve))
     }
   } finally {
     pumping = false

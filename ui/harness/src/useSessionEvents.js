@@ -23,11 +23,33 @@ const useSessionEvents = (sessionId) => {
 
     const source = new EventSource(api.eventsUrl(sessionId))
     sourceRef.current = source
+    let queuedEvents = []
+    let flushTimer = null
+    let lastOffset = 0
+    const flushEvents = () => {
+      clearTimeout(flushTimer)
+      flushTimer = null
+      if (!queuedEvents.length) return
+      const batch = queuedEvents
+      queuedEvents = []
+      setEvents(prev => [...prev, ...batch])
+    }
 
     source.addEventListener('event', (e) => {
+      const offset = Number(e.lastEventId)
+      if (offset && offset <= lastOffset) return
       const raw = JSON.parse(e.data)
       const event = raw.session ? { ...raw, session: api.adoptSession(sessionId, raw.session) } : raw
-      setEvents((prev) => [...prev, event])
+      if (offset) lastOffset = offset
+      queuedEvents.push(event)
+      if (flushTimer === null) flushTimer = setTimeout(flushEvents, 32)
+    })
+    source.addEventListener('reset', () => {
+      clearTimeout(flushTimer)
+      flushTimer = null
+      queuedEvents = []
+      lastOffset = 0
+      setEvents([])
     })
     source.addEventListener('session', (e) => setSession(api.adoptSession(sessionId, JSON.parse(e.data))))
     source.addEventListener('runs', (e) => setRuns(JSON.parse(e.data)))
@@ -36,10 +58,14 @@ const useSessionEvents = (sessionId) => {
       return { ...child, sessionId: tagged.id, workspaceId: tagged.workspaceId }
     })))
     source.addEventListener('questions', (e) => setQuestions(JSON.parse(e.data)))
-    source.addEventListener('ready', () => setConnected(true))
+    source.addEventListener('ready', () => {
+      flushEvents()
+      setConnected(true)
+    })
     source.onerror = () => setConnected(false)
 
     return () => {
+      clearTimeout(flushTimer)
       source.close()
       sourceRef.current = null
     }

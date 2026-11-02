@@ -6,8 +6,7 @@ help: ## Show this help
 install: ## Install dependencies
 	npm install
 
-start: ## Refresh provider model lists, then start the Express API server
-	-./scripts/run-with-env-dir ./env-dir node scripts/refresh-models.js
+start: ## Start the Express API server and its maintenance worker
 	./scripts/run-with-env-dir ./env-dir npm start
 
 cli: ## Run the harness CLI (pass args via ARGS="...")

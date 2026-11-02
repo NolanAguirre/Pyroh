@@ -19,36 +19,59 @@ const ignoreWords = async () => {
   return [...words]
 }
 
+let ignoreCache = null
+let ignoreExpiresAt = 0
+const cachedIgnoreWords = () => {
+  if (!ignoreCache || Date.now() >= ignoreExpiresAt) {
+    ignoreExpiresAt = Date.now() + 60000
+    ignoreCache = ignoreWords()
+  }
+  return ignoreCache
+}
+
 // Waits for the spellcheck service and returns the corrected text. Any
 // failure, timeout or missing URL returns the text unchanged.
 const correctText = async (text, { steer = false } = {}) => {
   if (!config.spellcheckUrl || typeof text !== 'string' || !text.trim()) return text
+  const controller = new AbortController()
+  let timer
   try {
-    const res = await fetch(`${config.spellcheckUrl}/check`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text,
-        steer,
-        triggers: findTriggers(text, { steer }).map(({ start, end }) => ({ start, end })),
-        ignore: await ignoreWords(),
+    const request = async () => {
+      const ignore = await cachedIgnoreWords()
+      if (controller.signal.aborted) return text
+      const res = await fetch(`${config.spellcheckUrl}/check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          steer,
+          triggers: findTriggers(text, { steer }).map(({ start, end }) => ({ start, end })),
+          ignore,
+        }),
+        signal: controller.signal,
+      })
+      if (!res.ok) throw new Error(`rejected with ${res.status}`)
+      const body = await res.json()
+      if (typeof body?.text !== 'string') return text
+      if (Array.isArray(body.fixes) && body.fixes.length) {
+        console.log(`spellcheck: ${body.fixes.map((fix) => `${fix.from} -> ${fix.to}`).join(', ')}`)
+      }
+      return body.text
+    }
+    // Bound the whole operation, including workspace lookup and response body.
+    return await Promise.race([
+      request(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort()
+          reject(new Error('deadline exceeded; sending original text'))
+        }, config.spellcheckTimeoutMs)
       }),
-      signal: AbortSignal.timeout(config.spellcheckTimeoutMs),
-    })
-    if (!res.ok) {
-      console.error(`spellcheck: rejected with ${res.status}`)
-      return text
-    }
-    const body = await res.json()
-    if (typeof body?.text !== 'string') return text
-    if (Array.isArray(body.fixes) && body.fixes.length) {
-      console.log(`spellcheck: ${body.fixes.map((fix) => `${fix.from} -> ${fix.to}`).join(', ')}`)
-    }
-    return body.text
+    ])
   } catch (err) {
     console.error(`spellcheck: failed: ${err && err.message ? err.message : err}`)
     return text
-  }
+  } finally { clearTimeout(timer) }
 }
 
 module.exports = { correctText }

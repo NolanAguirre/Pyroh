@@ -20,16 +20,21 @@ const useWorkspaceSessions = (activeWorkspaceId, activeId, leaveSession, searchi
   const [pinBusy, setPinBusy] = useState(false)
   const [pinError, setPinError] = useState(null)
   const sessionsRequest = useRef(0)
+  const inFlight = useRef(null)
 
   const loadSessions = useCallback(() => {
     if (!activeWorkspaceId) {
+      sessionsRequest.current += 1
+      inFlight.current = null
       setSessions([])
       setSessionsReadyFor(null)
       return
     }
     const workspaceId = activeWorkspaceId
+    const key = `${workspaceId}:${includeArchived}`
+    if (inFlight.current?.key === key) return inFlight.current.promise
     const request = ++sessionsRequest.current
-    api
+    const promise = api
       .listSessions(workspaceId, includeArchived)
       .then(({ sessions: list }) => {
         if (request !== sessionsRequest.current) return
@@ -48,6 +53,11 @@ const useWorkspaceSessions = (activeWorkspaceId, activeId, leaveSession, searchi
         setSessions([])
         setSessionsReadyFor(null)
       })
+      .finally(() => {
+        if (inFlight.current?.request === request) inFlight.current = null
+      })
+    inFlight.current = { key, request, promise }
+    return promise
   }, [activeWorkspaceId, includeArchived])
 
   useEffect(() => {
