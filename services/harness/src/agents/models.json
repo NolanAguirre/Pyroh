@@ -290,7 +290,7 @@
       "id": "gpt-6-astra",
       "displayName": "GPT-6-Astra",
       "isDefault": true,
-      "defaultReasoningEffort": "medium",
+      "defaultReasoningEffort": "low",
       "supportedReasoningEfforts": [
         {
           "reasoningEffort": "low",
@@ -407,6 +407,54 @@
         {
           "reasoningEffort": "max",
           "description": "Maximum reasoning depth for the hardest problems"
+        }
+      ]
+    },
+    {
+      "id": "gpt-5.5",
+      "displayName": "GPT-5.5",
+      "isDefault": false,
+      "defaultReasoningEffort": "medium",
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "low",
+          "description": "Fast responses with lighter reasoning"
+        },
+        {
+          "reasoningEffort": "medium",
+          "description": "Balances speed and reasoning depth for everyday tasks"
+        },
+        {
+          "reasoningEffort": "high",
+          "description": "Greater reasoning depth for complex problems"
+        },
+        {
+          "reasoningEffort": "xhigh",
+          "description": "Extra high reasoning depth for complex problems"
+        }
+      ]
+    },
+    {
+      "id": "gpt-5.2",
+      "displayName": "GPT-5.2",
+      "isDefault": false,
+      "defaultReasoningEffort": "medium",
+      "supportedReasoningEfforts": [
+        {
+          "reasoningEffort": "low",
+          "description": "Balances speed with some reasoning; useful for straightforward queries and short explanations"
+        },
+        {
+          "reasoningEffort": "medium",
+          "description": "Provides a solid balance of reasoning depth and latency for general-purpose tasks"
+        },
+        {
+          "reasoningEffort": "high",
+          "description": "Maximizes reasoning depth for complex or ambiguous problems"
+        },
+        {
+          "reasoningEffort": "xhigh",
+          "description": "Extra high reasoning for complex problems"
         }
       ]
     },
