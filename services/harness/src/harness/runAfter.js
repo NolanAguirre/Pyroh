@@ -29,8 +29,17 @@ const workspaceIdOf = (session) => session.workspaceId
   || workspaceStore.findWorkspaceByCwd(session.cwd, config.writeDir)?.id
   || null
 
-const boundEnded = (depSession, run) => {
-  if (!run) return true
+// Child-result delivery continues the bound turn, so a later delivery run inherits the wait.
+const followDelivery = (depSession, run) => {
+  if (!depSession || !run?.endedAt) return run
+  const latest = sessionStore.listRuns(depSession.id, config.writeDir).at(-1)
+  return latest && latest.id !== run.id && latest.delegationDelivery ? latest : run
+}
+
+const boundEnded = (depSession, boundRun) => {
+  if (!boundRun) return true
+  if (depSession?.status === 'subagent') return false
+  const run = followDelivery(depSession, boundRun)
   if (run.endedAt) return true
   if (RUN_DONE.has(run.status)) return true
   if (depSession?.status === 'awaiting_input' || depSession?.status === 'running') {
