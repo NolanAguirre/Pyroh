@@ -2,6 +2,7 @@ const crypto = require('crypto')
 const config = require('../../config')
 const { errorMessage } = require('../../store/formatError')
 const { composePrompt } = require('../modes')
+const { providerMode } = require('../providerModes')
 const prompts = require('../../prompts')
 
 // Lazily require the SDK so that provider listing does not hard-fail when the
@@ -26,9 +27,12 @@ const CURSOR_MODELS = [
 
 // The SDK only knows agent and plan. Ask runs as agent without mutating tools;
 // "mcp" stays so the ask_user custom tool remains available.
-const ASK_DISALLOWED_TOOLS = ['edit', 'delete', 'shell', 'applyAgentDiff', 'task', 'generateImage']
-const sdkMode = (mode) => mode === 'ask' ? 'agent' : mode
-const modeOptions = (mode) => mode === 'ask' ? { disallowedTools: ASK_DISALLOWED_TOOLS } : {}
+const ASK_DISALLOWED_TOOLS = providerMode('cursor', 'ask').tools.disallowed
+const sdkMode = (mode) => providerMode('cursor', mode).nativeMode
+const modeOptions = (mode) => {
+  const disallowedTools = providerMode('cursor', mode).tools.disallowed
+  return disallowedTools.length ? { disallowedTools } : {}
+}
 
 // Build the local store handle for the SDK, keeping all state under the write-dir.
 const buildStore = (sdk, sdkStoreDir) => {
@@ -139,7 +143,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
     ...(tools.disableNativeSpawning ? {} : { agents: subagents() }),
     ...modeOptions(mode),
     ...(tools.disableNativeSpawning || tools.restrictedChild ? { disallowedTools: [...new Set([
-      ...((mode === 'ask' || tools.restrictedChild) ? ASK_DISALLOWED_TOOLS : []), 'task',
+      ...providerMode('cursor', mode).tools.disallowed, ...(tools.restrictedChild ? ASK_DISALLOWED_TOOLS : []), 'task',
     ])] } : {}),
   })
   let agent = null

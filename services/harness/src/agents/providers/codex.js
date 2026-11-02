@@ -204,12 +204,13 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     const policy = providerMode('codex', active?.mode)
     const readOnly = tools.restrictedChild || policy.tools.permissions === 'deny'
     if (method === 'item/commandExecution/requestApproval' || method === 'item/fileChange/requestApproval') {
+      if (tools.restrictedChild) return { decision: 'decline' }
       const command = method === 'item/commandExecution/requestApproval'
       // Codex uses commandExecution for reads too. Ask relies on its prompt
       // for command intent; restricted children still retain their sandbox.
       const action = command ? policy.tools.commands : policy.tools.fileChanges
       if (action === 'allow') return { decision: !params.availableDecisions || params.availableDecisions.includes('accept') ? 'accept' : 'decline' }
-      if (tools.restrictedChild || action === 'deny') return { decision: 'decline' }
+      if (action === 'deny') return { decision: 'decline' }
       const choices = (params.availableDecisions || ['accept', 'decline', 'cancel'])
         .filter((value) => typeof value === 'string' && ['accept', 'acceptForSession', 'decline', 'cancel'].includes(value))
       const labels = { accept: 'Allow once', acceptForSession: 'Allow for session', decline: 'Decline', cancel: 'Cancel turn' }

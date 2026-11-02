@@ -2,6 +2,7 @@ const crypto = require('crypto')
 const config = require('../../config')
 const { normalizeClaudeOptions } = require('./claudeOptions')
 const { composePrompt } = require('../modes')
+const { providerMode } = require('../providerModes')
 
 const CLIENT_APP = 'harness/0.1.0'
 
@@ -166,7 +167,7 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
       return deny('The harness recorded this plan. Stop now without implementing it.')
     }
     // Claude auto-allows read-only tools and Bash, so anything reaching here in ask mode may change state.
-    if (active.mode === 'ask' && toolName !== 'AskUserQuestion') {
+    if (providerMode('claude', active.mode).tools.approvals === 'deny' && toolName !== 'AskUserQuestion') {
       return deny('Ask mode is read-only. This tool call was denied.')
     }
     if (typeof tools.askUser !== 'function') return deny('No operator is available to answer or approve this request.')
@@ -360,12 +361,14 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     const turn = active
     const grants = grantedOptions(granted)
     const configuredMode = options.permissionMode || 'bypassPermissions'
-    const permissionMode = mode === 'plan' ? 'plan' : mode === 'ask' ? 'default'
-      : configuredMode === 'default' ? grants.mode || 'default' : configuredMode
+    const policy = providerMode('claude', mode)
+    const permissionMode = policy.nativeMode === 'configured'
+      ? configuredMode === 'default' ? grants.mode || 'default' : configuredMode
+      : policy.nativeMode
     // Saved allow rules could auto-approve writes, so ask mode skips them.
     const { allowedTools, ...grantsWithoutAllow } = grants.options
-    const baseGrants = mode === 'ask'
-      ? { ...grantsWithoutAllow, disallowedTools: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] }
+    const baseGrants = !policy.tools.savedAllowRules
+      ? { ...grantsWithoutAllow, disallowedTools: policy.tools.disallowed }
       : grants.options
     const harnessAllowed = harnessMcp.map((server) => `mcp__${server.name}`)
     const grantOptions = harnessMcp.length

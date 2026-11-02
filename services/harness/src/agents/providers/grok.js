@@ -3,6 +3,7 @@ const config = require('../../config')
 const { createGrokClient } = require('../grok')
 const { normalizeGrokOptions } = require('./grokOptions')
 const { composePrompt } = require('../modes')
+const { providerMode } = require('../providerModes')
 
 const CANCELLED = { outcome: { outcome: 'cancelled' } }
 const HARNESS_MCP_TOOLS = ['create_memory']
@@ -20,7 +21,7 @@ const normalizeUsage = (usage) => usage ? {
 // Grok has no ask mode. Ask runs in default mode, which runs read-only tools
 // without asking, and onPermission rejects everything else. If the user's Grok
 // config always approves or has allow rules covering edits, no request arrives.
-const grokMode = (mode) => mode === 'plan' ? 'plan' : 'default'
+const grokMode = (mode) => providerMode('grok', mode).nativeMode
 
 const stopStatus = (reason) => reason === 'end_turn' ? 'completed' : reason === 'cancelled' ? 'cancelled' : 'error'
 
@@ -79,7 +80,7 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
         choices.find((choice) => String(choice.kind || '').startsWith('allow'))
       if (allow) return selected(allow)
     }
-    if (active.mode === 'ask' || typeof tools.askUser !== 'function') {
+    if (providerMode('grok', active.mode).tools.approvals === 'deny' || typeof tools.askUser !== 'function') {
       const reject = choices.find((choice) => String(choice.kind || '').startsWith('reject'))
       return reject ? selected(reject) : CANCELLED
     }
