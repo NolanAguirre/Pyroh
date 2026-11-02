@@ -1,20 +1,8 @@
 const express = require('express')
 const delegation = require('../harness/delegation')
 
-const childProperties = { sessionId: { type: 'string' }, runId: { type: 'string' } }
-const childSchema = { type: 'object', properties: childProperties, required: ['sessionId', 'runId'], additionalProperties: false }
-const tools = [
-  { name: 'spawn', description: 'Delegate a bounded question or task in the shared project directory when a concise answer saves parent context. Keep lookups local when you need the source directly for your next action; weigh context savings and latency, not file count. State the question, relevant context, scope, expected output, and stopping point. Give agents separate work and separate file ownership. Request exact-symbol searches first, relevant sections only, and a short answer with paths, brief evidence, and unresolved gaps, not file dumps. Do not repeat delegated searches; use findings directly and read more only for a specific gap or edit context. Choose a model; the provider is selected automatically. Use grok-4.7 only for exploration and fact-finding; return evidence and gaps. Use inherit for decisions, recommendations, planning, design, code review, and implementation, even when read-only. Keep decisions with the parent or an inherit child. Omitting model or choosing inherit preserves the parent provider, model, and settings (for example, Codex GPT-6 Astra stays on Codex). Defaults to the parent base mode. At most four active children; no nested delegation. Retry the same task with the same retryKey. After spawning, continue useful independent work. Never sleep, use timers, poll, or hold your turn open to wait for a child. When no independent work remains, end your turn with a brief account of completed and pending work, even if the overall task needs the child result. Children keep working; completed results automatically append a new message and resume the parent so it can continue.', inputSchema: {
-    type: 'object', properties: { task: { type: 'string' }, retryKey: { type: 'string', minLength: 1, maxLength: 256 },
-      model: { type: 'string', description: 'Model ID, or inherit (default) to preserve the parent provider, model, and settings. Use grok-4.7 only for exploration and fact-finding; use inherit for decisions, recommendations, planning, design, code review, and implementation, including read-only judgment.' }, mode: { type: 'string', enum: ['agent', 'plan', 'ask'] } },
-    required: ['task', 'retryKey'], additionalProperties: false,
-  } },
-  { name: 'status', description: 'Get a child state, pending user questions, and errors, including children from earlier turns in this session. Use for a specific information need, never to poll for completion. If only child work remains, end your turn; completed results automatically resume the parent.', inputSchema: childSchema },
-  { name: 'wait', description: 'Read the current child result immediately; this tool does not wait. The seconds argument does not delay the response. Never loop on this tool or sleep to wait for a child. If the child is still running, continue useful independent work or end your turn with a brief pending-work update. Completed results automatically append a new message and resume the parent.', inputSchema: {
-    ...childSchema, properties: { ...childProperties, seconds: { type: 'number', minimum: 0, maximum: 20, description: 'Compatibility argument only; does not delay the response.' } },
-  } },
-  { name: 'stop', description: 'Cancel a child owned by this session, including one started in an earlier turn.', inputSchema: childSchema },
-]
+const { tools } = require('../harness/delegationTools')
+
 const router = express.Router()
 router.use('/:token', (req, res, next) => {
   try { req.delegation = delegation.authenticate(req.params.token); next() }
