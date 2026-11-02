@@ -10,7 +10,7 @@ const tools = [
     required: ['task', 'retryKey'], additionalProperties: false,
   } },
   { name: 'status', description: 'Get a child state, pending user questions, and errors, including children from earlier turns in this session.', inputSchema: childSchema },
-  { name: 'wait', description: 'Wait up to 20 seconds for a child final response. Timeouts and disconnects do not cancel the child. Finished results can be read repeatedly.', inputSchema: {
+  { name: 'wait', description: 'Return the current child result immediately. Completed results also resume the parent automatically. Finished results can be read repeatedly.', inputSchema: {
     ...childSchema, properties: { ...childProperties, seconds: { type: 'number', minimum: 0, maximum: 20 } },
   } },
   { name: 'stop', description: 'Cancel a child owned by this session, including one started in an earlier turn.', inputSchema: childSchema },

@@ -294,7 +294,8 @@ const resume = (sessionId, { prompt, mode: requested } = {}) => {
   return spawnRun(sessionId, 'resume', { mode, prompt: prompt || prompts.text('resume'), plugin: lastPluginRun(sessionId, mode) })
 }
 
-const terminate = (sessionId, intent) => {
+const terminate = (sessionId, intent) => require('./delegation').withDeliveryLock(sessionId, () => {
+  require('./delegation').cancelChild(sessionId)
   for (const run of sessionStore.listRuns(sessionId, config.writeDir)) require('./delegation').stopChildren(sessionId, run.id)
   writeJson(paths.controlFile(sessionId, config.writeDir), { intent, at: Date.now() })
   const pid = daemonPidOf(sessionId)
@@ -303,7 +304,7 @@ const terminate = (sessionId, intent) => {
   const session = sessionStore.loadSession(sessionId, config.writeDir)
   if (session) sessionStore.updateSession(sessionId, { status, ...(session.parentRunId ? { stopRequestedAt: session.stopRequestedAt || Date.now() } : {}) }, config.writeDir)
   return { signalled, pid }
-}
+})
 
 const pause = (sessionId) => {
   const session = sessionStore.loadSession(sessionId, config.writeDir)

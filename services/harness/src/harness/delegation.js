@@ -14,15 +14,18 @@ const fileFor = (sessionId, runId) => path.join(paths.sessionDir(sessionId, conf
 const credentialFile = (hash) => path.join(config.writeDir, 'delegation-credentials', `${hash}.json`)
 const hashOf = (value) => crypto.createHash('sha256').update(value).digest('hex')
 const fail = (message) => { throw Object.assign(new Error(message), { status: 403 }) }
+const heldRecordLocks = new Set()
 const withLock = (sessionId, runId, fn) => {
   const file = fileFor(sessionId, runId)
+  if (heldRecordLocks.has(file)) return fn(file)
   fs.mkdirSync(path.dirname(file), { recursive: true })
   const fd = fs.openSync(`${file}.lock`, 'a', 0o600)
   try {
     const result = spawnSync('flock', ['3'], { stdio: ['ignore', 'pipe', 'pipe', fd] })
     if (result.error || result.status !== 0) throw new Error('Could not lock child records')
+    heldRecordLocks.add(file)
     return fn(file)
-  } finally { fs.closeSync(fd) }
+  } finally { heldRecordLocks.delete(file); fs.closeSync(fd) }
 }
 
 const parentActive = (sessionId, runId) => {
@@ -300,4 +303,6 @@ const guidance = (provider, child = false) => [
   provider === 'grok' ? 'Native spawning cannot be fully blocked by this provider. Do not use native spawning.' : '',
 ].filter(Boolean).join('\n')
 
-module.exports = { childrenFor, assertChildRun, open, authenticate, spawn, status, wait, stop, stopChildren, closeRun, cancelChild, recover, parentActive, parentAllowed, guidance, describe }
+const withDeliveryLock = (sessionId, fn) => withLock(sessionId, 'delivery', fn)
+
+module.exports = { withDeliveryLock, childrenFor, assertChildRun, open, authenticate, spawn, status, wait, stop, stopChildren, closeRun, cancelChild, recover, parentActive, parentAllowed, guidance, describe }

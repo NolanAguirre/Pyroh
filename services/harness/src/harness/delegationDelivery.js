@@ -69,7 +69,22 @@ const recoverParent = (sessionId, { withLock, statesFor, describe }) => withLock
   try {
     store.recoverSession(sessionId, config.writeDir)
     const parent = store.loadSession(sessionId, config.writeDir)
-    if (!parent || parent.parentRunId || parent.status === 'queued') return
+    if (!parent || parent.parentRunId || ['queued', 'stopped'].includes(parent.status)) return
+    // A committed receipt may precede worker launch. Retry that same run,
+    // preserving its ID and prompt instead of delivering the batch twice.
+    const lastRun = store.listRuns(sessionId, config.writeDir).at(-1)
+    const unstarted = lastRun?.delegationDelivery && !lastRun.pid && !lastRun.providerRunId &&
+      ['interrupted', 'disconnected'].includes(lastRun.status) ? lastRun : null
+    if (unstarted) {
+      const cancelled = statesFor(sessionId).some(({ state }) => state.cancelledAt &&
+        Object.values(state.children || {}).some(child => unstarted.delegationDelivery.resultIds.includes(child.resultId)))
+      if (!cancelled) {
+        store.updateRun(sessionId, unstarted.id, { status: 'running', endedAt: null, error: null }, config.writeDir)
+        store.updateSession(sessionId, { status: 'running' }, config.writeDir)
+        require('./process').spawnHarness([unstarted.mode === 'plan' ? 'plan' : 'run', sessionId, '--run-id', unstarted.id], lock.spawnOptions())
+        return
+      }
+    }
     const pending = collect(receiptsFor())
     if (!pending.length) return
     const resultIds = pending.map(result => result.resultId).sort()
