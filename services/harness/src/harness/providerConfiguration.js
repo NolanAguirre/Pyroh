@@ -13,6 +13,8 @@ const snapshot = (provider, settings, tools, extras = {}) => ({
   provider,
   settings,
   tools: { ...tools, askUser: undefined, askUserEnabled: typeof tools.askUser === 'function' },
+  delegationDefinitions: tools.mcpServers?.some(server => server.name === 'harness_agents')
+    ? fingerprint(require('./delegationTools').tools) : null,
   ...extras,
 })
 
@@ -22,6 +24,7 @@ const compare = (source, current) => ({
   fingerprint: fingerprint(current),
   mcpEndpointsChanged: source ? fingerprint(source.tools?.mcpServers || []) !== fingerprint(current.tools?.mcpServers || []) : null,
   toolConfigurationChanged: source ? fingerprint({ ...source.tools, mcpServers: undefined }) !== fingerprint({ ...current.tools, mcpServers: undefined }) : null,
+  delegationDefinitionsChanged: source ? source.delegationDefinitions !== current.delegationDefinitions : null,
   // Providers do not expose their serialized cache prefix. Configuration changes
   // are evidence of possible prefix changes, not proof of a cache hit or miss.
   prefixImpact: 'unknown',

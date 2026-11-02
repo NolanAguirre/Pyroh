@@ -27,6 +27,8 @@
 //     PROVIDER_FORK_OUTCOME_UNKNOWN has retryable=false and may have left a child.
 //     Resume a known child id on recovery. Start child usage accounting at zero;
 //     inherited provider totals are context/baseline, not new billable usage.
+//   resolvedSettings?() -> { model?, reasoningEffort? }
+//     Capture provider-selected defaults so forks keep the source's actual model.
 //   send(prompt, { mode, onEvent, outputSchema?, terse? }) -> Promise<{ cancel, wait }>
 //     Kick off a run. `onEvent(event)` receives normalized events as they stream.
 //     `cancel()` cancels the in-flight run. `wait()` resolves the terminal result:

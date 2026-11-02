@@ -98,6 +98,13 @@ const MetricsPanel = ({ devId, session, runs }) => {
               <TokenBar label="Output" value={tokens.output || 0} total={total} />
             </div>
             <p className="metrics__lbl">Cache reuse is measured from provider reports, not guaranteed. Fresh input includes cache writes.</p>
+            {session?.fork?.kind === 'native' && session.cacheConfiguration && (
+              <p className="metrics__lbl">
+                {!session.cacheConfiguration.sourceKnown ? 'The source predates saved tool configuration; comparison is unavailable.'
+                  : `Compared with source: MCP endpoints ${session.cacheConfiguration.mcpEndpointsChanged ? 'changed' : 'unchanged'}; tool configuration ${session.cacheConfiguration.toolConfigurationChanged || session.cacheConfiguration.delegationDefinitionsChanged ? 'changed' : 'unchanged'}.`}
+                {' '}The effect on the provider’s cache prefix is unknown.
+              </p>
+            )}
             {cacheWrite > 0 && <p className="metrics__lbl">Cache writes within fresh input: {formatNumber(cacheWrite)} tokens</p>}
             {(tokens.reasoning || 0) > 0 && <p className="metrics__lbl">Reasoning within output: {formatNumber(tokens.reasoning)} tokens</p>}
           </CardSection>

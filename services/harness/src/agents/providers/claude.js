@@ -228,6 +228,8 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
   const onSystem = (turn, message) => {
     if (message.subtype === 'init') {
       turn.model = message.model
+      settings = { ...settings, model: message.model }
+      emit({ type: 'provider_settings', settings: { model: message.model } })
       emit({ type: 'status', status: `Claude Code ${message.claude_code_version} · ${message.model} · ${message.permissionMode}` })
     } else if (message.subtype === 'status' && message.status === 'compacting') {
       emit({ type: 'context', context: { usedTokens: null, status: 'compacting' } })
@@ -347,7 +349,11 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     sessionId = id
     // A turn that failed before Claude wrote its transcript leaves nothing to resume.
     const { getSessionInfo } = await loadSdk()
-    resumable = Boolean(await getSessionInfo(id).catch(() => true))
+    resumable = Boolean(await getSessionInfo(id, { dir: next.cwd }).catch(err => {
+      if (next.requireExisting) throw err
+      return true
+    }))
+    if (next.requireExisting && !resumable) throw new Error('The native Claude fork transcript is missing; refusing to start an empty conversation')
   }
 
   const fork = async (sourceProviderAgentId, next = {}) => {
@@ -361,9 +367,16 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     }
     forking = true
     try {
-      const { forkSession } = await loadSdk()
+      const { forkSession, getSessionMessages } = await loadSdk()
       if (typeof forkSession !== 'function') {
         throw Object.assign(new Error('Installed Claude Agent SDK does not support native forkSession()'), { code: 'PROVIDER_FORK_UNSUPPORTED' })
+      }
+      if (!sessionModel(next.model)) {
+        const messages = await getSessionMessages(sourceProviderAgentId, { dir: next.cwd })
+        const model = messages.findLast(message => message.type === 'assistant' &&
+          typeof message.message?.model === 'string' && !message.message.model.startsWith('<'))?.message.model
+        if (!model) throw new Error('Cannot determine the source Claude model for this fork')
+        next = { ...next, model }
       }
       // SDK 0.3.282 forkSession() remaps transcript UUIDs and awaits the new
       // session file's write before returning. Unlike query({ forkSession: true,
@@ -385,6 +398,9 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
           code: 'PROVIDER_FORK_OUTCOME_UNKNOWN', retryable: false, sourceProviderAgentId,
         })
       }
+    } catch (err) {
+      if (!forkAttempted) err.forkOutcome = 'not_created'
+      throw err
     } finally {
       forking = false
     }
@@ -466,6 +482,7 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
   }
 
   return { create: (next) => openSession(null, next), resume: openSession, fork,
+    resolvedSettings: () => ({ model: sessionModel(settings.model) }),
     send, listModels, providerAgentId: () => sessionId, close }
 }
 

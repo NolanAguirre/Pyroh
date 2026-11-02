@@ -95,7 +95,8 @@ const runOneTurn = async ({
   const canDelegate = primitive && !child && (delegationEligible ?? entry?.delegationEligible ?? true)
   const inheritedConfiguration = nativeFork ? session.fork.sourceConfiguration : null
   if (tools === undefined && inheritedConfiguration?.settings.tools !== undefined) tools = inheritedConfiguration.settings.tools
-  const settings = { model: model || session.model || inheritedConfiguration?.settings.model, cwd: workspaceStore.resolveSessionCwd(session, writeDir), mode, tools }
+  const settings = { model: model || session.model || inheritedConfiguration?.settings.model, cwd: workspaceStore.resolveSessionCwd(session, writeDir), mode, tools,
+    ...(nativeFork ? { requireExisting: true, reasoningEffort: inheritedConfiguration?.settings.reasoningEffort } : {}) }
   // Each daemon owns one session. Set its cwd before loading SDKs so shell
   // initialization and provider subprocesses inherit the workspace directory.
   process.chdir(settings.cwd)
@@ -158,6 +159,8 @@ const runOneTurn = async ({
     }
     let providerAgentId = driver.providerAgentId()
     if (nativeFork && providerAgentId !== session.providerAgentId) throw new Error('Native fork resume returned a different provider thread')
+    configuration.settings = { ...configuration.settings, ...driver.resolvedSettings?.() }
+    sessionStore.updateSession(session.id, { providerConfiguration: configuration }, writeDir)
     if (typeof onCreated === 'function') onCreated(providerAgentId)
 
     if (signal?.aborted) return { result: { status: 'cancelled' }, providerAgentId }
@@ -177,6 +180,11 @@ const runOneTurn = async ({
     // Persist snapshots separately from totals so reconnects retain the latest
     // context size, including decreases after compaction, in every run mode.
     const handleEvent = (event) => {
+      if (event.type === 'provider_settings') {
+        configuration.settings = { ...configuration.settings, ...event.settings }
+        sessionStore.updateSession(session.id, { providerConfiguration: configuration }, writeDir)
+        return
+      }
       // Some drivers return an inflight handle even when the request failed.
       // Provider output confirms acceptance, including turns later cancelled.
       if (needsHistory && ['text', 'thinking', 'tool_call', 'question'].includes(event.type)) {
@@ -223,6 +231,7 @@ const runOneTurn = async ({
         }
         driver = makeDriver()
         await driver.resume(providerAgentId, settings)
+        if (nativeFork && driver.providerAgentId() !== providerAgentId) throw new Error('Native fork reconnect returned a different provider thread')
         providerAgentId = driver.providerAgentId() || providerAgentId
         return driver.send(text, sendOptions)
       }

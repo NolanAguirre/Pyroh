@@ -2,7 +2,7 @@ const { spawn } = require('child_process')
 const readline = require('readline')
 
 // One stdio app-server per driver. Never attach to the desktop's live server.
-const createTransport = ({ binary, env, onNotification, onRequest, onFailure, onDiagnostic, timeoutMs = 30000 }) => {
+const createTransport = ({ binary, env, cwd, onNotification, onRequest, onFailure, onDiagnostic, timeoutMs = 30000 }) => {
   let child = null
   let lines = null
   let nextId = 0
@@ -53,7 +53,7 @@ const createTransport = ({ binary, env, onNotification, onRequest, onFailure, on
   const start = async () => {
     if (child) return
     child = spawn(binary, ['app-server', '--listen', 'stdio://'], {
-      env, stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32',
+      env, cwd, stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32',
     })
     exited = new Promise((resolve) => {
       child.once('close', (code, signal) => {

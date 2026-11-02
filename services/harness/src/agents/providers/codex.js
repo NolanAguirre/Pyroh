@@ -43,6 +43,7 @@ const normalizeUsage = (usage) => usage ? {
   inputTokens: usage.inputTokens || 0,
   outputTokens: usage.outputTokens || 0,
   cacheReadTokens: usage.cachedInputTokens || 0,
+  cacheWriteTokens: usage.cacheWriteInputTokens || 0,
   reasoningTokens: usage.reasoningOutputTokens || 0,
   totalTokens: usage.totalTokens ?? ((usage.inputTokens || 0) + (usage.outputTokens || 0)),
 } : null
@@ -133,7 +134,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
           }
         }
         const delta = {}
-        for (const key of ['inputTokens', 'outputTokens', 'cachedInputTokens', 'reasoningOutputTokens', 'totalTokens']) {
+        for (const key of ['inputTokens', 'outputTokens', 'cachedInputTokens', 'cacheWriteInputTokens', 'reasoningOutputTokens', 'totalTokens']) {
           delta[key] = Math.max(0, (total[key] || 0) - (active.baseline?.[key] || 0))
         }
         active.usage = normalizeUsage(delta)
@@ -269,7 +270,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     return task
   }
 
-  const connect = async () => {
+  const connect = async (cwd) => {
     if (transport) return
     const env = { ...process.env }
     const home = config.codexHome || (config.codexApiKey ? path.join(writeDir, 'codex-api') : null)
@@ -281,7 +282,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     delete env.HARNESS_CODEX_API_KEY
     delete env.CODEX_API_KEY
     delete env.OPENAI_API_KEY
-    transport = createTransport({ binary: config.codexBin, env, onNotification, onRequest,
+    transport = createTransport({ binary: config.codexBin, env, cwd, onNotification, onRequest,
       onDiagnostic: (message) => {
         diagnostics.push(message)
         if (active && !active.done) emit({ type: 'status', status: `Codex diagnostic: ${message}` })
@@ -314,17 +315,18 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     if (Array.isArray(settings.tools)) {
       throw new Error('Codex does not support the Cursor tools allowlist. Use native plan mode for read-only decomposition.')
     }
-    await connect()
+    await connect(settings.cwd)
     const models = await listModels()
-    const model = settings.model || models.find((m) => m.isDefault)?.id || models[0]?.id
-    if (!model) throw new Error('No Codex models available')
+    const inheritModel = method === 'thread/fork' || settings.requireExisting
+    const model = settings.model || (inheritModel ? undefined : models.find((m) => m.isDefault)?.id || models[0]?.id)
+    if (!model && !inheritModel) throw new Error('No Codex models available')
     const entry = models.find((m) => m.id === model)
-    if (!entry) throw new Error(`Codex model unavailable: ${model}`)
-    if (options.reasoningEffort && !entry.supportedReasoningEfforts.some((e) => e.reasoningEffort === options.reasoningEffort)) {
+    if (model && !entry) throw new Error(`Codex model unavailable: ${model}`)
+    if (options.reasoningEffort && entry && !entry.supportedReasoningEfforts.some((e) => e.reasoningEffort === options.reasoningEffort)) {
       throw new Error(`${model} does not support reasoning effort ${options.reasoningEffort}`)
     }
     selectedModel = model
-    selectedEffort = options.reasoningEffort || entry.defaultReasoningEffort || null
+    selectedEffort = options.reasoningEffort || settings.reasoningEffort || entry?.defaultReasoningEffort || null
     threadOptions = settings
     cumulativeUsage = null
     const params = { model, cwd: settings.cwd,
@@ -333,6 +335,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
       approvalsReviewer: 'user',
       config: {
         web_search: options.webSearch,
+        ...(options.reasoningEffort || settings.reasoningEffort ? { model_reasoning_effort: options.reasoningEffort || settings.reasoningEffort } : {}),
         ...(tools.disableNativeSpawning ? { 'features.multi_agent': false } : {}),
         ...(harnessMcp.length ? { mcp_servers: Object.fromEntries(harnessMcp.map((server) => [server.name, { url: server.url }])) } : {}),
       },
@@ -350,6 +353,8 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
           throw new Error('Codex did not return an independent child thread id')
         }
         threadId = childId
+        selectedModel = response.model || model
+        selectedEffort = options.reasoningEffort || settings.reasoningEffort || response.reasoningEffort || null
         // Do not carry source totals into the child's first turn. The first
         // token update establishes the inherited baseline using total - last.
         cumulativeUsage = null
@@ -361,6 +366,8 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     } else {
       const response = await transport.request(method, id ? { ...params, threadId: id } : params)
       threadId = response.thread.id
+      selectedModel = response.model || model
+      selectedEffort = options.reasoningEffort || settings.reasoningEffort || response.reasoningEffort || selectedEffort
     }
   }
 
@@ -374,6 +381,9 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     try {
       await openThread(sourceProviderAgentId, settings, 'thread/fork')
       return threadId
+    } catch (err) {
+      if (!forkAttempted) err.forkOutcome = 'not_created'
+      throw err
     } finally {
       forking = false
     }
@@ -427,6 +437,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     transport = null
   }
   return { create: (settings) => openThread(null, settings), resume: openThread, fork,
+    resolvedSettings: () => ({ model: selectedModel, reasoningEffort: selectedEffort }),
     send, listModels, providerAgentId: () => threadId, close }
 }
 

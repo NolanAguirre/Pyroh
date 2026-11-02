@@ -49,7 +49,7 @@ const ensureNativeFork = async (source, { mode, workspaceId, prompt, retryKey, s
     const configuration = sourceConfiguration(source, mode, runs)
     const session = createFork(source, {
       workspaceId, ...sessionFields, mode,
-      fork: { kind: 'native', state: 'prepared', cwd: configuration.settings.cwd || source.cwd,
+      fork: { kind: 'native', state: 'prepared', initialMessagePending: true, cwd: configuration.settings.cwd || source.cwd,
         sourceProviderAgentId: source.providerAgentId, sourceConfiguration: configuration,
         configurationKnown: Boolean(source.providerConfiguration), requestKey: key },
     }, writeDir)
@@ -64,15 +64,24 @@ const ensureNativeFork = async (source, { mode, workspaceId, prompt, retryKey, s
     return { session, requestFile: file }
   }
   const save = (patch) => { request = { ...request, ...patch }; writeJson(file, request) }
+  const readyPatch = () => {
+    const configuration = { ...session.fork.sourceConfiguration,
+      settings: { ...session.fork.sourceConfiguration.settings, ...request.resolvedSettings } }
+    return {
+      providerAgentId: request.providerAgentId, status: 'idle', model: configuration.settings.model || session.model,
+      ...(session.provider === 'codex' && configuration.settings.reasoningEffort
+        ? { codex: { ...session.codex, reasoningEffort: configuration.settings.reasoningEffort } } : {}),
+      fork: { ...session.fork, state: 'ready', sourceConfiguration: configuration },
+      providerConfiguration: configuration,
+    }
+  }
   const lock = locks.acquire(session.id, writeDir, { exclusive: true })
   let driver
   try {
     if (request.providerAgentId) {
       if (request.providerAgentId === request.sourceProviderAgentId) fail('Invalid fork: child provider ID matches its source')
       if (session.providerAgentId && session.providerAgentId !== request.providerAgentId) fail('The saved fork provider ID changed; refusing to resume a different conversation')
-      if (!session.providerAgentId) session = store.updateSession(session.id, {
-        providerAgentId: request.providerAgentId, status: 'idle', fork: { ...session.fork, state: 'ready' },
-      }, writeDir)
+      if (!session.providerAgentId) session = store.updateSession(session.id, readyPatch(), writeDir)
       return { session, requestFile: file }
     }
     if (request.state !== 'prepared') fail(`Native fork creation has an uncertain outcome for ${session.id}. It will not be repeated automatically; recover its provider ID before retrying.`)
@@ -89,11 +98,8 @@ const ensureNativeFork = async (source, { mode, workspaceId, prompt, retryKey, s
     const providerAgentId = await driver.fork(request.sourceProviderAgentId, configuration.settings)
     if (!providerAgentId || providerAgentId === request.sourceProviderAgentId) fail('The provider did not return an independent fork ID')
     // Journal first, then session: a crash between these writes is recoverable.
-    save({ state: 'ready', providerAgentId, createdProviderAt: Date.now() })
-    session = store.updateSession(session.id, {
-      providerAgentId, status: 'idle', fork: { ...session.fork, state: 'ready' },
-      providerConfiguration: configuration,
-    }, writeDir)
+    save({ state: 'ready', providerAgentId, resolvedSettings: driver.resolvedSettings?.(), createdProviderAt: Date.now() })
+    session = store.updateSession(session.id, readyPatch(), writeDir)
     return { session, requestFile: file }
   } catch (err) {
     // Known pre-creation errors may be retried; timeouts/disconnects cannot.

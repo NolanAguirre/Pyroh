@@ -73,7 +73,7 @@ const resolveNewChatTarget = (source, target = {}) => {
   return { provider, model, mode }
 }
 
-const spawnRun = (sessionId, action, { mode, prompt, autoName = false, handoff, plugin, onPrepared, allowQueued = false, delegationDelivery, queuedMessage }) => {
+const spawnRun = (sessionId, action, { mode, prompt, autoName = false, handoff, plugin, onPrepared, allowQueued = false, delegationDelivery, queuedMessage, forkStart = false }) => {
   const owned = !sessionLock.holds(sessionId, config.writeDir)
   const lock = sessionLock.acquire(sessionId, config.writeDir)
   const stopped = () => Object.assign(new Error('stopped'), { code: 'stopped' })
@@ -82,6 +82,9 @@ const spawnRun = (sessionId, action, { mode, prompt, autoName = false, handoff, 
     const session = sessionStore.loadSession(sessionId, config.writeDir)
     if (session?.fork?.kind === 'native' && (session.fork.state !== 'ready' || !session.providerAgentId)) {
       throw Object.assign(new Error('Native fork creation must finish before starting a turn; retry the original fork request'), { status: 409 })
+    }
+    if (session?.fork?.initialMessagePending && !forkStart) {
+      throw Object.assign(new Error('The initial fork message is still pending; retry the original fork request'), { status: 409 })
     }
     if (session?.status === 'queued' && !allowQueued) {
       throw Object.assign(new Error('session is queued'), { status: 409 })
@@ -229,10 +232,20 @@ const forkSession = async (sourceSessionId, prompt, forkRetryKey) => {
     // A persisted first run means delivery may already have happened. A lost
     // HTTP response or failed daemon launch must not resend the user's message.
     const existing = sessionStore.listRuns(session.id, config.writeDir)[0]
-    if (existing) return existing
+    if (existing) {
+      if (session.fork.initialMessagePending) sessionStore.updateSession(session.id, {
+        fork: { ...session.fork, initialMessagePending: false, firstRunId: existing.id },
+      }, config.writeDir)
+      return existing
+    }
     return spawnRun(session.id, session.mode === 'plan' ? 'plan' : 'run', {
-      mode: session.mode, prompt, autoName: entry.autoName,
-      onPrepared: (run) => writeJson(requestFile, { ...readJson(requestFile), firstRunId: run.id }),
+      mode: session.mode, prompt, autoName: entry.autoName, forkStart: true,
+      onPrepared: (run) => {
+        writeJson(requestFile, { ...readJson(requestFile), firstRunId: run.id })
+        sessionStore.updateSession(session.id, {
+          fork: { ...session.fork, initialMessagePending: false, firstRunId: run.id },
+        }, config.writeDir)
+      },
     })
   } finally { lock.release() }
 }
