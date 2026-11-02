@@ -49,6 +49,7 @@ const UserMessage = ({ event }) => {
       <div className="tx tx--user">
         <div className="tx__user-header">
           <span className="tx__user-tag">You</span>
+          {event.answer && <span className="tx__steer-tag">Answer</span>}
           {event.steer && <span className="tx__steer-tag">Steer</span>}
           {dependency && <span className="tx__steer-tag">Queued</span>}
           <DevScope id="k3w8n1p">

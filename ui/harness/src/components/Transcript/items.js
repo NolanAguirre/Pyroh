@@ -36,6 +36,31 @@ export const userEvents = (runs) => runs.flatMap((run) => {
   return [{ type: 'user', text: run.prompt, runId: run.id, ts: run.startedAt || 0, itemId: `user:${run.id}` }]
 })
 
+const answerText = (answer) => {
+  if (Array.isArray(answer)) return answer.map(answerText).join('\n')
+  if (answer && typeof answer === 'object') return JSON.stringify(answer, null, 2)
+  return answer == null ? '' : String(answer)
+}
+
+export const questionEvents = (questions) => questions.flatMap((question) => {
+  const events = [{
+    type: 'question_message',
+    text: question.question,
+    runId: question.runId,
+    ts: question.createdAt || 0,
+    itemId: `question:${question.id}`,
+  }]
+  if (question.status === 'answered') events.push({
+    type: 'user',
+    text: question.secret ? 'Secret answer hidden' : answerText(question.answer),
+    answer: true,
+    runId: question.runId,
+    ts: question.answeredAt || question.createdAt || 0,
+    itemId: `answer:${question.id}`,
+  })
+  return events
+})
+
 export const hideRecordedPlanText = (events) => {
   const runsWithPlan = new Set()
   for (const event of events) {

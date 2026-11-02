@@ -3,4 +3,10 @@ Description: Subagent usage and exploration
 alwaysApply: true
 ---
 
-Use the `harnessExplore` subagent for code exploration.
+Keep small, known-file lookups local. Use the `harnessExplore` subagent for major codebase exploration, framed as a narrow question.
+
+Each assignment must state the question, relevant context, scope, expected output, and stopping point. Give agents separate work and separate file ownership for parallel edits. Do not repeat delegated searches while waiting; use automatic result delivery instead of repeated status checks.
+
+Children should search exact symbols first, read relevant sections, and broaden only when needed. Return a short answer, relevant paths, brief evidence, and unresolved gaps, not file dumps. Stop once the assigned question is answered.
+
+Use child findings directly. Read more only to fill a specific gap or get context needed for an edit.

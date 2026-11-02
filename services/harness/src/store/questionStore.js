@@ -56,7 +56,12 @@ const listQuestions = (sessionId, writeDir) => {
   for (const name of names) {
     if (!name.endsWith('.json') || name.endsWith('.answer.json')) continue
     const q = normalizeQuestion(readJson(path.join(dir, name), null))
-    if (q) questions.push(q)
+    if (q) {
+      if (q.status === 'answered' && !q.answeredAt) {
+        q.answeredAt = readJson(paths.answerFile(sessionId, q.id, writeDir), null)?.answeredAt
+      }
+      questions.push(q)
+    }
   }
   questions.sort((a, b) => a.createdAt - b.createdAt)
   return questions
@@ -73,7 +78,13 @@ const listQuestionsAsync = async (sessionId, writeDir) => {
   }
   const questions = (await Promise.all(names
     .filter((name) => name.endsWith('.json') && !name.endsWith('.answer.json'))
-    .map(async (name) => normalizeQuestion(await readJsonAsync(path.join(dir, name), null)))))
+    .map(async (name) => {
+      const q = normalizeQuestion(await readJsonAsync(path.join(dir, name), null))
+      if (q?.status === 'answered' && !q.answeredAt) {
+        q.answeredAt = (await readJsonAsync(paths.answerFile(sessionId, q.id, writeDir), null))?.answeredAt
+      }
+      return q
+    })))
     .filter(Boolean)
   questions.sort((a, b) => a.createdAt - b.createdAt)
   return questions
@@ -97,12 +108,14 @@ const answer = (sessionId, qid, answerValue, writeDir) => {
   if (q.allowFreeText === false && !q.options.includes(answerValue)) throw new Error('Choose one of the offered answers')
   const file = paths.answerFile(sessionId, qid, writeDir)
   ensureDir(path.dirname(file))
-  writeJson(file, { id: qid, answer: answerValue, answeredAt: Date.now() })
+  const answeredAt = Date.now()
+  writeJson(file, { id: qid, answer: answerValue, answeredAt })
   if (q) {
     writeJson(paths.questionFile(sessionId, qid, writeDir), {
       ...q,
       status: 'answered',
       answer: answerValue,
+      answeredAt,
     })
   }
   return answerValue

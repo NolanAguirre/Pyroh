@@ -5,6 +5,13 @@ import TextWithTables from './TextWithTables'
 
 const LogChunk = ({ event }) => {
   switch (event.type) {
+    case 'question_message':
+      return (
+        <div className="transcript__question">
+          <strong>Agent question</strong>
+          <TextWithTables text={event.text || ''} />
+        </div>
+      )
     case 'text':
       return event.text ? <TextWithTables text={event.text} /> : null
     case 'thinking':

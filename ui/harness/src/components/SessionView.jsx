@@ -33,7 +33,7 @@ const SPAWN_TARGET_KINDS = ['token-waste', 'memory']
 const QUEUED_RUN_AFTER = { prompt: '' }
 
 const SessionView = ({ devId, sessionId, initialSession, providers = [], workspaces = [], sessions = [], modes: registryModes, onChanged, onCreated, transcriptFontSize }) => {
-  const { events, session: liveSession, runs, children, pendingQuestions, connected } = useSessionEvents(sessionId)
+  const { events, session: liveSession, runs, children, questions, pendingQuestions, connected } = useSessionEvents(sessionId)
   const session = liveSession || initialSession
   const defaultMode = replyMode(session)
   const [mode, setMode] = useState(() => loadComposer(sessionId, defaultMode).mode)
@@ -152,6 +152,9 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const inFilter = (item) => (item.phase || 0) === filter.phase && item.step === filter.step
   const shownEvents = ModePanel && filter ? events.filter(inFilter) : events
   const shownRuns = ModePanel && filter ? runs.filter(inFilter) : runs
+  const shownQuestions = ModePanel && filter
+    ? questions.filter((question) => shownRuns.some((run) => run.id === question.runId))
+    : questions
 
   const refresh = () => {
     if (onChanged) onChanged()
@@ -288,6 +291,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
               devId="hr6v0n8"
               events={shownEvents}
               runs={shownRuns}
+              questions={shownQuestions}
               renderPlanActions={renderPlanActions}
               fontSize={transcriptFontSize}
               queued={queued ? (session.runAfter || QUEUED_RUN_AFTER) : null}
