@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { DevScope } from 'component-library'
-import { ALL, NONE } from './constants'
+import { ALL, CUSTOM, NONE } from './constants'
 import { tokenUsage } from './tokenMetrics'
 import useToolStats from './useToolStats'
 import AnalyticsTopbar from './AnalyticsTopbar'
@@ -26,6 +26,15 @@ const defaultCustomRange = () => {
   return { from: toDateInput(weekAgo), to: toDateInput(today) }
 }
 
+const rangeParams = (range, { from, to }) => {
+  if (range === ALL) return {}
+  if (range !== CUSTOM) return { since: range }
+  return {
+    since: from ? new Date(`${from}T00:00:00`).toISOString() : undefined,
+    until: to ? new Date(`${to}T23:59:59.999`).toISOString() : undefined,
+  }
+}
+
 const AnalyticsView = ({ devId, workspaces = [], providers = [], onBack, onOpenSession }) => {
   const [range, setRange] = useState('7d')
   const [customRange, setCustomRange] = useState(defaultCustomRange)
@@ -37,7 +46,7 @@ const AnalyticsView = ({ devId, workspaces = [], providers = [], onBack, onOpenS
   const [openTargets, setOpenTargets] = useState({})
 
   const { stats, error, loading, refresh } = useToolStats({
-    since: range === ALL ? undefined : range,
+    ...rangeParams(range, customRange),
     bucket,
     workspace: workspace === ALL ? undefined : workspace,
     provider: provider === ALL ? undefined : provider,
