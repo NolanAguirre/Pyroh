@@ -85,6 +85,11 @@ const normalizeMode = (mode, { reserved, seen }) => {
     hint: mode.hint || '',
     base,
     kind: 'plugin',
+    turnOverrides: {
+      ...Object.fromEntries(BOOLEAN_MODE_FIELDS.filter((key) => mode[key] !== undefined).map((key) => [key, Boolean(mode[key])])),
+      ...(mode.tools !== undefined ? { tools: idList(mode.tools, `${id}: tools`) } : {}),
+      ...(instructions !== undefined ? { instructions } : {}),
+    },
     ...Object.fromEntries(BOOLEAN_MODE_FIELDS
       .filter((key) => mode[key] !== undefined)
       .map((key) => [key, Boolean(mode[key])])),

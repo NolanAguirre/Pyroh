@@ -91,7 +91,6 @@ const MODES = [
     base: 'plan',
     kind: 'new-chat',
     promptOptional: true,
-    snapshot: false,
     sendLabel: 'Continue in new chat',
     placeholder: 'Optional focus for the handoff summary…',
   },

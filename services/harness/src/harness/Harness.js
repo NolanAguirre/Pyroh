@@ -220,7 +220,7 @@ const runPlugin = async (source, plugin, harness, { prompt, provider, model }) =
   return spawnRun(session.id, 'run', {
     mode: plugin.id,
     prompt: text,
-    plugin: { id: plugin.id, base: plugin.base, terse: plugin.terse, instructions: instructions ? String(instructions) : null },
+    plugin: registry.turnDescriptor(plugin, instructions),
   })
 }
 

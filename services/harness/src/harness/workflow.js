@@ -25,6 +25,8 @@ const runWorkflowTurn = async ({ parent, parentRunId, mode, prompt, name, workfl
     rootSessionId: parent.rootSessionId || parent.id,
     archived: Boolean(store.loadSession(parent.id, writeDir)?.archived),
   }, writeDir)
+  const controller = store.loadRun(parent.id, parentRunId, writeDir)
+  store.updateRun(parent.id, parentRunId, { workflowChildren: [...(controller.workflowChildren || []), session.id] }, writeDir)
   let launched
   try {
     launched = Harness.spawnRun(session.id, mode === 'plan' ? 'plan' : 'run', {

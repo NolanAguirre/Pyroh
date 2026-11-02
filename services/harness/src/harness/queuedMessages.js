@@ -74,7 +74,7 @@ const prepare = async (session, message) => {
       if (typeof prompt !== 'string' || !prompt.trim()) fail(`${entry.id}: buildPrompt returned no prompt`)
       const instructions = typeof entry.instructions === 'function'
         ? await entry.instructions(ctx, harness) : entry.instructions
-      plugin = { id: entry.id, base: entry.base, terse: entry.terse, instructions: instructions ? String(instructions) : null }
+      plugin = registry.turnDescriptor(entry, instructions)
     }
   }
   return { mode: message.mode, prompt, plugin }

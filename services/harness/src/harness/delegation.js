@@ -273,8 +273,16 @@ const parentAllowed = (sessionId, runId) => {
   return Boolean(canDelegate(parent) && state && !state.cancelledAt && run)
 }
 
-const workflowChildren = (sessionId) => require('../store/sessionIndex').query({ includeArchived: true })
-  .filter(session => session.parentSessionId === sessionId && session.childKind === 'workflow')
+const workflowChildren = (sessionId) => {
+  const parent = store.loadSession(sessionId, config.writeDir)
+  // Durable controller references cover an index write missed under contention.
+  const ids = new Set(store.listRuns(sessionId, config.writeDir).flatMap(run => run.workflowChildren || []))
+  for (const session of require('../store/sessionIndex').query({ workspaceId: parent?.workspaceId, includeArchived: true })) {
+    if (session.parentSessionId === sessionId && session.childKind === 'workflow') ids.add(session.id)
+  }
+  return [...ids].map(id => store.loadSession(id, config.writeDir))
+    .filter(session => session?.parentSessionId === sessionId && session.childKind === 'workflow')
+}
 
 const stopChildren = (sessionId, runId) => {
   const workflowSessions = workflowChildren(sessionId).filter(session => session.parentRunId === runId)
@@ -282,7 +290,10 @@ const stopChildren = (sessionId, runId) => {
     !store.loadRun(sessionId, runId, config.writeDir)?.workflow) return
   // The scheduler uses this same lock, so stop cannot race a new delivery batch.
   withLock(sessionId, 'delivery', () => {
-    const sessions = new Set(workflowSessions.map(session => session.id))
+    const sessions = new Set(workflowSessions.filter(session =>
+      !store.listRuns(session.id, config.writeDir).at(-1)?.endedAt ||
+      ['running', 'awaiting_input'].includes(session.status) || hasPendingChildren(session.id))
+      .map(session => session.id))
     withLock(sessionId, runId, (file) => {
       const state = readJson(file) || { sessionId, runId, children: {} }
       trackRun(sessionId, runId)
@@ -408,10 +419,14 @@ const hasPendingChildren = (sessionId) => statesFor(sessionId).some(({ state }) 
   Object.values(state.children || {}).some(child => child.childKind !== 'workflow' &&
     (!describe(child).done || !['delivered', 'suppressed'].includes(child.delivery?.status) || retryableDelivery(child))))
 
-const workflowDescription = (session, run, pendingQuestions) => describeRecords({
-  sessionId: session.id, runId: run?.id, childKind: 'workflow',
-  ...(session.stopRequestedAt ? { cancelRequestedAt: session.stopRequestedAt } : {}),
-}, session, run, pendingQuestions)
+const workflowDescription = (session, run, pendingQuestions) => {
+  const description = describeRecords({
+    sessionId: session.id, runId: run?.id, childKind: 'workflow',
+    ...(session.stopRequestedAt ? { cancelRequestedAt: session.stopRequestedAt } : {}),
+  }, session, run, pendingQuestions)
+  return !session.stopRequestedAt && hasPendingChildren(session.id)
+    ? { ...description, done: false, state: 'running', finalResponse: undefined } : description
+}
 
 const childrenFor = (sessionId) => [
   ...statesFor(sessionId).flatMap(({ runId, state }) =>

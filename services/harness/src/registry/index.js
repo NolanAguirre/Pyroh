@@ -26,6 +26,16 @@ const turnMode = (mode, plugin) => {
   return entry ? modeDefaults({ ...entry, id: entry.id || mode, ...(plugin ? { kind: 'plugin' } : {}) }) : null
 }
 
+// Persist explicit plugin changes only. Inherited defaults are resolved again
+// for later turns, so changing a primitive also updates existing sessions.
+const turnDescriptor = (entry, instructions) => ({
+  id: entry.id,
+  base: entry.base,
+  ...entry.turnOverrides,
+  ...(Object.hasOwn(entry.turnOverrides || {}, 'instructions')
+    ? { instructions: instructions == null ? null : String(instructions) } : {}),
+})
+
 // `harness` is the API passed to getModes(); without a workspace there is none.
 const resolve = (workspace, { harness } = {}) => {
   const api = harness || (workspace ? makeHarnessApi(workspace) : null)
@@ -80,6 +90,7 @@ const defaultDecision = (resolved, kind, id, mode) => {
   const tool = resolved.tools.find((item) => item.id === id)
   const entry = resolved.modes.find((item) => item.id === mode)
   if (tool?.modes.includes('*')) return { effect: 'allow', by: 'default', reason: `${id} applies to every mode` }
+  if (entry?.base && tool?.modes.includes(entry.base)) return { effect: 'allow', by: 'default', reason: `${id} applies to base mode ${entry.base}` }
   if (tool?.modes.includes(mode)) return { effect: 'allow', by: 'default', reason: `${id} opts into ${mode}` }
   if (entry?.tools.includes(id)) return { effect: 'allow', by: 'default', reason: `${mode} lists ${id}` }
   return { effect: 'deny', by: 'default', reason: `${id} is not enabled for ${mode}` }
@@ -152,7 +163,7 @@ const toolsFor = (workspace, { mode, provider } = {}) => {
     .map((tool) => tool.id)
 }
 
-const describeMode = ({ buildPrompt, instructions, onComplete, ...mode }) =>
+const describeMode = ({ buildPrompt, instructions, onComplete, turnOverrides, ...mode }) =>
   ({ ...mode, instructions: typeof instructions === 'string' ? instructions : instructions ? '(function)' : null })
 
 // Allowed modes and panels, as the UI lists them.
@@ -192,6 +203,7 @@ module.exports = {
   RESERVED_MODES,
   builtinMode,
   turnMode,
+  turnDescriptor,
   resolve,
   decide,
   findMode,

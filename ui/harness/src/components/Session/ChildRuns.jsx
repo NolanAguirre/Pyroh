@@ -4,6 +4,14 @@ import api from '../../api'
 import { urlWithSelection } from '../../appUrl'
 import { formatDuration, formatNumber } from '../../format'
 
+const childLabel = (child) => {
+  if (child.name) return child.name
+  if (child.childKind !== 'workflow') return `Agent · ${child.runId || child.sessionId || 'Spawn failed'}`
+  const step = child.workflow?.step
+  const label = step ? step.charAt(0).toUpperCase() + step.slice(1) : 'Workflow step'
+  return child.workflow?.phase ? `Phase ${child.workflow.phase}: ${label}` : label
+}
+
 const ChildRuns = ({ session, runs, children }) => {
   if (!children.length) return null
   const direct = runs.reduce((sum, run) => {
@@ -14,7 +22,7 @@ const ChildRuns = ({ session, runs, children }) => {
     return sum + (session.provider === 'cursor' ? input + output : usage.totalTokens ?? usage.total_tokens ?? usage.total ?? input + output)
   }, 0)
   const childTokens = children.reduce((sum, child) => sum + (child.normalizedUsage?.total || 0), 0)
-  const link = (child) => urlWithSelection(new URL(window.location.href), child.workspaceId, child.sessionId, null, null, null).href
+  const link = (child) => urlWithSelection(new URL(window.location.href), child.workspaceId || session.workspaceId, child.sessionId, null, null, null).href
   return (
     <Card>
       <CardHeader>Child runs ({children.length})</CardHeader>
@@ -26,9 +34,10 @@ const ChildRuns = ({ session, runs, children }) => {
               label={`Children of ${run.id}`}
               rowLabel={`Parent run ${run.id}`}
               rows={children.filter(child => child.parentRunId === run.id).map((child, index) => ({ ...child, id: child.runId || `pending-${index}` }))}
-              columns={[{ id: 'state', title: 'Status' }, { id: 'model', title: 'Provider / model' }, { id: 'durationMs', title: 'Duration' }, { id: 'tokens', title: 'Reported tokens' }]}
-              renderRowHeader={child => child.sessionId ? <a href={link(child)}>Transcript · {child.runId || child.sessionId}</a> : 'Spawn failed'}
-              renderCell={(child, column) => column.id === 'model' ? `${child.provider || ''} / ${child.model || 'default'}`
+              columns={[{ id: 'kind', title: 'Kind' }, { id: 'state', title: 'Status' }, { id: 'model', title: 'Provider / model' }, { id: 'durationMs', title: 'Duration' }, { id: 'tokens', title: 'Reported tokens' }]}
+              renderRowHeader={child => child.sessionId ? <a href={link(child)} title="Open child transcript">{childLabel(child)}</a> : `${childLabel(child)} · Spawn failed`}
+              renderCell={(child, column) => column.id === 'kind' ? child.childKind === 'workflow' ? 'Workflow step' : 'Agent subagent'
+                : column.id === 'model' ? `${child.provider || ''} / ${child.model || 'default'}`
                 : column.id === 'durationMs' ? formatDuration(child.durationMs)
                   : column.id === 'tokens' ? child.normalizedUsage ? formatNumber(child.normalizedUsage.total) : 'Not reported' : child.state}
             />
@@ -36,7 +45,7 @@ const ChildRuns = ({ session, runs, children }) => {
               <div key={child.runId || `pending-${index}`}>
                 {child.error && <p className="hint hint--error">{child.error}</p>}
                 {(child.pendingQuestions || []).map(question => (
-                  <QuestionCard key={question.id} question={{ ...question, question: `Child ${child.runId}: ${question.question}` }}
+                  <QuestionCard key={question.id} question={{ ...question, question: `${childLabel(child)}: ${question.question}` }}
                     onAnswer={(qid, value) => api.answerQuestion(child.sessionId, qid, value)} />
                 ))}
               </div>

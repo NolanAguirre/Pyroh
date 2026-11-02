@@ -152,12 +152,12 @@ const runOneTurn = async ({
       sessionStore.updateSession(session.id, { context: null }, writeDir)
     }
 
-    const sendOptions = { mode, onEvent: handleEvent, outputSchema, instructions }
+    const managedInstructions = managed
+      ? [instructions, delegation.guidance(session.provider, child || !canDelegate || textOnly)].filter(Boolean).join('\n\n')
+      : instructions
+    const sendOptions = { mode, onEvent: handleEvent, outputSchema, instructions: managedInstructions }
     const firstSendOptions = { ...sendOptions }
     if (terse) firstSendOptions.terse = true
-    if (first && managed) {
-      firstSendOptions.instructions = [instructions, delegation.guidance(session.provider, child)].filter(Boolean).join('\n\n')
-    }
     // Codex and Grok drop their transport when a cancel overruns its grace
     // period, so a follow-up send may need a fresh driver on the same agent.
     const sendFollowUp = async (text) => {

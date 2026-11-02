@@ -121,6 +121,9 @@ const recoverParent = (sessionId, { withLock, statesFor, describe, retryableDeli
       require('./Harness').spawnRun(sessionId, mode === 'plan' ? 'plan' : 'run', {
         mode, prompt, plugin: source?.plugin,
         delegationDelivery: { batchId, resultIds },
+        onPrepared: source?.outputSchema
+          ? (run) => store.updateRun(sessionId, run.id, { outputSchema: source.outputSchema }, config.writeDir)
+          : undefined,
       })
     } finally {
       // Also reconcile when launch throws after createRun committed its receipt.

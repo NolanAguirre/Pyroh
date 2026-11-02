@@ -1,4 +1,5 @@
 import { Badge, Button, DevScope, ProgressBar } from 'component-library'
+import { urlWithSelection } from '../../appUrl'
 
 // Mirrors services/harness/src/modes/decompose/pipeline.js step order.
 const ONCE_STEPS = ['count']
@@ -51,17 +52,24 @@ const chipState = (session, run, phase, step) => {
 const StepChip = ({ session, runs, phase, step, filter, setFilter }) => {
   const run = latestRunFor(runs, phase, step)
   const state = chipState(session, run, phase, step)
-  const selected = filter?.phase === phase && filter?.step === step
+  const childSessionId = run?.childSessionId
+  const selected = !childSessionId && filter?.phase === phase && filter?.step === step
   const error = state === 'failed' ? run?.error || session.lastError?.message : null
   return (
     <div className={`decompose-panel__chip decompose-panel__chip--${state}`}>
       <Button
         variant={selected ? 'secondary' : 'ghost'}
         size="sm"
-        aria-pressed={selected}
-        onClick={() => setFilter(selected ? null : { phase, step })}
+        aria-pressed={childSessionId ? undefined : selected}
+        onClick={() => {
+          if (childSessionId) {
+            window.location.assign(urlWithSelection(new URL(window.location.href), session.workspaceId, childSessionId, null, null, null).href)
+          } else {
+            setFilter(selected ? null : { phase, step })
+          }
+        }}
         devId="dp4c7s2"
-        title={`${step}: ${state}`}
+        title={`${step}: ${state}${childSessionId ? ' · Open child transcript' : ''}`}
       >
         <Badge variant={STATE_VARIANT[state]} size="small">{step}</Badge>
       </Button>

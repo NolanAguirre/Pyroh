@@ -283,7 +283,14 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
 
         <div className={`session-view__body${sideOpen ? '' : ' session-view__body--side-collapsed'}`}>
           <div className="session-view__main">
-            {session.parentSessionId && <p className="hint"><a href={urlWithSelection(new URL(window.location.href), session.workspaceId, session.parentSessionId, null, null, null).href}>Parent session · {session.parentRunId}</a></p>}
+            {session.parentSessionId && (
+              <p className="hint">
+                {session.childKind === 'workflow' && <>{session.name || `Workflow step${session.workflow?.phase ? ` · Phase ${session.workflow.phase}` : ''}${session.workflow?.step ? ` · ${session.workflow.step}` : ''}`} · </>}
+                <a href={urlWithSelection(new URL(window.location.href), session.workspaceId, session.parentSessionId, null, null, null).href}>
+                  {session.childKind === 'workflow' ? 'Parent workflow' : 'Parent session'}{session.parentRunId ? ` · ${session.parentRunId}` : ''}
+                </a>
+              </p>
+            )}
             {ModePanel && (
               <ModePanel session={session} runs={runs} events={events} filter={filter} setFilter={setFilter} />
             )}

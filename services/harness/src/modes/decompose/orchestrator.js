@@ -65,7 +65,7 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
         status: sessionStatus === 'finished' ? 'completed' : ['paused', 'stopped'].includes(sessionStatus) ? 'cancelled' : sessionStatus,
         endedAt: Date.now(), error: extra.lastError?.message || null,
       }, writeDir)
-      require('../../harness/delegation').stopChildren(sessionId, workflowRun.id)
+      if (sessionStatus !== 'finished') require('../../harness/delegation').stopChildren(sessionId, workflowRun.id)
       clearControl(sessionId, writeDir)
       removePid(sessionId, writeDir)
     } catch (err) {
