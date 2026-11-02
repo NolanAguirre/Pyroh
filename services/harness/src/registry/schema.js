@@ -1,9 +1,12 @@
 const { AGENT_MODES } = require('../agents/modes')
+const { MODES } = require('./builtins')
 
 const ID = /^[a-z0-9][a-z0-9_-]*$/
 const KINDS = ['mode', 'tool', 'panel']
 const WHERE_KEYS = ['workspace', 'mode', 'provider']
 const EFFECTS = ['allow', 'deny']
+const BOOLEAN_MODE_FIELDS = ['terse', 'delegationEligible', 'promptOptional', 'newSession', 'autoName', 'snapshot', 'savePlan', 'steerable']
+const INHERITED_MODE_FIELDS = [...BOOLEAN_MODE_FIELDS, 'tools', 'instructions', 'buildPrompt', 'onComplete']
 
 const fail = (message) => Object.assign(new Error(message), { status: 400 })
 
@@ -23,15 +26,23 @@ const idList = (value, name) => {
 // Shared defaults for built-in and plugin modes, so callers read flags from
 // the entry instead of keeping their own lists.
 const modeDefaults = (mode) => {
+  mode = Object.fromEntries(Object.entries(mode).filter(([, value]) => value !== undefined))
+  const primitive = MODES.find((entry) => entry.id === mode.base && AGENT_MODES.includes(entry.id))
+  // Only behavior inherits: ids, kinds, labels, and other UI/session naming
+  // fields belong to the specialized mode itself.
+  const inherited = Object.fromEntries(INHERITED_MODE_FIELDS
+    .filter((key) => primitive?.[key] !== undefined)
+    .map((key) => [key, primitive[key]]))
   const label = mode.label || mode.id
-  const promptOptional = Boolean(mode.promptOptional)
+  const promptOptional = Boolean(mode.promptOptional ?? inherited.promptOptional)
   return {
     hint: '',
     terse: false,
+    delegationEligible: false,
     promptOptional,
     newSession: false,
     autoName: false,
-    snapshot: mode.base !== 'ask',
+    snapshot: false,
     savePlan: false,
     steerable: true,
     sessionName: null,
@@ -41,7 +52,9 @@ const modeDefaults = (mode) => {
     instructions: null,
     buildPrompt: null,
     onComplete: null,
+    ...inherited,
     ...mode,
+    tools: [...new Set([...(inherited.tools || []), ...(mode.tools || [])])],
     label,
   }
 }
@@ -63,7 +76,7 @@ const normalizeMode = (mode, { reserved, seen }) => {
   for (const key of ['buildPrompt', 'onComplete']) {
     if (mode[key] != null && typeof mode[key] !== 'function') throw new Error(`${id}: ${key} must be a function`)
   }
-  for (const key of ['label', 'hint']) {
+  for (const key of ['label', 'hint', 'sessionName', 'sendLabel', 'placeholder']) {
     if (mode[key] != null && typeof mode[key] !== 'string') throw new Error(`${id}: ${key} must be a string`)
   }
   return modeDefaults({
@@ -72,12 +85,14 @@ const normalizeMode = (mode, { reserved, seen }) => {
     hint: mode.hint || '',
     base,
     kind: 'plugin',
-    terse: Boolean(mode.terse),
-    promptOptional: Boolean(mode.promptOptional),
-    newSession: Boolean(mode.newSession),
-    savePlan: base === 'plan',
+    ...Object.fromEntries(BOOLEAN_MODE_FIELDS
+      .filter((key) => mode[key] !== undefined)
+      .map((key) => [key, Boolean(mode[key])])),
+    ...Object.fromEntries(['sessionName', 'sendLabel', 'placeholder']
+      .filter((key) => mode[key] !== undefined)
+      .map((key) => [key, mode[key]])),
     tools: idList(mode.tools, `${id}: tools`),
-    instructions: instructions || null,
+    ...(instructions !== undefined ? { instructions } : {}),
     buildPrompt: mode.buildPrompt || ((ctx) => ctx.prompt),
     onComplete: mode.onComplete || null,
   })

@@ -192,8 +192,8 @@ const handleTurn = async (action, sessionId, flags) => {
   const { runDaemon, attachLog } = require('../harness/daemon')
   attachLog(sessionId, config.writeDir)
   try {
-    const entry = run.plugin ? null : registry.builtinMode(run.mode)
-    if (!session.parentRunId && (run.plugin ? run.plugin.base !== 'ask' : entry ? entry.snapshot : true)) {
+    const entry = registry.turnMode(run.mode, run.plugin)
+    if ((!session.parentRunId || session.childKind === 'workflow') && entry?.snapshot) {
       const cwd = workspaceStore.resolveSessionCwd(session, config.writeDir)
       const snap = snapshotIfGitRepo(cwd, {
         message: `harness: snapshot before ${action} ${run.id}`,

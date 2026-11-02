@@ -96,9 +96,10 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
 
   // Plugin runs carry their driver mode, terse flag, and instructions. Built-in
   // modes come from the registry; unknown ones go to the driver as-is.
-  const plugin = sessionStore.loadRun(sessionId, runId, writeDir)?.plugin || null
-  const entry = plugin ? null : registry.builtinMode(mode)
-  const driverMode = plugin ? plugin.base : entry ? entry.base : mode
+  const sourceRun = sessionStore.loadRun(sessionId, runId, writeDir)
+  const plugin = sourceRun?.plugin || null
+  const entry = registry.turnMode(mode, plugin)
+  const driverMode = entry?.base || mode
   const handingOff = entry?.kind === 'new-chat'
   const workspace = registry.sessionWorkspace(session)
   const harnessTools = registry.toolsFor(workspace, { mode: plugin ? plugin.id : mode, provider: session.provider })
@@ -135,7 +136,11 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
     return answer
   }
 
+  let capturedPlan = null
   const onEvent = (event) => {
+    if (entry?.savePlan && event.type === 'tool_call' &&
+      ['createplan', 'exitplanmode'].includes(String(event.name || '').toLowerCase()) &&
+      typeof event.input?.plan === 'string') capturedPlan = event.input.plan
     eventLog.append(sessionId, { ...event, runId }, writeDir)
   }
 
@@ -194,7 +199,9 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
   if (readControlIntent(sessionId, writeDir)) onSignal().catch(err => fail(err, 'stop failed', 2))
   if (session.parentRunId) {
     const checkParent = () => {
-      if (!require('./delegation').parentAllowed(session.parentSessionId, session.parentRunId)) {
+      const delegation = require('./delegation')
+      const allowed = session.childKind === 'workflow' ? delegation.workflowAllowed : delegation.parentAllowed
+      if (!allowed(session.parentSessionId, session.parentRunId)) {
         writeJson(paths.controlFile(sessionId, writeDir), { intent: 'stop', at: Date.now() })
         onSignal().catch(err => fail(err, 'parent cleanup failed', 2))
       }
@@ -223,10 +230,10 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
       writeDir,
       action,
       mode: driverMode,
-      delegationEligible: !session.parentRunId && (entry?.kind === 'turn' || Boolean(plugin)) && ['agent', 'plan', 'ask'].includes(driverMode),
       prompt,
-      terse: !session.providerAgentId && Boolean(plugin ? plugin.terse : entry?.terse),
-      instructions: plugin?.instructions || undefined,
+      terse: entry?.terse,
+      instructions: entry?.instructions || undefined,
+      outputSchema: sourceRun?.outputSchema,
       onEvent,
       askUser,
       harnessTools,
@@ -266,9 +273,10 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
         eventLog.append(sessionId, { type: 'status', status: 'running', runId }, writeDir)
       },
     })
-    result = turn.result
+    result = { ...turn.result, ...(capturedPlan ? { plan: capturedPlan } : {}) }
     sessionStore.updateRun(sessionId, runId, {
       transcriptStatus: result.transcriptStatus, transcriptError: result.transcriptError,
+      ...(result.plan ? { plan: result.plan } : {}),
     }, writeDir)
     if (result.providerUsage) sessionStore.updateSession(sessionId, { providerUsage: result.providerUsage }, writeDir)
   } catch (err) {
@@ -278,8 +286,8 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
 
   const durationMs = result.durationMs || Date.now() - startedAt
 
-  if ((plugin ? plugin.base === 'plan' : entry?.savePlan) && result.result) {
-    sessionStore.writePlan(sessionId, runId, String(result.result), writeDir)
+  if (entry?.savePlan && (result.plan || result.result)) {
+    sessionStore.writePlan(sessionId, runId, String(result.plan || result.result), writeDir)
   }
 
   sessionStore.addToTotals(sessionId, { runId, usage: result.usage, durationMs }, writeDir)

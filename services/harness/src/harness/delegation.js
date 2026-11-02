@@ -46,16 +46,28 @@ const pendingStatesFor = (sessionId) => listNames(path.join(pendingDir(), sessio
   .filter(name => name.endsWith('.json'))
   .map(name => ({ runId: name.slice(0, -5), state: readJson(fileFor(sessionId, name.slice(0, -5))) }))
 
+const activeOwner = (session, run, owner) => Boolean(session && ['running', 'awaiting_input'].includes(session.status) &&
+  run?.status === 'running' && !run.endedAt && owner?.runId === run.id && locks.ownerAlive(owner))
+
+const workflowAllowed = (sessionId, runId) => {
+  const session = store.loadSession(sessionId, config.writeDir)
+  const run = store.loadRun(sessionId, runId, config.writeDir)
+  const owner = readJson(paths.daemonPid(sessionId, config.writeDir))
+  return Boolean(run?.workflow && !readJson(fileFor(sessionId, runId))?.cancelledAt && activeOwner(session, run, owner))
+}
+
+const canDelegate = (session) => Boolean(session && (!session.parentRunId ||
+  (session.childKind === 'workflow' && workflowAllowed(session.parentSessionId, session.parentRunId))))
+
 const parentActive = (sessionId, runId) => {
   const session = store.loadSession(sessionId, config.writeDir)
   const run = store.loadRun(sessionId, runId, config.writeDir)
   const owner = readJson(paths.daemonPid(sessionId, config.writeDir))
-  return Boolean(session && !session.parentRunId && ['running', 'awaiting_input'].includes(session.status) &&
-    run?.status === 'running' && !run.endedAt && owner?.runId === runId && locks.ownerAlive(owner))
+  return canDelegate(session) && activeOwner(session, run, owner)
 }
 
 const open = (session, runId, baseMode) => withLock(session.id, runId, (file) => {
-  if (!parentActive(session.id, runId)) fail('Delegation requires an active top-level parent run')
+  if (!parentActive(session.id, runId)) fail('Delegation requires an active parent run that may delegate')
   const previous = readJson(file)
   if (previous?.closed) fail('Delegation is closed for this run')
   const token = crypto.randomBytes(32).toString('hex')
@@ -123,6 +135,8 @@ const describeRecords = (child, session, run, pendingQuestions) => {
   const done = Boolean(run?.endedAt || child.error || child.cancelRequestedAt)
   return {
     sessionId: child.sessionId || null, runId: child.runId || null,
+    childKind: session?.childKind || child.childKind || 'delegation',
+    workflow: session?.workflow || child.workflow || null, name: session?.name || null,
     workspaceId: session?.workspaceId, parentRunId: session?.parentRunId,
     transcriptLink: session ? `/?workspace=${encodeURIComponent(session.workspaceId)}&session=${encodeURIComponent(session.id)}` : null,
     state: child.cancelRequestedAt ? 'cancelled' : child.error ? 'error' : done ? run.status : session?.status === 'awaiting_input' ? 'awaiting_input' : run?.status || 'starting',
@@ -171,7 +185,7 @@ const spawn = (context, args) => withLock(context.sessionId, context.runId, (fil
   if (Object.values(state.children).filter(child => !describe(child).done).length >= 4) fail('Child limit reached: at most four active children per parent run')
   const parent = store.loadSession(context.sessionId, config.writeDir)
   const target = targetFor(parent, state, args)
-  const child = { requestHash, task: args.task, parentSessionId: parent.id, parentRunId: context.runId, resultId: `${context.runId}:${key}`, createdAt: Date.now() }
+  const child = { childKind: 'delegation', requestHash, task: args.task, parentSessionId: parent.id, parentRunId: context.runId, resultId: `${context.runId}:${key}`, createdAt: Date.now() }
   state.children[key] = child
   // Reserve the key durably before creating a session or launching any worker.
   writeJson(file, state)
@@ -181,7 +195,7 @@ const spawn = (context, args) => withLock(context.sessionId, context.runId, (fil
     child.sessionId = session.id
     writeJson(file, state)
     store.updateSession(session.id, { mode: target.mode, parentSessionId: parent.id, parentRunId: context.runId,
-      rootSessionId: parent.rootSessionId || parent.id, delegationMode: target.mode }, config.writeDir)
+      rootSessionId: parent.rootSessionId || parent.id, childKind: 'delegation', delegationMode: target.mode }, config.writeDir)
     if (store.loadSession(parent.id, config.writeDir)?.archived) {
       store.updateSession(session.id, { archived: true }, config.writeDir)
     }
@@ -211,7 +225,7 @@ const ownedChild = (context, args) => {
 const status = (context, args) => describe(ownedChild(context, args))
 const cancelChild = (sessionId) => {
   const session = store.loadSession(sessionId, config.writeDir)
-  if (!session?.parentRunId) return
+  if (!session?.parentRunId || session.childKind === 'workflow') return
   withLock(session.parentSessionId, session.parentRunId, (file) => {
     const state = readJson(file)
     if (!state) return
@@ -253,18 +267,24 @@ const closeRun = (sessionId, runId) => {
 }
 const parentAllowed = (sessionId, runId) => {
   const parent = store.loadSession(sessionId, config.writeDir)
+  const run = store.loadRun(sessionId, runId, config.writeDir)
+  if (run?.workflow) return workflowAllowed(sessionId, runId)
   const state = readJson(fileFor(sessionId, runId))
-  return Boolean(parent && !parent.parentRunId && state && !state.cancelledAt && store.loadRun(sessionId, runId, config.writeDir))
+  return Boolean(canDelegate(parent) && state && !state.cancelledAt && run)
 }
 
+const workflowChildren = (sessionId) => require('../store/sessionIndex').query({ includeArchived: true })
+  .filter(session => session.parentSessionId === sessionId && session.childKind === 'workflow')
+
 const stopChildren = (sessionId, runId) => {
-  if (!fs.existsSync(fileFor(sessionId, runId))) return
+  const workflowSessions = workflowChildren(sessionId).filter(session => session.parentRunId === runId)
+  if (!fs.existsSync(fileFor(sessionId, runId)) && !workflowSessions.length &&
+    !store.loadRun(sessionId, runId, config.writeDir)?.workflow) return
   // The scheduler uses this same lock, so stop cannot race a new delivery batch.
   withLock(sessionId, 'delivery', () => {
-    const sessions = []
+    const sessions = new Set(workflowSessions.map(session => session.id))
     withLock(sessionId, runId, (file) => {
-      const state = readJson(file)
-      if (!state) return
+      const state = readJson(file) || { sessionId, runId, children: {} }
       trackRun(sessionId, runId)
       closeState(state)
       state.cancelledAt ||= Date.now()
@@ -272,7 +292,7 @@ const stopChildren = (sessionId, runId) => {
         child.delivery = { ...child.delivery, status: 'suppressed', suppressedAt: Date.now() }
         if (!describe(child).done) {
           child.cancelRequestedAt ||= Date.now()
-          if (child.sessionId) sessions.push(child.sessionId)
+          if (child.sessionId) sessions.add(child.sessionId)
         }
       }
       writeJson(file, state)
@@ -302,7 +322,7 @@ const seedPending = async () => {
   if (seeded) return
   // Upgrade old records once per worker start, including archived parents.
   for (const session of require('../store/sessionIndex').query({ includeArchived: true })) {
-    if (session.parentRunId) continue
+    if (session.parentRunId && session.childKind !== 'workflow') continue
     for (const { runId } of statesFor(session.id)) {
       try {
         maintenanceLock(session.id, runId, file => {
@@ -384,8 +404,21 @@ const recover = async () => {
   } finally { recovering = false }
 }
 
-const childrenFor = (sessionId) => statesFor(sessionId).flatMap(({ runId, state }) =>
-  Object.values(state.children || {}).map(child => ({ ...describe(child), parentRunId: runId })))
+const hasPendingChildren = (sessionId) => statesFor(sessionId).some(({ state }) =>
+  Object.values(state.children || {}).some(child => child.childKind !== 'workflow' &&
+    (!describe(child).done || !['delivered', 'suppressed'].includes(child.delivery?.status) || retryableDelivery(child))))
+
+const workflowDescription = (session, run, pendingQuestions) => describeRecords({
+  sessionId: session.id, runId: run?.id, childKind: 'workflow',
+  ...(session.stopRequestedAt ? { cancelRequestedAt: session.stopRequestedAt } : {}),
+}, session, run, pendingQuestions)
+
+const childrenFor = (sessionId) => [
+  ...statesFor(sessionId).flatMap(({ runId, state }) =>
+    Object.values(state.children || {}).map(child => ({ ...describe(child), parentRunId: runId }))),
+  ...workflowChildren(sessionId).map(session => workflowDescription(session,
+    store.listRuns(session.id, config.writeDir).at(-1), questions.listQuestions(session.id, config.writeDir))),
+]
 const childrenForAsync = async (sessionId) => {
   const names = await listNamesAsync(path.join(paths.sessionDir(sessionId, config.writeDir), 'delegation'))
   const children = await Promise.all(names.filter(name => name.endsWith('.json')).map(async name => {
@@ -393,18 +426,27 @@ const childrenForAsync = async (sessionId) => {
     const state = await readJsonAsync(fileFor(sessionId, runId))
     return Promise.all(Object.values(state?.children || {}).map(async child => ({ ...await describeAsync(child), parentRunId: runId })))
   }))
-  return children.flat()
+  await require('../store/sessionIndex').whenReady()
+  const workflows = await Promise.all(workflowChildren(sessionId).map(async session => {
+    const [runs, pendingQuestions] = await Promise.all([
+      store.listRunsAsync(session.id, config.writeDir), questions.listQuestionsAsync(session.id, config.writeDir),
+    ])
+    return workflowDescription(session, runs.at(-1), pendingQuestions)
+  }))
+  return [...children.flat(), ...workflows]
 }
 
 const assertChildRun = (session, mode) => {
   if (!session?.parentRunId) return
-  if (!parentAllowed(session.parentSessionId, session.parentRunId)) fail('The parent cancelled this child; it cannot start another run')
+  const allowed = session.childKind === 'workflow' ? workflowAllowed : parentAllowed
+  if (!allowed(session.parentSessionId, session.parentRunId)) fail('The parent cancelled this child; it cannot start another run')
   const rank = { agent: 0, plan: 1, ask: 2 }
-  if (!Object.hasOwn(rank, mode) || rank[mode] < rank[session.delegationMode]) fail('Child permissions cannot be broadened')
+  const baseMode = session.childKind === 'workflow' ? session.mode : session.delegationMode
+  if (!Object.hasOwn(rank, mode) || rank[mode] < rank[baseMode]) fail('Child permissions cannot be broadened')
 }
 
 const guidance = (provider, child = false) => require('../prompts').text(child ? 'delegationChild' : 'delegationParent', provider)
 
 const withDeliveryLock = (sessionId, fn) => withLock(sessionId, 'delivery', fn)
 
-module.exports = { withDeliveryLock, childrenFor, childrenForAsync, assertChildRun, open, authenticate, spawn, status, wait, stop, stopChildren, closeRun, cancelChild, recover, parentActive, parentAllowed, guidance, describe }
+module.exports = { withDeliveryLock, childrenFor, childrenForAsync, hasPendingChildren, assertChildRun, open, authenticate, spawn, status, wait, stop, stopChildren, closeRun, cancelChild, recover, parentActive, parentAllowed, workflowAllowed, guidance, describe }

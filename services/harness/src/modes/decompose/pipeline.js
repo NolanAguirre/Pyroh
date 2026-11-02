@@ -4,18 +4,11 @@ const STEPS = [
   {
     id: 'count',
     when: 'once',
-    agentMode: 'agent',
-    model: 'grok-4.7',
-    // Codex and Grok have native plan mode, not Cursor's tools: [] contract.
-    providers: {
-      codex: { model: null, tools: undefined, agentMode: 'plan', outputSchema: {
-        type: 'object', properties: { count: { type: 'integer', minimum: 1 } },
-        required: ['count'], additionalProperties: false,
-      } },
-      grok: { model: null, tools: undefined, agentMode: 'plan' },
-      claude: { model: null },
+    agentMode: 'ask',
+    outputSchema: {
+      type: 'object', properties: { count: { type: 'integer', minimum: 1 } },
+      required: ['count'], additionalProperties: false,
     },
-    tools: [],
     promptKey: 'countPhases',
     parse: 'phaseCount',
     write: 'count.json',

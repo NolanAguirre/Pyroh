@@ -17,6 +17,7 @@ const recoverParent = (sessionId, { withLock, statesFor, describe, retryableDeli
         if (!state) return
         let changed = false
         for (const [key, child] of Object.entries(state.children || {})) {
+          if (child.childKind === 'workflow') continue
           if (['delivered', 'suppressed'].includes(child.delivery?.status)) continue
           if (!child.resultId) {
             Object.assign(child, { resultId: `${runId}:${key}`, parentSessionId: sessionId, parentRunId: runId })
@@ -76,11 +77,14 @@ const recoverParent = (sessionId, { withLock, statesFor, describe, retryableDeli
   try {
     store.recoverSession(sessionId, config.writeDir)
     const parent = store.loadSession(sessionId, config.writeDir)
-    if (!parent || parent.parentRunId || ['queued', 'stopped'].includes(parent.status)) return
+    if (!parent || ['queued', 'stopped'].includes(parent.status)) return
+    if (parent.parentRunId && (parent.childKind !== 'workflow' ||
+      !require('./delegation').workflowAllowed(parent.parentSessionId, parent.parentRunId))) return
     const runs = store.listRuns(sessionId, config.writeDir)
     // A committed receipt may precede worker launch. Retry that same run,
     // preserving its ID and prompt instead of delivering the batch twice.
     const lastRun = runs.at(-1)
+    if (lastRun?.workflow) return
     const unstarted = lastRun?.delegationDelivery && !lastRun.pid && !lastRun.providerRunId &&
       ['interrupted', 'disconnected'].includes(lastRun.status) ? lastRun : null
     if (unstarted) {

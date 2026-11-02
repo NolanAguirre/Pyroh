@@ -1,5 +1,6 @@
 const config = require('../config')
 const { createDriver, MEMORY_SERVER_NAME } = require('../agents/driver')
+const { AGENT_MODES } = require('../agents/modes')
 const registry = require('../registry')
 const workspaceStore = require('../store/workspaceStore')
 const paths = require('../store/paths')
@@ -57,6 +58,7 @@ const runOneTurn = async ({
   writeDir,
   action,
   mode,
+  plugin,
   prompt,
   model,
   tools,
@@ -70,10 +72,19 @@ const runOneTurn = async ({
   onPromptRewrite,
   steering,
   fresh = false,
-  terse = false,
+  terse,
   instructions,
-  delegationEligible = false,
+  delegationEligible,
 }) => {
+  const entry = registry.turnMode(mode ?? session.mode, plugin)
+  mode = entry?.base || mode || session.mode
+  const primitive = AGENT_MODES.includes(mode)
+  const first = !session.providerAgentId || fresh
+  terse = terse === undefined ? first && Boolean(entry?.terse) : terse
+  if (instructions === undefined) instructions = entry?.instructions
+  const child = Boolean(session.parentRunId) && session.childKind !== 'workflow'
+  const managed = primitive || child
+  const canDelegate = primitive && !child && (delegationEligible ?? entry?.delegationEligible ?? true)
   const settings = { model: model || session.model, cwd: workspaceStore.resolveSessionCwd(session, writeDir), mode, tools }
   // Each daemon owns one session. Set its cwd before loading SDKs so shell
   // initialization and provider subprocesses inherit the workspace directory.
@@ -84,14 +95,11 @@ const runOneTurn = async ({
     ? await require('../store/cursorStore').prepare(session, writeDir, { fresh })
     : undefined
   const textOnly = Array.isArray(tools) && tools.length === 0
-  const child = Boolean(session.parentRunId)
-  const managed = child || delegationEligible
   const delegation = require('./delegation')
   // Trigger actions fire only on the first prompt to a new agent or subagent.
-  const first = !session.providerAgentId || fresh
   const fired = textOnly || !first ? [] : firedActions(findTriggers(prompt))
   const extraMcpServers = triggerMcpServers(fired, session)
-  if (delegationEligible && !textOnly) extraMcpServers.push(delegation.open(session, runId, mode))
+  if (canDelegate && !textOnly) extraMcpServers.push(delegation.open(session, runId, mode))
   if (managed && session.provider === 'grok') onEvent?.({ type: 'status', status: 'Native spawning cannot be fully blocked by Grok; harness-only delegation is instructed.' })
   const makeDriver = () => createDriver({
     provider: session.provider,

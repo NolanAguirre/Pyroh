@@ -18,6 +18,14 @@ const EFFECTS = ['allow', 'deny']
 
 const builtinMode = (id) => BUILTIN_MODES.find((mode) => mode.id === id) || null
 
+// Resolve a built-in id or a mode entry. A persisted plugin descriptor takes
+// precedence and supplies its base and explicit overrides; missing behavior
+// comes from the current primitive definition without reloading the plugin.
+const turnMode = (mode, plugin) => {
+  const entry = plugin || (typeof mode === 'object' && mode ? mode : builtinMode(mode))
+  return entry ? modeDefaults({ ...entry, id: entry.id || mode, ...(plugin ? { kind: 'plugin' } : {}) }) : null
+}
+
 // `harness` is the API passed to getModes(); without a workspace there is none.
 const resolve = (workspace, { harness } = {}) => {
   const api = harness || (workspace ? makeHarnessApi(workspace) : null)
@@ -183,6 +191,7 @@ const explain = (workspace, { provider } = {}) => {
 module.exports = {
   RESERVED_MODES,
   builtinMode,
+  turnMode,
   resolve,
   decide,
   findMode,

@@ -3,15 +3,11 @@ const paths = require('../../store/paths')
 const { writeJson, ensureDir } = require('../../store/jsonFile')
 const sessionStore = require('../../store/sessionStore')
 const eventLog = require('../../store/eventLog')
-const questionStore = require('../../store/questionStore')
 const { errorMessage, formatError } = require('../../store/formatError')
 const { failureStatus } = require('../../store/networkError')
-const { snapshotIfGitRepo } = require('../../store/gitSnapshot')
-const workspaceStore = require('../../store/workspaceStore')
-const { runOneTurn } = require('../../harness/runTurn')
+const { runWorkflowTurn } = require('../../harness/workflow')
 const { attachLog, readControlIntent, clearControl, removePid } = require('../../harness/daemon')
 const analytics = require('../../analytics/client')
-const registry = require('../../registry')
 const {
   onceSteps,
   eachPhaseSteps,
@@ -21,14 +17,6 @@ const {
   shouldSkip,
 } = require('./pipeline')
 
-const PLAN_TOOLS = new Set(['createplan', 'exitplanmode'])
-
-const planFromToolCall = (event) => {
-  if (event.type !== 'tool_call') return null
-  if (!PLAN_TOOLS.has(String(event.name || '').toLowerCase())) return null
-  return typeof event.input?.plan === 'string' ? event.input.plan : null
-}
-
 const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
   const writeDir = config.writeDir
   require('../../store/sessionLock').acquire(sessionId, writeDir)
@@ -36,10 +24,13 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
   const logLine = (msg) => process.stdout.write(`[${new Date().toISOString()}] ${msg}\n`)
 
   ensureDir(paths.sessionDir(sessionId, writeDir))
+  const workflowRun = sessionStore.createRun(sessionId, { mode: 'decompose', prompt: sessionStore.readSourcePlan(sessionId, writeDir) || '' }, writeDir)
+  sessionStore.updateRun(sessionId, workflowRun.id, { pid: process.pid, workflow: true }, writeDir)
   writeJson(paths.daemonPid(sessionId, writeDir), {
     pid: process.pid,
     identity: require('../../store/sessionLock').identity(),
     kind: 'decompose',
+    runId: workflowRun.id,
     startedAt: Date.now(),
   })
 
@@ -49,33 +40,9 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
   const abortController = new AbortController()
   let terminating = false
   let exiting = false
-  let inflight = null
   let activeRunId = null
   let activePhase = 0
   let activeStepId = null
-
-  const askUser = async (question, { signal } = {}) => {
-    const q = { ...question, runId: activeRunId, phase: activePhase, step: activeStepId }
-    questionStore.writeQuestion(sessionId, q, writeDir)
-    eventLog.append(sessionId, { type: 'question', ...q }, writeDir)
-    sessionStore.updateSession(sessionId, { status: 'awaiting_input' }, writeDir)
-    logLine(`awaiting answer for question ${q.id}`)
-    let answer
-    try {
-      answer = await questionStore.awaitAnswer(sessionId, q.id, writeDir, {
-        signal: abortController.signal,
-        signals: signal ? [signal] : [],
-      })
-    } finally {
-      if (!abortController.signal.aborted) sessionStore.updateSession(sessionId, { status: 'running' }, writeDir)
-    }
-    eventLog.append(
-      sessionId,
-      { type: 'status', status: 'running', runId: activeRunId, phase: activePhase, step: activeStepId },
-      writeDir,
-    )
-    return answer
-  }
 
   const lastErrorPatch = (err, extra = {}) => ({
     lastError: {
@@ -94,6 +61,11 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
       if (sessionStatus) {
         sessionStore.updateSession(sessionId, { status: sessionStatus, ...extra }, writeDir)
       }
+      sessionStore.updateRun(sessionId, workflowRun.id, {
+        status: sessionStatus === 'finished' ? 'completed' : ['paused', 'stopped'].includes(sessionStatus) ? 'cancelled' : sessionStatus,
+        endedAt: Date.now(), error: extra.lastError?.message || null,
+      }, writeDir)
+      require('../../harness/delegation').stopChildren(sessionId, workflowRun.id)
       clearControl(sessionId, writeDir)
       removePid(sessionId, writeDir)
     } catch (err) {
@@ -151,12 +123,11 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
     const intent = readControlIntent(sessionId, writeDir) || 'paused'
     logLine(`received signal, intent=${intent}`)
     abortController.abort()
-    if (inflight && typeof inflight.cancel === 'function') {
-      await inflight.cancel()
-    }
+    require('../../harness/delegation').stopChildren(sessionId, workflowRun.id)
   }
   process.on('SIGTERM', onSignal)
   process.on('SIGINT', onSignal)
+  if (readControlIntent(sessionId, writeDir)) await onSignal()
 
   const progress = () => {
     const live = sessionStore.loadSession(sessionId, writeDir) || session
@@ -168,7 +139,6 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
   }
 
   const runStep = async ({ step, phase, totalPhases, sourcePlan: planText }) => {
-    step = { ...step, ...step.providers?.[session.provider] }
     const startedAt = Date.now()
     const runId = sessionStore.genId('r')
     activeRunId = runId
@@ -194,7 +164,6 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
       planBody: phase ? sessionStore.readPhasePlan(sessionId, phase, writeDir) || '' : '',
     }
     const prompt = promptFor(step, vars, session.provider)
-    const model = step.model || session.model
     const mode = step.agentMode || 'agent'
 
     const record = sessionStore.writeStepRun(
@@ -243,82 +212,37 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
       return failStep(`phase ${phase} plan.md is empty; re-run the plan step before executing`, 1)
     }
 
-    try {
-      const cwd = workspaceStore.resolveSessionCwd(session, writeDir)
-      const snap = snapshotIfGitRepo(cwd, {
-        message: `harness: snapshot before decompose ${step.id} phase ${phase} ${runId}`,
-      })
-      if (snap.committed) logLine(`git snapshot ${snap.hash} in ${cwd}`)
-    } catch (err) {
-      return failStep(err, 1)
-    }
-
-    let capturedPlan = null
-    const onEvent = (event) => {
-      const plan = planFromToolCall(event)
-      if (plan != null) capturedPlan = plan
-      eventLog.append(sessionId, { ...event, runId, phase, step: step.id }, writeDir)
-    }
-
-    logLine(`step ${step.id} phase ${phase} model=${model || 'default'} mode=${mode}`)
-    eventLog.append(
-      sessionId,
-      {
-        type: 'status',
-        status: phase ? `phase ${phase} ${step.id}` : step.id,
-        runId,
-        phase,
-        step: step.id,
-      },
-      writeDir,
-    )
+    logLine(`step ${step.id} phase ${phase} mode=${mode}`)
+    eventLog.append(sessionId, {
+      type: 'status', status: phase ? `phase ${phase} ${step.id}` : step.id,
+      runId, phase, step: step.id,
+    }, writeDir)
 
     let result
     try {
-      const live = sessionStore.loadSession(sessionId, writeDir) || session
-      const turn = await runOneTurn({
-        session: { ...live, providerAgentId: null, providerUsage: null },
-        fresh: true,
-        runId,
-        writeDir,
-        action: 'run',
+      result = await runWorkflowTurn({
+        parent: sessionStore.loadSession(sessionId, writeDir) || session,
+        parentRunId: workflowRun.id,
         mode,
         prompt: sendPrompt,
-        model,
-        tools: step.tools,
+        name: phase ? `Phase ${phase}: ${step.id === 'execute' ? 'Execute' : 'Plan'}` : 'Count phases',
+        workflow: { kind: 'decompose', phase, step: step.id },
         outputSchema: step.outputSchema,
         signal: abortController.signal,
-        onEvent,
-        askUser,
-        harnessTools: registry.toolsFor(registry.sessionWorkspace(live), { mode: 'decompose', provider: live.provider }),
-        onInflight: (next) => {
-          inflight = next
-          if (next) {
-            record.providerRunId = next.providerRunId || next.runId
-            sessionStore.writeStepRun(sessionId, { phase, stepId: step.id }, record, writeDir)
-          }
-        },
-        onCreated: (providerAgentId) => {
-          record.providerAgentId = providerAgentId
+        onPrepared: (child, run) => {
+          record.childSessionId = child.id
+          record.childRunId = run.id
           sessionStore.writeStepRun(sessionId, { phase, stepId: step.id }, record, writeDir)
-          sessionStore.updateSession(
-            sessionId,
-            { providerAgentId: providerAgentId || live.providerAgentId, providerUsage: null, status: 'running' },
-            writeDir,
-          )
         },
       })
-      result = turn.result
+      record.childRunId = result.childRunId || record.childRunId
       record.transcriptStatus = result.transcriptStatus
       record.transcriptError = result.transcriptError
-      if (result.providerUsage) sessionStore.updateSession(sessionId, { providerUsage: result.providerUsage }, writeDir)
     } catch (err) {
       return failStep(err, 2)
     }
 
-    const durationMs = result.durationMs || Date.now() - startedAt
-    sessionStore.addToTotals(sessionId, { runId, usage: result.usage, durationMs }, writeDir)
-    analytics.notifySession(sessionId)
+    const durationMs = 0
 
     const patch = {
       ...record,
@@ -342,11 +266,11 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
       return { stopped: true }
     }
 
-    if (result.status === 'error') {
+    if (!['completed', 'finished'].includes(result.status)) {
       return failStep(result.error || 'run failed', 2, patch)
     }
 
-    const artifact = capturedPlan || result.result
+    const artifact = result.plan || result.result
     if (step.write && !step.write.endsWith('.json') && artifact) {
       sessionStore.writeStepArtifact(
         sessionId,
