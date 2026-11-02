@@ -73,8 +73,8 @@ const config = {
   memoryMcpUrl: (process.env.HARNESS_MEMORY_MCP_URL || '').trim().replace(/\/+$/, '') || null,
   // mcpdevid base URL. Unset disables dev id allocation on prompts that ask for dev ids.
   devIdMcpUrl: (process.env.HARNESS_DEVID_MCP_URL || '').trim().replace(/\/+$/, '') || null,
-  // Base URL the categorizer uses to call back into this API.
-  publicUrl: (process.env.HARNESS_PUBLIC_URL || '').trim().replace(/\/+$/, '') || `http://localhost:${port}`,
+  // Callbacks and MCP use nginx: Node fetch blocks the backend's port 6000.
+  publicUrl: (process.env.HARNESS_PUBLIC_URL || '').trim().replace(/\/+$/, '') || 'http://localhost:6060',
 }
 
 module.exports = config

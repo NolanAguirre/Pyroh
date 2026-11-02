@@ -198,6 +198,8 @@ Your entire final response is sent verbatim as the first message of a fresh chat
 - Current state: what has been done and verified, and what is in progress.
 - Remaining work: concrete next steps in order, plus open questions.
 
+Do not include context from rules files; the new session will load those files itself.
+
 Do not modify files or run commands that change state. Do not add a preamble or closing remarks outside the prompt.
 {{focus}}`,
   },
