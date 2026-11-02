@@ -1,4 +1,4 @@
-import { isPlanTool } from './plan'
+import { isMarkdownPlan, isPlanTool } from './plan'
 
 // Item IDs belong to a provider turn. Merge replayed deltas exactly as live ones,
 // and replace them with the authoritative completed item when it arrives.
@@ -69,6 +69,30 @@ export const hideRecordedPlanText = (events) => {
   return events.filter((event) => {
     if (event.type !== 'text' || !runsWithPlan.has(event.runId)) return true
     return !String(event.itemId || '').endsWith(':plan')
+  })
+}
+
+// Detect only the final reply after a run finishes, never partial streamed text.
+export const detectAutomaticPlans = (events, runs) => {
+  const completed = new Set(runs.filter((run) => run.status === 'completed').map((run) => run.id))
+  const recorded = new Set()
+  const lastReply = new Map()
+  for (const event of events) {
+    if (event.type === 'result' && event.status === 'completed') completed.add(event.runId)
+    if (event.type === 'tool_call' && isPlanTool(event.name)) recorded.add(event.runId)
+    if (event.type === 'text' && event.text?.trim()) lastReply.set(event.runId, event)
+    if (event.type === 'tool_call') lastReply.delete(event.runId)
+  }
+  return events.map((event) => {
+    if (!completed.has(event.runId) || recorded.has(event.runId)
+      || lastReply.get(event.runId) !== event || !isMarkdownPlan(event.text)) return event
+    return {
+      ...event,
+      type: 'tool_call',
+      automaticPlan: true,
+      input: { plan: event.text },
+      status: 'completed',
+    }
   })
 }
 

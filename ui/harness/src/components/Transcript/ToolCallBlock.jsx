@@ -4,7 +4,7 @@ import { isPlanTool, planMarkdown, planView } from './plan'
 import PlanMarkdown from './PlanMarkdown'
 
 const ToolCallBlock = ({ event, renderPlanActions }) => {
-  if (isPlanTool(event.name)) {
+  if (event.automaticPlan || isPlanTool(event.name)) {
     const view = planView(event)
     const plan = planMarkdown(view)
     return (
@@ -13,7 +13,7 @@ const ToolCallBlock = ({ event, renderPlanActions }) => {
           <Fold defaultOpen>
             <FoldTrigger>
               <div className="tx__fold-header">
-                <span className="tx__fold-title">Plan Proposal</span>
+                <span className="tx__fold-title">{event.automaticPlan ? 'Automatic plan detected' : 'Plan Proposal'}</span>
                 {view.status && (
                   <Badge size="small" variant={view.status === 'error' ? 'danger' : 'info'}>
                     {view.status}

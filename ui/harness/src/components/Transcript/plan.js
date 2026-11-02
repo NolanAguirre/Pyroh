@@ -15,6 +15,13 @@ const HARNESS_PLAN_STOP = 'The harness recorded this plan. Stop now without impl
 
 export const isPlanTool = (name) => PLAN_TOOLS.has(String(name || '').toLowerCase())
 
+export const isMarkdownPlan = (text) => {
+  if (typeof text !== 'string') return false
+  const lines = text.trim().split(/\r?\n/)
+  return /^#{1,6}\s+\S/.test(lines[0])
+    && lines.slice(1).some((line) => line.trim() && !/^\s*#{1,6}(?:\s|$)/.test(line))
+}
+
 export const planMarkdown = (event) => {
   const input = asObject(event.input)
   if (typeof input?.plan === 'string') return input.plan

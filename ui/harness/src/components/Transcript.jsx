@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { DevScope } from 'component-library'
 import { errorText } from './Transcript/errorText'
-import { hideRecordedPlanText, logParts, questionEvents, transcriptItems, userEvents } from './Transcript/items'
+import { detectAutomaticPlans, hideRecordedPlanText, logParts, questionEvents, transcriptItems, userEvents } from './Transcript/items'
 import LogRun from './Transcript/LogRun'
 import StructuredBlock from './Transcript/StructuredBlock'
 import ToolCallBlock from './Transcript/ToolCallBlock'
@@ -43,7 +43,7 @@ const Transcript = ({ devId, events, runs = [], questions = [], renderPlanAction
       return [{ type: 'result', runId: run.id, status: run.status, error: message, ts: run.endedAt || run.startedAt }]
     })
     const items = transcriptItems([...events, ...missing, ...userEvents(runs), ...questionEvents(questions)].sort((a, b) => (a.ts || 0) - (b.ts || 0)))
-    return logParts(markQueued(hideRecordedPlanText(items), queued, workspaceId, viewerSessionId))
+    return logParts(markQueued(detectAutomaticPlans(hideRecordedPlanText(items), runs), queued, workspaceId, viewerSessionId))
   }, [events, runs, questions, queued, workspaceId, viewerSessionId])
 
   return (
