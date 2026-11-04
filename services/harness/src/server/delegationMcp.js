@@ -10,7 +10,7 @@ const availableTools = (context) => {
   const session = store.loadSession(context.sessionId, config.writeDir)
   const { maxSubagentDepth } = getUiSettings(config.writeDir)
   const depth = session?.depth ?? 0
-  return tools.filter(tool => tool.name !== 'spawn' || depth < maxSubagentDepth)
+  return tools.filter(tool => tool.name !== 'spawn' || delegation.canSpawn(session))
     .map(tool => tool.name === 'spawn'
       ? { ...tool, description: `${tool.description} Your depth is ${depth}; the current maximum is ${maxSubagentDepth}.` }
       : tool)

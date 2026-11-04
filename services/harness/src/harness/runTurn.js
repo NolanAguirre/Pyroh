@@ -92,9 +92,12 @@ const runOneTurn = async ({
   }
   const child = Boolean(session.parentRunId) && session.childKind !== 'workflow'
   const managed = primitive || child
-  const { maxSubagentDepth } = require('../store/uiSettings').getUiSettings(writeDir)
   const depth = session.depth ?? sessionStore.loadSession(session.id, writeDir)?.depth ?? 0
-  const canDelegate = primitive && depth < maxSubagentDepth && (delegationEligible ?? entry?.delegationEligible ?? true)
+  const delegation = require('./delegation')
+  const delegationSession = { ...session, depth }
+  const eligible = primitive && (delegationEligible ?? entry?.delegationEligible ?? true)
+  const canDelegate = eligible && delegation.canSpawn(delegationSession)
+  const canManageChildren = eligible && delegation.canDelegate(delegationSession) && delegation.hasPendingChildren(session.id)
   const inheritedConfiguration = nativeFork ? session.fork.sourceConfiguration : null
   if (tools === undefined && inheritedConfiguration?.settings.tools !== undefined) tools = inheritedConfiguration.settings.tools
   const settings = { model: model || session.model || inheritedConfiguration?.settings.model, cwd: workspaceStore.resolveSessionCwd(session, writeDir), mode, tools,
@@ -108,7 +111,6 @@ const runOneTurn = async ({
     ? await require('../store/cursorStore').prepare(session, writeDir, { fresh })
     : undefined
   const textOnly = Array.isArray(tools) && tools.length === 0
-  const delegation = require('./delegation')
   // Trigger actions fire only on the first prompt to a new agent or subagent.
   const fired = textOnly || !first ? [] : firedActions(findTriggers(prompt))
   const previousTools = session.providerConfiguration?.tools
@@ -116,7 +118,7 @@ const runOneTurn = async ({
   for (const server of triggerMcpServers(fired, session)) {
     if (!extraMcpServers.some(previous => previous.name === server.name)) extraMcpServers.push(server)
   }
-  if (canDelegate && !textOnly) extraMcpServers.push(delegation.open(session, runId, mode))
+  if ((canDelegate || canManageChildren) && !textOnly) extraMcpServers.push(delegation.open(session, runId, mode))
   if (managed && session.provider === 'grok') onEvent?.({ type: 'status', status: 'Native spawning cannot be fully blocked by Grok; harness-only delegation is instructed.' })
   const allowedTools = inheritedConfiguration?.tools.list && Array.isArray(harnessTools)
     ? inheritedConfiguration.tools.list.filter(id => harnessTools.includes(id)) : harnessTools
@@ -216,9 +218,8 @@ const runOneTurn = async ({
     const managedInstructions = managed
       ? [
         instructions,
-        delegation.guidance(session.provider, !canDelegate || textOnly),
-        `Your session depth is ${depth}; the global maximum subagent depth is ${maxSubagentDepth}. Root sessions have depth 0. ${canDelegate && !textOnly ? 'You may delegate within this limit. Each child is one level deeper.' : 'Delegation is unavailable this turn. Do not spawn agents.'}`,
-        child && 'You are a harness child. Stay within your assigned task and scope. Any children you delegate to must stay within that same scope. Return your result to your parent after your child work is complete.',
+        delegation.guidance(session.provider, child, { session: delegationSession, canDelegate: canDelegate && !textOnly }),
+        canManageChildren && !canDelegate && !textOnly && 'Existing children may still finish. Use harness_agents status/wait/stop to manage them; spawning is unavailable. If their results are needed, end this turn with a brief pending-work update. Their results will resume you automatically. Do not poll or wait in a loop.',
       ].filter(Boolean).join('\n\n')
       : instructions
     const sendOptions = { mode, onEvent: handleEvent, outputSchema, instructions: managedInstructions }

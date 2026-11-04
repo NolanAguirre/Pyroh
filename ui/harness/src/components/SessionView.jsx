@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, DevScope, Popup, PromptInput, useSpeechRecognition } from 'component-library'
+import { Button, DevScope, Popup, PromptInput, SplitPane, useSpeechRecognition } from 'component-library'
 import { TRIGGERS } from 'prompt-triggers'
 import useSessionEvents from '../useSessionEvents'
 import api from '../api'
@@ -333,6 +333,16 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
           onToggleSide={() => setSideOpen((prev) => !prev)}
         />
 
+        <SplitPane
+          className="session-view__split"
+          direction="vertical"
+          primary="second"
+          defaultSize={420}
+          minSize={200}
+          maxSize={900}
+          storageKey="harness.composer.height"
+          devId="hr4m8q6"
+        >
         <div className={`session-view__body${sideOpen ? '' : ' session-view__body--side-collapsed'}`}>
           <div className="session-view__main">
             {session.parentSessionId && (
@@ -504,6 +514,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
             {speech.error ? <p className="composer__error hint hint--error" role="alert">Dictation error: {speech.error}</p> : null}
           </footer>
         </DevScope>
+        </SplitPane>
       </section>
     </DevScope>
   )

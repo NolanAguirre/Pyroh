@@ -506,8 +506,7 @@ const guidance = (provider, child = false, { session, canDelegate: enabled } = {
   const depth = session ? `This session is at depth ${session.depth}. ` : ''
   const limit = `${depth}The current maximum subagent depth is ${maxDepth}; root sessions are depth 0. Each child is one level deeper. The harness checks the current limit at every spawn.`
   if (!allowed) return `${prompts.text('delegationChild', provider)}\n${limit}\nDelegation is unavailable for this turn. Finish the assigned work yourself.`
-  const scope = child ? prompts.text('delegationChild', provider)
-    .replace('Do not delegate or spawn other agents.', 'You may delegate bounded parts of your assigned task through harness_agents within the depth limit.') : ''
+  const scope = child ? 'You are a harness child. Stay within your assigned question, context, scope, expected output, and stopping point. You may delegate bounded parts of that task through harness_agents within the depth limit. Return your result to your parent after your child work is complete; do not expand into adjacent work.' : ''
   return [scope, prompts.text('delegationParent', provider), limit].filter(Boolean).join('\n\n')
 }
 

@@ -107,8 +107,20 @@
   display: inline-flex;
 }
 
-.session-view__body {
+.session-view__split {
   flex: 1;
+  min-height: 0;
+  --split-pane-border: var(--border);
+  --split-pane-accent: var(--accent);
+}
+
+.session-view__split > .split-pane__pane--second {
+  display: flex;
+  flex-direction: column;
+}
+
+.session-view__body {
+  height: 100%;
   min-height: 0;
   display: grid;
   grid-template-columns: 1fr 340px;
