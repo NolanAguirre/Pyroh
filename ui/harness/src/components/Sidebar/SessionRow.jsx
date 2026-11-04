@@ -13,7 +13,7 @@ const STATUS_VARIANT = {
   finished: 'success',
   error: 'danger',
   queued: 'info',
-  subagent: 'info',
+  subagent: 'primary',
 }
 
 const SessionRow = memo(({ session, active, onSelect, onRename, onArchive, archiveBusy, onPin, pinBusy }) => {
