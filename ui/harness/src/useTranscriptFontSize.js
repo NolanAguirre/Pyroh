@@ -1,27 +1,35 @@
 import { useEffect, useRef, useState } from 'react'
 import api from './api'
 
-// Transcript font size from UI settings. Changes save after a short pause.
+// Global UI settings. Changes save after a short pause.
 const useTranscriptFontSize = () => {
   const [transcriptFontSize, setTranscriptFontSize] = useState(13)
+  const [maxSubagentDepth, setMaxSubagentDepth] = useState(2)
   const [settingsError, setSettingsError] = useState('')
   const transcriptFontTouched = useRef(false)
+  const maxSubagentDepthTouched = useRef(false)
   const fontSaveTimer = useRef(null)
+  const depthSaveTimer = useRef(null)
 
   useEffect(() => {
     let cancelled = false
     api
       .getUiSettings()
       .then(({ settings }) => {
-        if (cancelled || transcriptFontTouched.current) return
-        if (settings && Number.isInteger(settings.transcriptFontSize)) {
+        if (cancelled || !settings) return
+        if (!transcriptFontTouched.current && Number.isInteger(settings.transcriptFontSize)) {
           setTranscriptFontSize(settings.transcriptFontSize)
+        }
+        if (!maxSubagentDepthTouched.current && Number.isInteger(settings.maxSubagentDepth)
+          && settings.maxSubagentDepth >= 0 && settings.maxSubagentDepth <= 10) {
+          setMaxSubagentDepth(settings.maxSubagentDepth)
         }
       })
       .catch(() => {})
     return () => {
       cancelled = true
       if (fontSaveTimer.current) clearTimeout(fontSaveTimer.current)
+      if (depthSaveTimer.current) clearTimeout(depthSaveTimer.current)
     }
   }, [])
 
@@ -39,7 +47,21 @@ const useTranscriptFontSize = () => {
     }, 300)
   }
 
-  return { transcriptFontSize, changeTranscriptFontSize, settingsError }
+  const changeMaxSubagentDepth = (value) => {
+    const next = Number(value)
+    if (!Number.isInteger(next) || next < 0 || next > 10) return
+    maxSubagentDepthTouched.current = true
+    setMaxSubagentDepth(next)
+    setSettingsError('')
+    if (depthSaveTimer.current) clearTimeout(depthSaveTimer.current)
+    depthSaveTimer.current = setTimeout(() => {
+      api
+        .setUiSettings({ maxSubagentDepth: next })
+        .catch((err) => setSettingsError(err && err.message ? err.message : String(err)))
+    }, 300)
+  }
+
+  return { transcriptFontSize, changeTranscriptFontSize, maxSubagentDepth, changeMaxSubagentDepth, settingsError }
 }
 
 export default useTranscriptFontSize

@@ -13,6 +13,8 @@ const recordRun = (run, session, writeDir, runFile) => {
     parentSessionId: run.parentSessionId || session?.parentSessionId || null,
     parentRunId: run.parentRunId || session?.parentRunId || null,
     rootSessionId: run.rootSessionId || session?.rootSessionId || null,
+    lineage: run.lineage || session?.lineage || [],
+    depth: run.depth ?? session?.depth ?? 0,
     workspaceId: session?.workspaceId || null,
     mode: run.step ? 'decompose' : run.mode,
     agentMode: run.mode,

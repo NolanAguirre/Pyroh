@@ -160,7 +160,7 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     const { signal } = context
     const deny = (message) => ({ behavior: 'deny', message })
     if (!active || active.done) return { behavior: 'deny', message: 'No active harness turn', interrupt: true }
-    if (tools.disableNativeSpawning && ['Task', 'Agent'].includes(toolName)) return deny('Use harness delegation tools; child delegation is disabled.')
+    if (tools.disableNativeSpawning && ['Task', 'Agent'].includes(toolName)) return deny('Native spawning is disabled. Use harness delegation tools when available.')
     if (tools.restrictedChild && ['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'EnterWorktree', 'ExitPlanMode'].includes(toolName)) return deny('Child mode is read-only.')
     if (isHarnessMcpTool(toolName)) return { behavior: 'allow', updatedInput: toolInput }
     if (toolName === 'ExitPlanMode' && active.mode === 'plan') {

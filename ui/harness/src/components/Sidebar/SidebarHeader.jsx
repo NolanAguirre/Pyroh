@@ -25,6 +25,8 @@ const SidebarHeader = ({
   onCreated,
   transcriptFontSize,
   onTranscriptFontSize,
+  maxSubagentDepth,
+  onMaxSubagentDepth,
   settingsError,
 }) => (
   <DevScope id="t8w3n6p">
@@ -35,6 +37,8 @@ const SidebarHeader = ({
             devId="b2x9t5h"
             transcriptFontSize={transcriptFontSize}
             onTranscriptFontSize={onTranscriptFontSize}
+            maxSubagentDepth={maxSubagentDepth}
+            onMaxSubagentDepth={onMaxSubagentDepth}
             error={settingsError}
           />
           <Button variant="secondary" size="sm" devId="k4m8q2w" title="Settings" aria-label="Settings">

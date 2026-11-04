@@ -68,7 +68,7 @@ const App = () => {
       .catch(() => setProviders([]))
   }, [])
 
-  const { transcriptFontSize, changeTranscriptFontSize, settingsError } = useTranscriptFontSize()
+  const { transcriptFontSize, changeTranscriptFontSize, maxSubagentDepth, changeMaxSubagentDepth, settingsError } = useTranscriptFontSize()
   const leaveSession = () => go(activeWorkspaceId, null, { replace: true })
   const {
     sessions,
@@ -220,6 +220,8 @@ const App = () => {
       onOpenPanel={openPanel}
       transcriptFontSize={transcriptFontSize}
       onTranscriptFontSize={changeTranscriptFontSize}
+      maxSubagentDepth={maxSubagentDepth}
+      onMaxSubagentDepth={changeMaxSubagentDepth}
       settingsError={settingsError}
     />
   )

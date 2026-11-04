@@ -2,6 +2,19 @@ const express = require('express')
 const delegation = require('../harness/delegation')
 
 const { tools } = require('../harness/delegationTools')
+const config = require('../config')
+const store = require('../store/sessionStore')
+const { getUiSettings } = require('../store/uiSettings')
+
+const availableTools = (context) => {
+  const session = store.loadSession(context.sessionId, config.writeDir)
+  const { maxSubagentDepth } = getUiSettings(config.writeDir)
+  const depth = session?.depth ?? 0
+  return tools.filter(tool => tool.name !== 'spawn' || depth < maxSubagentDepth)
+    .map(tool => tool.name === 'spawn'
+      ? { ...tool, description: `${tool.description} Your depth is ${depth}; the current maximum is ${maxSubagentDepth}.` }
+      : tool)
+}
 
 const router = express.Router()
 router.use('/:token', (req, res, next) => {
@@ -23,7 +36,7 @@ router.post('/:token', async (req, res) => {
       capabilities: { tools: {} }, serverInfo: { name: 'harness-agents', version: '1.0.0' } })
   }
   if (message.method === 'ping') return reply({})
-  if (message.method === 'tools/list') return reply({ tools })
+  if (message.method === 'tools/list') return reply({ tools: availableTools(req.delegation) })
   if (message.method !== 'tools/call') return res.json({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'Method not found' } })
   try {
     const { name, arguments: args = {} } = message.params || {}

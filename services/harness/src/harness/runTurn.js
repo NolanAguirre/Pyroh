@@ -92,7 +92,9 @@ const runOneTurn = async ({
   }
   const child = Boolean(session.parentRunId) && session.childKind !== 'workflow'
   const managed = primitive || child
-  const canDelegate = primitive && !child && (delegationEligible ?? entry?.delegationEligible ?? true)
+  const { maxSubagentDepth } = require('../store/uiSettings').getUiSettings(writeDir)
+  const depth = session.depth ?? sessionStore.loadSession(session.id, writeDir)?.depth ?? 0
+  const canDelegate = primitive && depth < maxSubagentDepth && (delegationEligible ?? entry?.delegationEligible ?? true)
   const inheritedConfiguration = nativeFork ? session.fork.sourceConfiguration : null
   if (tools === undefined && inheritedConfiguration?.settings.tools !== undefined) tools = inheritedConfiguration.settings.tools
   const settings = { model: model || session.model || inheritedConfiguration?.settings.model, cwd: workspaceStore.resolveSessionCwd(session, writeDir), mode, tools,
@@ -212,7 +214,12 @@ const runOneTurn = async ({
     }
 
     const managedInstructions = managed
-      ? [instructions, delegation.guidance(session.provider, child || !canDelegate || textOnly)].filter(Boolean).join('\n\n')
+      ? [
+        instructions,
+        delegation.guidance(session.provider, !canDelegate || textOnly),
+        `Your session depth is ${depth}; the global maximum subagent depth is ${maxSubagentDepth}. Root sessions have depth 0. ${canDelegate && !textOnly ? 'You may delegate within this limit. Each child is one level deeper.' : 'Delegation is unavailable this turn. Do not spawn agents.'}`,
+        child && 'You are a harness child. Stay within your assigned task and scope. Any children you delegate to must stay within that same scope. Return your result to your parent after your child work is complete.',
+      ].filter(Boolean).join('\n\n')
       : instructions
     const sendOptions = { mode, onEvent: handleEvent, outputSchema, instructions: managedInstructions }
     const firstSendOptions = { ...sendOptions }

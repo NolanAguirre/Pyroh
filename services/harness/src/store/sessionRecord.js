@@ -8,6 +8,7 @@ const { listProviders } = require('../agents/driver')
 const { normalizeCodexOptions } = require('../agents/providers/codexOptions')
 const { normalizeGrokOptions } = require('../agents/providers/grokOptions')
 const { normalizeClaudeOptions } = require('../agents/providers/claudeOptions')
+const { withAncestry, withAncestryAsync } = require('./sessionAncestry')
 
 const genId = (prefix) => `${prefix}_${Date.now().toString(36)}${crypto.randomBytes(3).toString('hex')}`
 
@@ -39,6 +40,7 @@ const withResolvedCwdAsync = async (session, writeDir, workspaces) => {
 }
 
 const writeSession = (next, writeDir) => {
+  next = withAncestry(next, writeDir)
   const file = paths.sessionFile(next.id, writeDir)
   writeJson(file, next)
   sessionIndex.upsert(next, fs.statSync(file).mtimeMs, writeDir)
@@ -59,6 +61,10 @@ const createSession = ({ workspaceId, provider, model, codex, grok, claude }, wr
   paths.rememberSession(id, workspaceId, writeDir)
   const session = {
     id,
+    parentSessionId: null,
+    rootSessionId: id,
+    lineage: [],
+    depth: 0,
     workspaceId,
     provider,
     model: model || null,
@@ -80,15 +86,15 @@ const createSession = ({ workspaceId, provider, model, codex, grok, claude }, wr
 }
 
 const loadSession = (sessionId, writeDir) =>
-  withResolvedCwd(readJson(paths.sessionFile(sessionId, writeDir), null), writeDir)
+  withResolvedCwd(withAncestry(readJson(paths.sessionFile(sessionId, writeDir), null), writeDir), writeDir)
 
 const loadSessionAsync = async (sessionId, writeDir, workspaces) =>
-  withResolvedCwdAsync(await readJsonAsync(paths.sessionFile(sessionId, writeDir), null), writeDir, workspaces)
+  withResolvedCwdAsync(await withAncestryAsync(await readJsonAsync(paths.sessionFile(sessionId, writeDir), null), writeDir), writeDir, workspaces)
 
 const updateSession = (sessionId, patch, writeDir) => {
   const session = loadSession(sessionId, writeDir)
   if (!session) throw new Error(`session not found: ${sessionId}`)
-  const next = persistableSession({ ...session, ...patch, updatedAt: Date.now() })
+  const next = withAncestry(persistableSession({ ...session, ...patch, updatedAt: Date.now() }), writeDir)
   writeSession(next, writeDir)
   return withResolvedCwd(next, writeDir)
 }

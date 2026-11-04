@@ -497,12 +497,9 @@ router.get('/ui', (_req, res) => {
 
 router.patch('/ui', (req, res) => {
   const body = req.body || {}
-  if (!Object.prototype.hasOwnProperty.call(body, 'transcriptFontSize')) {
-    return res.status(400).json({ error: 'transcriptFontSize is required' })
-  }
   try {
     res.json({
-      settings: uiSettings.updateUiSettings({ transcriptFontSize: body.transcriptFontSize }, config.writeDir),
+      settings: uiSettings.updateUiSettings(body, config.writeDir),
     })
   } catch (err) {
     const message = err && err.message ? err.message : String(err)

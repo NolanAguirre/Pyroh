@@ -3,12 +3,12 @@ import { DevScope, FormRange } from 'component-library'
 const MIN_TRANSCRIPT_FONT_SIZE = 12
 const MAX_TRANSCRIPT_FONT_SIZE = 24
 
-const UiSettingsForm = ({ devId, transcriptFontSize, onTranscriptFontSize, error }) => (
-  <DevScope id={devId} state={{ transcriptFontSize }}>
+const UiSettingsForm = ({ devId, transcriptFontSize, onTranscriptFontSize, maxSubagentDepth, onMaxSubagentDepth, error }) => (
+  <DevScope id={devId} state={{ transcriptFontSize, maxSubagentDepth }}>
     <form className="ui-settings" onSubmit={(event) => event.preventDefault()}>
       <div className="ui-settings__header">
         <h2>Settings</h2>
-        <p className="hint">Transcript and prompt text size is saved on disk.</p>
+        <p className="hint">Global settings are saved on disk.</p>
       </div>
       <DevScope id="d8w1j4r" state={{ transcriptFontSize }}>
         <label className="field">
@@ -24,6 +24,23 @@ const UiSettingsForm = ({ devId, transcriptFontSize, onTranscriptFontSize, error
               onChange: (event) => onTranscriptFontSize(event.target.value),
             }}
           />
+        </label>
+      </DevScope>
+      <DevScope id="q6n2s8d" state={{ maxSubagentDepth }}>
+        <label className="field">
+          <span className="field__label">Maximum subagent depth: {maxSubagentDepth}</span>
+          <FormRange
+            min={0}
+            max={10}
+            step={1}
+            aria-label="Maximum subagent depth"
+            field={{
+              name: 'maxSubagentDepth',
+              value: maxSubagentDepth,
+              onChange: (event) => onMaxSubagentDepth(event.target.value),
+            }}
+          />
+          <span className="hint">Root depth is 0. Limit 0 disables delegation; 1 allows children; 2 lets children delegate once.</span>
         </label>
       </DevScope>
       {error ? <p className="hint hint--error" role="alert">{error}</p> : null}

@@ -44,6 +44,8 @@ const SessionsSidebar = ({
   pinError,
   transcriptFontSize = 13,
   onTranscriptFontSize,
+  maxSubagentDepth = 2,
+  onMaxSubagentDepth,
   settingsError = '',
 }) => {
   const { filteredSessions, shownSessions, hiddenArchived, sessionsToArchive, showMoreArchived } = useSidebarSessions({
@@ -126,6 +128,8 @@ const SessionsSidebar = ({
           onCreated={onCreated}
           transcriptFontSize={transcriptFontSize}
           onTranscriptFontSize={onTranscriptFontSize}
+          maxSubagentDepth={maxSubagentDepth}
+          onMaxSubagentDepth={onMaxSubagentDepth}
           settingsError={settingsError}
         />
 
