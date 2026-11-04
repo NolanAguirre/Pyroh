@@ -8,8 +8,21 @@ const { writePromptFile, persistRecordPrompt, readRecordPrompt, readRecordPrompt
 
 const createRun = (sessionId, { mode, prompt, handoff, plugin, delegationDelivery, queuedMessage }, writeDir) => {
   const session = loadSession(sessionId, writeDir)
-  if (session?.parentRunId && session.childKind !== 'workflow' && listRuns(sessionId, writeDir).length) {
-    throw new Error('Harness children have one run; start a new child instead')
+  if (session?.parentRunId && session.childKind !== 'workflow') {
+    const runs = listRuns(sessionId, writeDir)
+    if (runs.length) {
+      const results = runs.flatMap(run => {
+        const state = readJson(path.join(paths.sessionDir(sessionId, writeDir), 'delegation', `${run.id}.json`))
+        return state && !state.cancelledAt ? Object.values(state.children || {}) : []
+      })
+      const automaticContinuation = !session.stopRequestedAt && session.status !== 'stopped' &&
+        typeof delegationDelivery?.batchId === 'string' && delegationDelivery.batchId &&
+        Array.isArray(delegationDelivery.resultIds) && delegationDelivery.resultIds.length > 0 &&
+        delegationDelivery.resultIds.every(id => typeof id === 'string' && id &&
+          results.some(child => child.resultId === id && child.result?.done && child.delivery?.status === 'pending') &&
+          !runs.some(run => run.delegationDelivery?.resultIds?.includes(id)))
+      if (!automaticContinuation) throw new Error('Harness children may only start another run for automatic child results')
+    }
   }
   const ancestry = session ? {
     parentSessionId: session.parentSessionId,

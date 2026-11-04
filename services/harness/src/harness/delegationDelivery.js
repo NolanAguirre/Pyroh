@@ -9,6 +9,21 @@ const { readJson, writeJson } = require('../store/jsonFile')
 const recoverParent = (sessionId, { withLock, statesFor, describe, retryableDelivery }) => withLock(sessionId, 'delivery', () => {
   // User follow-ups get the next idle turn before automatic child results.
   if (require('../store/queuedMessageStore').hasReadyWork(sessionId, config.writeDir)) return
+  const finishedResult = (child) => {
+    const result = describe(child)
+    if (!result.done || !child.sessionId) return result
+    // A continuation may have started since the snapshot. Its session lock
+    // makes the final snapshot atomic with continuation creation and launch.
+    if (locks.holds(child.sessionId, config.writeDir)) return null
+    let lock
+    try {
+      lock = locks.acquire(child.sessionId, config.writeDir)
+      return describe(child)
+    } catch (err) {
+      if (err.status === 409) return null
+      throw err
+    } finally { lock?.release() }
+  }
   const collect = (receipts = new Map()) => {
     const pending = []
     for (const { runId } of statesFor(sessionId)) {
@@ -28,8 +43,8 @@ const recoverParent = (sessionId, { withLock, statesFor, describe, retryableDeli
             changed = true
           }
           if (!child.result) {
-            const result = describe(child)
-            if (result.done) {
+            const result = finishedResult(child)
+            if (result?.done) {
               child.result = { ...result, resultId: child.resultId, parentSessionId: sessionId, parentRunId: runId,
                 task: child.task || null, collectedAt: Date.now() }
               changed = true
@@ -77,9 +92,8 @@ const recoverParent = (sessionId, { withLock, statesFor, describe, retryableDeli
   try {
     store.recoverSession(sessionId, config.writeDir)
     const parent = store.loadSession(sessionId, config.writeDir)
-    if (!parent || ['queued', 'stopped'].includes(parent.status)) return
-    if (parent.parentRunId && (parent.childKind !== 'workflow' ||
-      !require('./delegation').workflowAllowed(parent.parentSessionId, parent.parentRunId))) return
+    if (!parent || parent.stopRequestedAt || ['queued', 'stopped'].includes(parent.status)) return
+    if (parent.parentRunId && !require('./delegation').parentAllowed(parent.parentSessionId, parent.parentRunId)) return
     const runs = store.listRuns(sessionId, config.writeDir)
     // A committed receipt may precede worker launch. Retry that same run,
     // preserving its ID and prompt instead of delivering the batch twice.
@@ -108,6 +122,9 @@ const recoverParent = (sessionId, { withLock, statesFor, describe, retryableDeli
     const mode = source?.mode || parent.mode || 'agent'
     const results = pending.map(result => ({
       task: result.task,
+      sessionId: result.sessionId, runId: result.runId, latestRunId: result.latestRunId,
+      depth: result.depth, lineage: result.lineage,
+      usage: result.normalizedUsage,
       finalResponse: result.finalResponse,
       ...(result.state !== 'completed' ? { state: result.state } : {}),
       ...(result.error ? { error: result.error } : {}),

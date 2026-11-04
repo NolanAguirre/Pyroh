@@ -9,6 +9,7 @@ const { readJson, readJsonAsync, writeJson } = require('../store/jsonFile')
 const locks = require('../store/sessionLock')
 const questions = require('../store/questionStore')
 const registry = require('../registry')
+const { getUiSettings } = require('../store/uiSettings')
 
 const fileFor = (sessionId, runId) => path.join(paths.sessionDir(sessionId, config.writeDir), 'delegation', `${runId}.json`)
 const credentialFile = (hash) => path.join(config.writeDir, 'delegation-credentials', `${hash}.json`)
@@ -56,8 +57,16 @@ const workflowAllowed = (sessionId, runId) => {
   return Boolean(run?.workflow && !readJson(fileFor(sessionId, runId))?.cancelledAt && activeOwner(session, run, owner))
 }
 
-const canDelegate = (session) => Boolean(session && (!session.parentRunId ||
-  (session.childKind === 'workflow' && workflowAllowed(session.parentSessionId, session.parentRunId))))
+// Depth limits govern new children, not completion of work already accepted.
+const canDelegate = (session) => Boolean(session && !session.stopRequestedAt && session.status !== 'stopped' &&
+  (!session.parentRunId || parentAllowed(session.parentSessionId, session.parentRunId)))
+const canSpawn = (session) => canDelegate(session) && session.depth < getUiSettings(config.writeDir).maxSubagentDepth
+const assertSpawnDepth = (session) => {
+  const maxDepth = getUiSettings(config.writeDir).maxSubagentDepth
+  if (!Number.isInteger(session?.depth) || session.depth >= maxDepth) {
+    fail(`Subagent depth limit reached: parent depth ${session?.depth ?? 'unknown'}, maximum child depth ${maxDepth}`)
+  }
+}
 
 const parentActive = (sessionId, runId) => {
   const session = store.loadSession(sessionId, config.writeDir)
@@ -131,36 +140,47 @@ const targetFor = (parent, state, args) => {
   }
 }
 
-const describeRecords = (child, session, run, pendingQuestions) => {
-  const done = Boolean(run?.endedAt || child.error || child.cancelRequestedAt)
+const describeRecords = (child, session, run, pendingQuestions, runs = run ? [run] : []) => {
+  const cancelled = Boolean(child.cancelRequestedAt || session?.stopRequestedAt)
+  const waiting = Boolean(session && hasPendingChildren(session.id))
+  const done = Boolean((cancelled || child.error || run?.endedAt) && !waiting && runs.every(item => item.endedAt))
+  const normalized = runs.map(item => store.normalizeUsage(item.usage, session?.provider)).filter(Boolean)
+  const normalizedUsage = normalized.length ? normalized.reduce((total, usage) => {
+    for (const [key, value] of Object.entries(usage)) total[key] = (total[key] || 0) + value
+    return total
+  }, {}) : null
   return {
     sessionId: child.sessionId || null, runId: child.runId || null,
+    latestRunId: run?.id || null,
+    depth: session?.depth ?? null, lineage: session?.lineage ?? [],
     childKind: session?.childKind || child.childKind || 'delegation',
     workflow: session?.workflow || child.workflow || null, name: session?.name || null,
     workspaceId: session?.workspaceId, parentRunId: session?.parentRunId,
     transcriptLink: session ? `/?workspace=${encodeURIComponent(session.workspaceId)}&session=${encodeURIComponent(session.id)}` : null,
-    state: child.cancelRequestedAt ? 'cancelled' : child.error ? 'error' : done ? run.status : session?.status === 'awaiting_input' ? 'awaiting_input' : run?.status || 'starting',
+    state: cancelled ? 'cancelled' : child.error ? 'error' : done ? run.status : session?.status === 'awaiting_input' ? 'awaiting_input' : waiting && run?.endedAt ? 'subagent' : run?.status || 'starting',
     done, provider: session?.provider, model: session?.model, mode: run?.mode,
-    pendingQuestions: pendingQuestions.filter(q => q.runId === child.runId && q.status === 'pending'),
+    pendingQuestions: pendingQuestions.filter(q => q.runId === run?.id && q.status === 'pending'),
     error: child.error || run?.error || null,
     nativeSpawningBlocked: session ? session.provider !== 'grok' : null,
-    ...(session?.provider === 'grok' ? { warning: 'Native spawning cannot be fully blocked by Grok; the child is instructed not to spawn.' } : {}),
-    usage: run?.usage ?? null, normalizedUsage: store.normalizeUsage(run?.usage, session?.provider),
-    durationMs: run?.durationMs || (run ? Math.max(0, (run.endedAt || Date.now()) - run.startedAt) : 0),
-    ...(done ? { finalResponse: child.cancelRequestedAt ? null : run?.result ?? null } : {}),
+    ...(session?.provider === 'grok' ? { warning: 'Native spawning cannot be fully blocked by Grok; the child is instructed to use only harness delegation.' } : {}),
+    usage: runs.length > 1 ? normalizedUsage : run?.usage ?? null, normalizedUsage,
+    durationMs: runs.reduce((total, item) => total + (item.durationMs || Math.max(0, (item.endedAt || Date.now()) - item.startedAt)), 0),
+    ...(done ? { finalResponse: cancelled ? null : run?.result ?? null } : {}),
   }
 }
-const describe = (child) => describeRecords(child,
-  child.sessionId && store.loadSession(child.sessionId, config.writeDir),
-  child.sessionId && child.runId && store.loadRun(child.sessionId, child.runId, config.writeDir),
-  child.sessionId ? questions.listQuestions(child.sessionId, config.writeDir) : [])
+const describe = (child) => {
+  const session = child.sessionId && store.loadSession(child.sessionId, config.writeDir)
+  const runs = child.sessionId && child.runId ? store.listRuns(child.sessionId, config.writeDir) : []
+  return describeRecords(child, session, runs.at(-1),
+    child.sessionId ? questions.listQuestions(child.sessionId, config.writeDir) : [], runs)
+}
 const describeAsync = async (child) => {
-  const [session, run, pendingQuestions] = await Promise.all([
+  const [session, runs, pendingQuestions] = await Promise.all([
     child.sessionId ? store.loadSessionAsync(child.sessionId, config.writeDir) : null,
-    child.sessionId && child.runId ? readJsonAsync(paths.runFile(child.sessionId, child.runId, config.writeDir)) : null,
+    child.sessionId && child.runId ? store.listRunsAsync(child.sessionId, config.writeDir) : [],
     child.sessionId ? questions.listQuestionsAsync(child.sessionId, config.writeDir) : [],
   ])
-  return describeRecords(child, session, run, pendingQuestions)
+  return describeRecords(child, session, runs.at(-1), pendingQuestions, runs)
 }
 
 const spawn = (context, args) => withLock(context.sessionId, context.runId, (file) => {
@@ -182,8 +202,10 @@ const spawn = (context, args) => withLock(context.sessionId, context.runId, (fil
     if (!child.runId && !child.error) child.error = 'Spawn was interrupted before launch; retry with a new key.'
   }
   writeJson(file, state)
-  if (Object.values(state.children).filter(child => !describe(child).done).length >= 4) fail('Child limit reached: at most four active children per parent run')
+  if (statesFor(context.sessionId).flatMap(({ state: item }) => Object.values(item.children || {}))
+    .filter(child => !describe(child).done || childHasWork(child)).length >= 4) fail('Child limit reached: at most four active children per parent session')
   const parent = store.loadSession(context.sessionId, config.writeDir)
+  assertSpawnDepth(parent)
   const target = targetFor(parent, state, args)
   const child = { childKind: 'delegation', requestHash, task: args.task, parentSessionId: parent.id, parentRunId: context.runId, resultId: `${context.runId}:${key}`, createdAt: Date.now() }
   state.children[key] = child
@@ -199,6 +221,8 @@ const spawn = (context, args) => withLock(context.sessionId, context.runId, (fil
     if (store.loadSession(parent.id, config.writeDir)?.archived) {
       store.updateSession(session.id, { archived: true }, config.writeDir)
     }
+    // Settings may have changed since this run opened its delegation tools.
+    assertSpawnDepth(store.loadSession(parent.id, config.writeDir))
     require('./Harness').spawnRun(session.id, target.mode === 'plan' ? 'plan' : 'run', {
       mode: target.mode, prompt: args.task, autoName: true,
       onPrepared: (run) => { child.runId = run.id; writeJson(file, state) },
@@ -237,7 +261,7 @@ const cancelChild = (sessionId) => {
 }
 const stop = (context, args) => {
   const child = ownedChild(context, args)
-  if (!describe(child).done) {
+  if (!describe(child).done || childHasWork(child)) {
     cancelChild(child.sessionId)
     require('./Harness').stop(child.sessionId)
   }
@@ -268,10 +292,13 @@ const closeRun = (sessionId, runId) => {
 const parentAllowed = (sessionId, runId) => {
   const parent = store.loadSession(sessionId, config.writeDir)
   const run = store.loadRun(sessionId, runId, config.writeDir)
-  if (run?.workflow) return workflowAllowed(sessionId, runId)
+  if (run?.workflow) return canDelegate(parent) && workflowAllowed(sessionId, runId)
   const state = readJson(fileFor(sessionId, runId))
   return Boolean(canDelegate(parent) && state && !state.cancelledAt && run)
 }
+
+const childHasWork = (child) => Boolean(child.sessionId && (
+  store.listRuns(child.sessionId, config.writeDir).some(run => !run.endedAt) || hasPendingChildren(child.sessionId)))
 
 const workflowChildren = (sessionId) => {
   const parent = store.loadSession(sessionId, config.writeDir)
@@ -301,7 +328,7 @@ const stopChildren = (sessionId, runId) => {
       state.cancelledAt ||= Date.now()
       for (const child of Object.values(state.children || {})) {
         child.delivery = { ...child.delivery, status: 'suppressed', suppressedAt: Date.now() }
-        if (!describe(child).done) {
+        if (!describe(child).done || childHasWork(child)) {
           child.cancelRequestedAt ||= Date.now()
           if (child.sessionId) sessions.add(child.sessionId)
         }
@@ -324,7 +351,7 @@ const retryableDelivery = (child) => {
 }
 const settled = (state) => state?.closed && Object.values(state.children || {}).every(child => {
   if (!['delivered', 'suppressed'].includes(child.delivery?.status) || retryableDelivery(child)) return false
-  return !child.sessionId || !child.runId || Boolean(store.loadRun(child.sessionId, child.runId, config.writeDir)?.endedAt)
+  return !childHasWork(child)
 })
 const maintenanceLock = (sessionId, runId, fn) => withLock(sessionId, runId, fn, { nonblock: true })
 let seeded = false
@@ -333,7 +360,6 @@ const seedPending = async () => {
   if (seeded) return
   // Upgrade old records once per worker start, including archived parents.
   for (const session of require('../store/sessionIndex').query({ includeArchived: true })) {
-    if (session.parentRunId && session.childKind !== 'workflow') continue
     for (const { runId } of statesFor(session.id)) {
       try {
         maintenanceLock(session.id, runId, file => {
@@ -362,11 +388,11 @@ const recoverIdleOwner = (session) => {
 }
 const recoverChild = (child, state) => {
   if (!child.sessionId || !child.runId) return
-  const run = store.loadRun(child.sessionId, child.runId, config.writeDir)
-  if (!run || run.endedAt) return
   const session = store.loadSession(child.sessionId, config.writeDir)
   if (!session) return
-  if (state.cancelledAt && !session.stopRequestedAt) require('./Harness').stop(session.id)
+  if ((state.cancelledAt || child.cancelRequestedAt) && !session.stopRequestedAt) require('./Harness').stop(session.id)
+  const runs = store.listRuns(child.sessionId, config.writeDir)
+  if (!runs.some(run => !run.endedAt)) return
   const stopAt = session.stopRequestedAt || child.cancelRequestedAt || state.cancelledAt
   if (stopAt && Date.now() - stopAt > 10000) {
     const owner = readJson(paths.daemonPid(session.id, config.writeDir))
@@ -429,7 +455,8 @@ const recover = async () => {
 
 const hasPendingChildren = (sessionId) => statesFor(sessionId).some(({ state }) =>
   Object.values(state.children || {}).some(child => child.childKind !== 'workflow' &&
-    (!describe(child).done || !['delivered', 'suppressed'].includes(child.delivery?.status) || retryableDelivery(child))))
+    (!['delivered', 'suppressed'].includes(child.delivery?.status) || retryableDelivery(child) ||
+      childHasWork(child) || !describe(child).done)))
 
 const workflowDescription = (session, run, pendingQuestions) => {
   const description = describeRecords({
@@ -465,15 +492,25 @@ const childrenForAsync = async (sessionId) => {
 
 const assertChildRun = (session, mode) => {
   if (!session?.parentRunId) return
-  const allowed = session.childKind === 'workflow' ? workflowAllowed : parentAllowed
-  if (!allowed(session.parentSessionId, session.parentRunId)) fail('The parent cancelled this child; it cannot start another run')
+  if (session.stopRequestedAt || session.status === 'stopped') fail('This child was stopped; it cannot start another run')
+  if (!parentAllowed(session.parentSessionId, session.parentRunId)) fail('The parent cancelled this child; it cannot start another run')
   const rank = { agent: 0, plan: 1, ask: 2 }
   const baseMode = session.childKind === 'workflow' ? session.mode : session.delegationMode
   if (!Object.hasOwn(rank, mode) || rank[mode] < rank[baseMode]) fail('Child permissions cannot be broadened')
 }
 
-const guidance = (provider, child = false) => require('../prompts').text(child ? 'delegationChild' : 'delegationParent', provider)
+const guidance = (provider, child = false, { session, canDelegate: enabled } = {}) => {
+  const maxDepth = getUiSettings(config.writeDir).maxSubagentDepth
+  const allowed = enabled ?? (session ? canSpawn(session) : !child && maxDepth > 0)
+  const prompts = require('../prompts')
+  const depth = session ? `This session is at depth ${session.depth}. ` : ''
+  const limit = `${depth}The current maximum subagent depth is ${maxDepth}; root sessions are depth 0. Each child is one level deeper. The harness checks the current limit at every spawn.`
+  if (!allowed) return `${prompts.text('delegationChild', provider)}\n${limit}\nDelegation is unavailable for this turn. Finish the assigned work yourself.`
+  const scope = child ? prompts.text('delegationChild', provider)
+    .replace('Do not delegate or spawn other agents.', 'You may delegate bounded parts of your assigned task through harness_agents within the depth limit.') : ''
+  return [scope, prompts.text('delegationParent', provider), limit].filter(Boolean).join('\n\n')
+}
 
 const withDeliveryLock = (sessionId, fn) => withLock(sessionId, 'delivery', fn)
 
-module.exports = { withDeliveryLock, childrenFor, childrenForAsync, hasPendingChildren, assertChildRun, open, authenticate, spawn, status, wait, stop, stopChildren, closeRun, cancelChild, recover, parentActive, parentAllowed, workflowAllowed, guidance, describe }
+module.exports = { withDeliveryLock, childrenFor, childrenForAsync, hasPendingChildren, assertChildRun, canDelegate, canSpawn, open, authenticate, spawn, status, wait, stop, stopChildren, closeRun, cancelChild, recover, parentActive, parentAllowed, workflowAllowed, guidance, describe }
