@@ -2,8 +2,13 @@ import { CheckboxDisplay, DevScope } from 'component-library'
 
 const RUN_AFTER_LIMIT = 5
 
+const RUN_AFTER_STATUSES = new Set(['running', 'awaiting_input', 'subagent'])
+
+// Only top-level sessions are targets; forks count as top-level, matching the sidebar.
+const isTopLevel = (session) => !session.parentSessionId || session.childKind === 'fork'
+
 export const eligibleRunAfterSessions = (sessions, sessionId) => (sessions || [])
-  .filter((item) => item.id !== sessionId && (item.status === 'running' || item.status === 'awaiting_input'))
+  .filter((item) => item.id !== sessionId && isTopLevel(item) && RUN_AFTER_STATUSES.has(item.status))
   .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0) || String(a.id).localeCompare(String(b.id)))
   .slice(0, RUN_AFTER_LIMIT)
 

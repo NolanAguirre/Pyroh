@@ -159,7 +159,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const spawnsSession = Boolean(active?.newSession)
   const blocksWhileBusy = isFork || !spawnsSession
   const steering = isBusy && active?.steerable !== false && !spawnsSession
-  const canQueue = submitted && (!session?.parentSessionId || session.childKind === 'fork') && !spawnsSession
+  const canQueue = submitted && session?.childKind !== 'workflow' && !spawnsSession
     && ['turn', 'plugin'].includes(active?.kind)
   const inputCommand = parseInputCommand(prompt)
   const queueDisabled = Boolean(inputCommand) || !canQueue || queued || !prompt.trim()

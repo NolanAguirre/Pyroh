@@ -16,7 +16,7 @@ const loadSession = (sessionId) => {
 
 const resolve = (session, requested) => {
   const Harness = require('./Harness')
-  if (session.parentRunId) fail('child sessions cannot queue follow-up messages', 409)
+  if (session.childKind === 'workflow') fail('workflow sessions cannot queue follow-up messages', 409)
   if (session.status === 'queued') fail('session is waiting for its first prompt', 409)
   const runs = store.listRuns(session.id, config.writeDir)
   if (!runs.length) fail('send the first message before queueing a follow-up', 409)
@@ -120,7 +120,7 @@ const dispatchOne = async (sessionId) => {
       queue.save(sessionId, state)
       return null
     }
-    if (message.retryAt > Date.now() || session.parentRunId || session.status === 'queued') return null
+    if (message.retryAt > Date.now() || session.childKind === 'workflow' || session.status === 'queued') return null
     if (message.runId) {
       resolve(session, message.mode)
       const run = store.loadRun(sessionId, message.runId, config.writeDir)
