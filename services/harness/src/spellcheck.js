@@ -1,8 +1,37 @@
+const { execFile } = require('node:child_process')
+const { promisify } = require('node:util')
 const config = require('./config')
 const { findTriggers } = require('./prompt/triggers')
 const workspaceStore = require('./store/workspaceStore')
 
 const BASE_IGNORE = ['npm', 'jsx', 'tsx', 'sqitch', 'nginx', 'vite', 'devscope', 'qwen', 'gguf', 'repo', 'env', 'cli']
+
+const runPing = promisify(execFile)
+let spellcheckAvailable = false
+let initialization = null
+
+const initializeSpellcheck = () => {
+  if (!initialization) {
+    initialization = (async () => {
+      if (!config.spellcheckUrl) return false
+      try {
+        const url = new URL(config.spellcheckUrl)
+        const hostname = url.hostname.replace(/^\[|\]$/g, '')
+        if (!['http:', 'https:'].includes(url.protocol) || !hostname || hostname.startsWith('-')) {
+          throw new Error('invalid spellcheck URL')
+        }
+        const command = process.platform === 'darwin' && hostname.includes(':') ? 'ping6' : 'ping'
+        const args = process.platform === 'win32' ? ['-n', '1', hostname] : ['-c', '1', hostname]
+        await runPing(command, args, { timeout: 2000, windowsHide: true })
+        spellcheckAvailable = true
+      } catch {
+        console.log('spellcheck: disabled; startup host ping failed')
+      }
+      return spellcheckAvailable
+    })()
+  }
+  return initialization
+}
 
 const ignoreWords = async () => {
   const words = new Set(BASE_IGNORE)
@@ -29,10 +58,10 @@ const cachedIgnoreWords = () => {
   return ignoreCache
 }
 
-// Waits for the spellcheck service and returns the corrected text. Any
-// failure, timeout or missing URL returns the text unchanged.
+// Only use spellcheck after the startup host ping succeeds. Any failure,
+// timeout or unavailable host returns the text unchanged.
 const correctText = async (text, { first = true } = {}) => {
-  if (!config.spellcheckUrl || typeof text !== 'string' || !text.trim()) return text
+  if (!spellcheckAvailable || typeof text !== 'string' || !text.trim()) return text
   const controller = new AbortController()
   let timer
   try {
@@ -74,4 +103,4 @@ const correctText = async (text, { first = true } = {}) => {
   } finally { clearTimeout(timer) }
 }
 
-module.exports = { correctText }
+module.exports = { correctText, initializeSpellcheck }
