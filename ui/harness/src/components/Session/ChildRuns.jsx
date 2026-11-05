@@ -1,9 +1,27 @@
 import { useState } from 'react'
-import { Card, CardHeader, CardSection, DevScope, Matrix } from 'component-library'
+import { Badge, Card, CardHeader, CardSection, DevScope, Matrix } from 'component-library'
 import QuestionCard from '../QuestionCard'
 import api from '../../api'
 import { urlWithSelection } from '../../appUrl'
 import { formatDuration, formatNumber } from '../../format'
+
+const STATUS_VARIANT = {
+  idle: 'neutral',
+  running: 'info',
+  starting: 'info',
+  awaiting_input: 'warning',
+  paused: 'warning',
+  disconnected: 'danger',
+  stopped: 'neutral',
+  finished: 'success',
+  completed: 'success',
+  cancelled: 'neutral',
+  error: 'danger',
+  queued: 'info',
+  subagent: 'info',
+}
+
+const liveState = (state) => state === 'running' || state === 'starting' || state === 'awaiting_input' || state === 'subagent'
 
 const childLabel = (child) => {
   if (child.name) return child.name
@@ -29,7 +47,33 @@ const ChildRuns = ({ devId, session, runs, children }) => {
     <DevScope id={devId} state={{ session: session.id, count: children.length, open }}>
       <Card>
         <CardHeader open={open} onToggle={() => setOpen((prev) => !prev)}>
-          Child runs ({children.length})
+          <span className="child-runs__title">Child runs ({children.length})</span>
+          {!open && (
+            <span className="child-runs__badges">
+              {children.map((child, index) => {
+                const variant = STATUS_VARIANT[child.state] || 'neutral'
+                const label = childLabel(child)
+                return (
+                  <Badge
+                    key={child.runId || child.sessionId || index}
+                    size="small"
+                    variant={variant}
+                    title={`${label} · ${child.state || 'unknown'}`}
+                    addClassName="child-runs__badge"
+                  >
+                    <Badge
+                      size="small"
+                      variant={variant}
+                      dot
+                      addClassName={`session-row__status-dot${liveState(child.state) ? ' session-row__status-dot--live' : ''}`}
+                      aria-hidden="true"
+                    />
+                    <span className="child-runs__badge-name">{label}</span>
+                  </Badge>
+                )
+              })}
+            </span>
+          )}
         </CardHeader>
         {open && <CardSection>
           <p className="hint">Reported tokens: parent {formatNumber(direct)} · children {formatNumber(childTokens)} · combined {formatNumber(direct + childTokens)}</p>
