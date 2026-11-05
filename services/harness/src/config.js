@@ -66,7 +66,7 @@ const config = {
   categorizerUrl: (process.env.HARNESS_CATEGORIZER_URL || '').trim().replace(/\/+$/, '') || null,
   // Unset disables analytics (tool-stats and run notifications).
   analyticsUrl: (process.env.HARNESS_ANALYTICS_URL || '').trim().replace(/\/+$/, '') || null,
-  // Spellcheck base URL. Unset or a failed startup host ping disables spellchecking.
+  // Spellcheck base URL. Unset disables spellchecking.
   spellcheckUrl: (process.env.HARNESS_SPELLCHECK_URL || '').trim().replace(/\/+$/, '') || null,
   spellcheckTimeoutMs: Number(process.env.HARNESS_SPELLCHECK_TIMEOUT_MS || 20000),
   // mcp-memory base URL. Unset disables the create_memory tool.
