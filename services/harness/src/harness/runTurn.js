@@ -219,7 +219,7 @@ const runOneTurn = async ({
       ? [
         instructions,
         delegation.guidance(session.provider, child, { session: delegationSession, canDelegate: canDelegate && !textOnly }),
-        canManageChildren && !canDelegate && !textOnly && 'Existing children may still finish. Use harness_agents status/wait/stop to manage them; spawning is unavailable. If their results are needed, end this turn with a brief pending-work update. Their results will resume you automatically. Do not poll or wait in a loop.',
+        canManageChildren && !canDelegate && !textOnly && 'Existing children may still finish. Use harness_agents status/wait/stop to manage them; spawning is unavailable. If their results are needed, end this turn with a brief pending-work update. Their results will resume you automatically unless spawned with dontReturn: true. Do not poll or wait in a loop.',
       ].filter(Boolean).join('\n\n')
       : instructions
     const sendOptions = { mode, onEvent: handleEvent, outputSchema, instructions: managedInstructions }

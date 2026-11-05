@@ -158,7 +158,7 @@ const describeRecords = (child, session, run, pendingQuestions, runs = run ? [ru
     workspaceId: session?.workspaceId, parentRunId: session?.parentRunId,
     transcriptLink: session ? `/?workspace=${encodeURIComponent(session.workspaceId)}&session=${encodeURIComponent(session.id)}` : null,
     state: cancelled ? 'cancelled' : child.error ? 'error' : done ? run.status : session?.status === 'awaiting_input' ? 'awaiting_input' : waiting && run?.endedAt ? 'subagent' : run?.status || 'starting',
-    done, provider: session?.provider, model: session?.model, mode: run?.mode,
+    done, dontReturn: child.dontReturn === true, provider: session?.provider, model: session?.model, mode: run?.mode,
     pendingQuestions: pendingQuestions.filter(q => q.runId === run?.id && q.status === 'pending'),
     error: child.error || run?.error || null,
     nativeSpawningBlocked: session ? session.provider !== 'grok' : null,
@@ -187,11 +187,13 @@ const spawn = (context, args) => withLock(context.sessionId, context.runId, (fil
   const state = stateFor(context)
   if (typeof args.task !== 'string' || !args.task.trim()) fail('task must be a nonempty string')
   if (typeof args.retryKey !== 'string' || !args.retryKey.trim() || args.retryKey.length > 256) fail('retryKey is required (1–256 characters)')
+  if (args.dontReturn !== undefined && typeof args.dontReturn !== 'boolean') fail('dontReturn must be a boolean')
+  const dontReturn = args.dontReturn === true
   const key = hashOf(args.retryKey)
   const requestHash = hashOf(JSON.stringify([args.task, null, args.model || null, args.mode || null]))
   const prior = state.children[key]
   if (prior) {
-    if (prior.requestHash !== requestHash) fail('retryKey was already used for a different request')
+    if (prior.requestHash !== requestHash || (prior.dontReturn === true) !== dontReturn) fail('retryKey was already used for a different request')
     if (!prior.runId && !prior.error) {
       prior.error = 'Spawn was interrupted before launch; this retry key remains reserved. Use a new key for a new attempt.'
       writeJson(file, state)
@@ -207,7 +209,9 @@ const spawn = (context, args) => withLock(context.sessionId, context.runId, (fil
   const parent = store.loadSession(context.sessionId, config.writeDir)
   assertSpawnDepth(parent)
   const target = targetFor(parent, state, args)
-  const child = { childKind: 'delegation', requestHash, task: args.task, parentSessionId: parent.id, parentRunId: context.runId, resultId: `${context.runId}:${key}`, createdAt: Date.now() }
+  const child = { childKind: 'delegation', requestHash, task: args.task, dontReturn, parentSessionId: parent.id, parentRunId: context.runId, resultId: `${context.runId}:${key}`, createdAt: Date.now(),
+    ...(dontReturn ? { delivery: { status: 'suppressed', suppressedAt: Date.now() } } : {}),
+  }
   state.children[key] = child
   // Reserve the key durably before creating a session or launching any worker.
   writeJson(file, state)
