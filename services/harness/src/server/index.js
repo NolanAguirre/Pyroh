@@ -5,6 +5,7 @@ const sessionIndex = require('../store/sessionIndex')
 const routes = require('./routes')
 const analyticsRoutes = require('./analyticsRoutes')
 const { startMaintenance } = require('./maintenance')
+const { initializeSpellcheck } = require('../spellcheck')
 
 const createApp = () => {
   const app = express()
@@ -21,6 +22,7 @@ const createApp = () => {
 
 const start = () => {
   workspaceStore.ensureLayout(config.writeDir)
+  initializeSpellcheck()
   let reconciled
   sessionIndex.waitForInitialSeed(new Promise(resolve => { reconciled = resolve }))
   const app = createApp()
