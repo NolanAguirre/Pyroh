@@ -155,7 +155,7 @@
   line-height: 1.3;
 }
 
-.child-runs__matrix {
+.matrix.child-runs__matrix {
   max-height: 8rem;
   font-size: 12px;
 }

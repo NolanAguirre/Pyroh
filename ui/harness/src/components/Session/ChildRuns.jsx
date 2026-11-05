@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Card, CardHeader, CardSection, DevScope, Matrix } from 'component-library'
 import QuestionCard from '../QuestionCard'
 import api from '../../api'
@@ -13,6 +14,7 @@ const childLabel = (child) => {
 }
 
 const ChildRuns = ({ devId, session, runs, children }) => {
+  const [open, setOpen] = useState(true)
   if (!children.length) return null
   const direct = runs.reduce((sum, run) => {
     const usage = run.usage
@@ -24,10 +26,12 @@ const ChildRuns = ({ devId, session, runs, children }) => {
   const childTokens = children.reduce((sum, child) => sum + (child.normalizedUsage?.total || 0), 0)
   const link = (child) => urlWithSelection(new URL(window.location.href), child.workspaceId || session.workspaceId, child.sessionId, null, null, null).href
   return (
-    <DevScope id={devId} state={{ session: session.id, count: children.length }}>
+    <DevScope id={devId} state={{ session: session.id, count: children.length, open }}>
       <Card>
-        <CardHeader>Child runs ({children.length})</CardHeader>
-        <CardSection>
+        <CardHeader open={open} onToggle={() => setOpen((prev) => !prev)}>
+          Child runs ({children.length})
+        </CardHeader>
+        {open && <CardSection>
           <p className="hint">Reported tokens: parent {formatNumber(direct)} · children {formatNumber(childTokens)} · combined {formatNumber(direct + childTokens)}</p>
           {runs.filter(run => children.some(child => child.parentRunId === run.id)).map(run => (
             <DevScope key={run.id} id="lewycwc" state={{ run: run.id }}>
@@ -59,7 +63,7 @@ const ChildRuns = ({ devId, session, runs, children }) => {
               </div>
             </DevScope>
           ))}
-        </CardSection>
+        </CardSection>}
       </Card>
     </DevScope>
   )
