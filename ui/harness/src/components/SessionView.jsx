@@ -412,31 +412,35 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
         <DevScope id="hr7a5x3" state={{ mode }}>
           <footer className={`composer${isDecompose ? ' composer--decompose' : ''}`}>
             {queuedMessages.length > 0 && (
-              <div className="composer__queue" aria-label="Queued messages">
-                <p className="hint" role="status">
-                  {queuedMessages.length} queued {queuedMessages.length === 1 ? 'message' : 'messages'} · Sent in order after the current turn ends
-                </p>
-                <ol className="composer__queue-list">
-                  {queuedMessages.map((message) => (
-                    <li key={message.id} className="composer__queue-item">
-                      <div className="composer__queue-message">
-                        <span className="composer__queue-mode">{modes.find((item) => item.id === message.mode)?.label || message.mode}</span>
-                        <span className="composer__queue-text">{message.text}</span>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={busy}
-                        onClick={act(() => api.removeQueuedMessage(sessionId, message.id))}
-                        aria-label={`Remove queued message: ${message.text}`}
-                        devId="hqu7r2m"
-                      >
-                        Remove
-                      </Button>
-                    </li>
-                  ))}
-                </ol>
-              </div>
+              <DevScope id="xo86vu7" state={{ count: queuedMessages.length }}>
+                <div className="composer__queue" aria-label="Queued messages">
+                  <p className="hint" role="status">
+                    {queuedMessages.length} queued {queuedMessages.length === 1 ? 'message' : 'messages'} · Sent in order after the current turn ends
+                  </p>
+                  <ol className="composer__queue-list">
+                    {queuedMessages.map((message) => (
+                      <DevScope key={message.id} id="nu6hv3h" state={{ message: message.id, mode: message.mode }}>
+                        <li className="composer__queue-item">
+                          <div className="composer__queue-message">
+                            <span className="composer__queue-mode">{modes.find((item) => item.id === message.mode)?.label || message.mode}</span>
+                            <span className="composer__queue-text">{message.text}</span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={busy}
+                            onClick={act(() => api.removeQueuedMessage(sessionId, message.id))}
+                            aria-label={`Remove queued message: ${message.text}`}
+                            devId="hqu7r2m"
+                          >
+                            Remove
+                          </Button>
+                        </li>
+                      </DevScope>
+                    ))}
+                  </ol>
+                </div>
+              </DevScope>
             )}
             <div className="composer__toolbar">
               <div className="composer__toolbar-start">
