@@ -357,7 +357,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
           <div className="session-view__main">
             {children.length > 0 && (
               <div className="session-view__pinned">
-                <ChildRuns session={session} runs={runs} children={children} />
+                <ChildRuns devId="dyrp8jw" session={session} runs={runs} children={children} />
               </div>
             )}
             <div className="session-view__scroll">
