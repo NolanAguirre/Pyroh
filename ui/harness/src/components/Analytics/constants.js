@@ -8,8 +8,6 @@ export const RANGE_OPTIONS = [
   { value: '7d', displayValue: 'Last 7 days' },
   { value: '30d', displayValue: 'Last 30 days' },
   { value: '12w', displayValue: 'Last 12 weeks' },
-  // Completion of session s_mw2uxesvee0352.
-  { value: '2026-11-05T01:23:05.658Z', displayValue: 'enable nested subagents' },
   { value: ALL, displayValue: 'All time' },
   { value: CUSTOM, displayValue: 'Custom range…' },
 ]

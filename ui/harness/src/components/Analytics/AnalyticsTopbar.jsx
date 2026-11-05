@@ -15,6 +15,7 @@ const AnalyticsTopbar = ({
   workspaces,
   providers,
   range,
+  checkpoints = [],
   setRange,
   customRange,
   setCustomRange,
@@ -52,7 +53,10 @@ const AnalyticsTopbar = ({
         <strong className="analytics__title">Tool-call analytics</strong>
         <div className="analytics__filters">
           <DevScope id="zi5v3he" state={{ range }}>
-            <FilterSelect label="Time range" selected={range} options={RANGE_OPTIONS} select={setRange} />
+            <FilterSelect label="Time range" selected={range} options={[
+              ...RANGE_OPTIONS,
+              ...checkpoints.map((checkpoint) => ({ value: checkpoint.at, displayValue: `Since ${checkpoint.name}` })),
+            ]} select={setRange} />
           </DevScope>
           {range === CUSTOM && (
             <DevScope id="r7k2dfa" state={customRange}>

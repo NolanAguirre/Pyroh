@@ -85,7 +85,11 @@
     border-left: none;
   }
 
-  .session-view__main {
+  .session-view__pinned {
+    padding: 12px 10px 0;
+  }
+
+  .session-view__scroll {
     padding: 12px 10px;
   }
 

@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { DevScope } from 'component-library'
+import api from '../../api'
 import { ALL, CUSTOM, NONE } from './constants'
 import { tokenUsage } from './tokenMetrics'
 import useToolStats from './useToolStats'
@@ -44,6 +45,22 @@ const AnalyticsView = ({ devId, workspaces = [], providers = [], onBack, onOpenS
   const [by, setBy] = useState(NONE)
   const [tool, setTool] = useState(null)
   const [openTargets, setOpenTargets] = useState({})
+  const [checkpoints, setCheckpoints] = useState([])
+  const [checkpointError, setCheckpointError] = useState('')
+  const [checkpointRefresh, setCheckpointRefresh] = useState(0)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setCheckpointError('')
+    api.listCheckpoints({ signal: controller.signal })
+      .then(({ checkpoints: items }) => {
+        if (!controller.signal.aborted) setCheckpoints(items)
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) setCheckpointError(`Could not load checkpoints: ${err.message}`)
+      })
+    return () => controller.abort()
+  }, [checkpointRefresh])
 
   const { stats, error, loading, refresh } = useToolStats({
     ...rangeParams(range, customRange),
@@ -69,6 +86,7 @@ const AnalyticsView = ({ devId, workspaces = [], providers = [], onBack, onOpenS
           workspaces={workspaces}
           providers={providers}
           range={range}
+          checkpoints={checkpoints}
           setRange={setRange}
           customRange={customRange}
           setCustomRange={setCustomRange}
@@ -83,12 +101,16 @@ const AnalyticsView = ({ devId, workspaces = [], providers = [], onBack, onOpenS
           tool={tool}
           setTool={setTool}
           loading={loading}
-          refresh={refresh}
+          refresh={() => {
+            refresh()
+            setCheckpointRefresh((value) => value + 1)
+          }}
           onBack={onBack}
         />
 
         <main className="analytics__body">
           {error && <p className="analytics__error">{error}</p>}
+          {checkpointError && <p className="analytics__error" role="alert">{checkpointError}</p>}
           {!stats && !error && <p className="hint">Loading tool-call metrics…</p>}
           {stats && totals.calls === 0 && <p className="hint">No tool calls in this range.</p>}
 

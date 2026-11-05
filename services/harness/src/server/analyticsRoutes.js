@@ -1,8 +1,18 @@
 const express = require('express')
 const analytics = require('../analytics/client')
 const codeStats = require('../analytics/codeStats')
+const checkpointStore = require('../store/checkpointStore')
 
 const router = express.Router()
+
+router.get('/checkpoints', async (_req, res) => {
+  res.set('Cache-Control', 'no-store')
+  try {
+    res.json({ checkpoints: await checkpointStore.list() })
+  } catch (err) {
+    res.status(500).json({ error: err && err.message ? err.message : String(err) })
+  }
+})
 
 const QUERY_KEYS = ['since', 'until', 'bucket', 'by', 'top', 'workspace', 'wid', 'session', 'provider', 'tool']
 

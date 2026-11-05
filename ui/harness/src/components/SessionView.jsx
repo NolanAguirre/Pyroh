@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, DevScope, Popup, PromptInput, SplitPane, useSpeechRecognition } from 'component-library'
-import { TRIGGERS } from 'prompt-triggers'
+import { TRIGGERS, parseInputCommand } from 'prompt-triggers'
 import useSessionEvents from '../useSessionEvents'
 import api from '../api'
 import Transcript from './Transcript'
@@ -59,6 +59,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const [spawnMode, setSpawnMode] = useState('agent')
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
+  const [commandNotice, setCommandNotice] = useState('')
   const [sideOpen, setSideOpen] = useState(false)
   const [handoffRunId, setHandoffRunId] = useState(null)
   const [spawnProvider, setSpawnProvider] = useState(session?.provider || '')
@@ -91,6 +92,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
 
   useEffect(() => {
     setFilter(null)
+    setCommandNotice('')
   }, [sessionId])
 
   useEffect(() => {
@@ -159,14 +161,15 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const steering = isBusy && active?.steerable !== false && !spawnsSession
   const canQueue = submitted && (!session?.parentSessionId || session.childKind === 'fork') && !spawnsSession
     && ['turn', 'plugin'].includes(active?.kind)
-  const queueDisabled = !canQueue || queued || !prompt.trim()
+  const inputCommand = parseInputCommand(prompt)
+  const queueDisabled = Boolean(inputCommand) || !canQueue || queued || !prompt.trim()
   const spawnEntry = providers.find((item) => item.id === spawnProvider)
   const spawnModelId = spawnModel || spawnEntry?.models?.[0]?.id || null
   const spawnBlocked = picksSpawnTarget && Boolean(spawnEntry) && (spawnEntry.implemented === false || spawnEntry.error)
   const runAfterBlocked = showRunAfter && runAfterOn && !dependencyId
-  const sendDisabled = queued || runAfterBlocked || nativeForkUnavailable || (isFork && !submitted) || (steering
+  const sendDisabled = !inputCommand && (queued || runAfterBlocked || nativeForkUnavailable || (isFork && !submitted) || (steering
     ? !prompt.trim()
-    : (blocksWhileBusy && isBusy) || (promptRequired && !prompt.trim()) || spawnBlocked)
+    : (blocksWhileBusy && isBusy) || (promptRequired && !prompt.trim()) || spawnBlocked))
 
   useEffect(() => {
     if (!eligible.length) {
@@ -201,7 +204,14 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
     speech.stop()
     setBusy(true)
     setActionError('')
+    setCommandNotice('')
     try {
+      if (inputCommand) {
+        const { checkpoint } = await api.inputCommand(sessionId, prompt)
+        setCommandNotice(`Checkpoint “${checkpoint.name}” created at ${new Date(checkpoint.at).toLocaleString()}. Available in analytics.`)
+        setPrompt('')
+        return
+      }
       if (delivery === 'queue') await api.queueMessage(sessionId, { prompt, mode })
       else if (steering) await api.steer(sessionId, prompt)
       else if (isDecompose) await api.decompose(sessionId, prompt)
@@ -345,6 +355,12 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
         >
         <div className={`session-view__body${sideOpen ? '' : ' session-view__body--side-collapsed'}`}>
           <div className="session-view__main">
+            {children.length > 0 && (
+              <div className="session-view__pinned">
+                <ChildRuns session={session} runs={runs} children={children} />
+              </div>
+            )}
+            <div className="session-view__scroll">
             {session.parentSessionId && (
               <p className="hint">
                 {session.childKind === 'workflow' && <>{session.name || `Workflow step${session.workflow?.phase ? ` · Phase ${session.workflow.phase}` : ''}${session.workflow?.step ? ` · ${session.workflow.step}` : ''}`} · </>}
@@ -375,11 +391,10 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
               viewerSessionId={sessionId}
             />
 
-            <ChildRuns session={session} runs={runs} children={children} />
-
             {pendingQuestions.map((q) => (
               <QuestionCard key={q.id} devId="hr1p9t4" question={q} onAnswer={answer} />
             ))}
+            </div>
           </div>
 
           <SessionInspector
@@ -436,7 +451,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                   />
                 )}
               </div>
-              <span className="composer__mode-hint">{modeHint}</span>
+              <span className="composer__mode-hint">{inputCommand ? 'Create an analytics checkpoint at the current time.' : modeHint}</span>
             </div>
             {picksSpawnTarget && (
               <NewChatTarget
@@ -464,7 +479,6 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                   value={speech.interim ? `${prompt} ${speech.interim}` : prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   onSubmit={send}
-                  disabled={queued}
                   rows={isDecompose ? 8 : 3}
                 />
               </DevScope>
@@ -486,10 +500,10 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                   onClick={send}
                   loading={busy}
                   disabled={sendDisabled}
-                  title={nativeForkUnavailable ? modeHint : steering ? 'Interrupt the current turn and send' : undefined}
+                  title={inputCommand ? 'Save an analytics checkpoint' : nativeForkUnavailable ? modeHint : steering ? 'Interrupt the current turn and send' : undefined}
                   devId="hr2t9h5"
                 >
-                  {steering ? 'Send' : active?.sendLabel || 'Send'}
+                  {inputCommand ? 'Create checkpoint' : steering ? 'Send' : active?.sendLabel || 'Send'}
                 </Button>
                 {speech.supported && (
                   <Button
@@ -510,6 +524,8 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
               </div>
             </div>
             {actionError ? <p className="composer__error hint hint--error" role="alert">{actionError}</p> : null}
+            {commandNotice ? <p className="hint" role="status">{commandNotice}</p> : null}
+            {inputCommand ? <p className="hint">Command: create checkpoint &lt;name&gt;</p> : null}
             {speech.status ? <p className="hint" role="status">{speech.status}</p> : null}
             {speech.error ? <p className="composer__error hint hint--error" role="alert">Dictation error: {speech.error}</p> : null}
           </footer>

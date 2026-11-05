@@ -258,6 +258,7 @@ const api = {
     return fetch(url).then(json).then((data) => ({ ...data, session: tagSession(data.session, machine) }))
   },
   plan: (id, prompt) => sessionPost(id, '/plan', { prompt }),
+  inputCommand: (id, prompt) => sessionPost(id, '/commands', { prompt }),
   run: (id, { prompt, mode, provider, model, runAfterSessionId }) => sessionPost(id, '/run', {
     prompt,
     mode,
@@ -278,6 +279,16 @@ const api = {
   getLog: (id, { signal } = {}) =>
     fetch(sessionUrl(id, '/log').url, { signal }).then((res) => res.ok ? res.text() : json(res)),
   eventsUrl: (id) => sessionUrl(id, '/events').url,
+  listCheckpoints: async ({ signal } = {}) => {
+    const lists = await eachMachine(async (machine) => {
+      const { checkpoints } = await fetch(at(machine, '/api/analytics/checkpoints'), {
+        signal, cache: 'no-store',
+      }).then(json)
+      return checkpoints
+    })
+    const checkpoints = [...new Map(lists.flat().map((checkpoint) => [checkpoint.id, checkpoint])).values()]
+    return { checkpoints: checkpoints.sort((a, b) => Date.parse(b.at) - Date.parse(a.at)) }
+  },
   getToolStats: (params = {}, { signal } = {}) => {
     const query = new URLSearchParams()
     Object.entries(params).forEach(([key, value]) => {

@@ -1,6 +1,14 @@
 import { devIds } from './triggers/devIds.js'
 import { devIdPaths } from './triggers/devIdPaths.js'
 
+// Commands occupy the entire input; mentions inside prose or multiline prompts
+// remain ordinary agent input. Keep a bare command recognizable for validation.
+export const parseInputCommand = (text) => {
+  if (typeof text !== 'string' || /[\r\n\u2028\u2029]/.test(text)) return null
+  const match = /^create\s+checkpoint(?:\s+(.*))?$/i.exec(text.trim())
+  return match ? { type: 'create-checkpoint', name: (match[1] || '').trim() } : null
+}
+
 // Pure and synchronous: the UI runs this on every keystroke and the server
 // runs it before each turn. Patterns need the `g` flag.
 //

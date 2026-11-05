@@ -13,11 +13,12 @@ const { readJsonAsync } = require('../store/jsonFile')
 const { listProviders } = require('../agents/driver')
 const registry = require('../registry')
 const prompts = require('../prompts')
-const { TRIGGERS } = require('../prompt/triggers')
+const { TRIGGERS, parseInputCommand } = require('../prompt/triggers')
 const { rewritePrompt } = require('../prompt/rewrite')
 const { correctText } = require('../spellcheck')
 const questionStore = require('../store/questionStore')
 const workspaceStore = require('../store/workspaceStore')
+const checkpointStore = require('../store/checkpointStore')
 
 const router = express.Router()
 
@@ -354,9 +355,35 @@ router.get('/sessions/:id', async (req, res) => {
   res.json(status)
 })
 
+// Input commands are independent of model, mode, spellcheck, and run state.
+// Return true even on command errors so invalid commands never reach an agent.
+const handleInputCommand = (req, res) => {
+  const command = parseInputCommand((req.body || {}).prompt)
+  if (!command) return false
+  const at = new Date().toISOString()
+  try {
+    const session = sessionStore.loadSession(req.params.id, config.writeDir)
+    if (!session) {
+      res.status(404).json({ error: 'session not found' })
+      return true
+    }
+    const checkpoint = checkpointStore.create({ name: command.name, sessionId: session.id, at })
+    res.json({ command: command.type, checkpoint, message: `Created checkpoint "${checkpoint.name}".` })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err && err.message ? err.message : String(err) })
+  }
+  return true
+}
+
+router.post('/sessions/:id/commands', (req, res) => {
+  if (handleInputCommand(req, res)) return
+  res.status(400).json({ error: 'Expected command: create checkpoint <name>' })
+})
+
 // Validates the mode against the registry before running, so prompt rules and
 // deny decisions come from one place.
 const startRun = async (req, res, requested, { prompt, provider, model, targetMode, runAfterSessionId, forkRetryKey }) => {
+  if (handleInputCommand(req, res)) return
   const session = sessionStore.loadSession(req.params.id, config.writeDir)
   if (!session) return res.status(404).json({ error: 'session not found' })
   const mode = requested || Harness.replyMode(session)
@@ -392,6 +419,7 @@ router.post('/sessions/:id/run', (req, res) => {
 router.post('/sessions/:id/decompose', (req, res) => startRun(req, res, 'decompose', req.body || {}))
 
 router.post('/sessions/:id/resume', async (req, res) => {
+  if (handleInputCommand(req, res)) return
   const { prompt, mode } = req.body || {}
   const result = Harness.resume(req.params.id, { prompt: await correctText(prompt), mode })
   if (result && result.mode === 'decompose') return res.status(202).json(result)
@@ -407,6 +435,7 @@ router.post('/sessions/:id/stop', (req, res) => {
 })
 
 router.post('/sessions/:id/steer', async (req, res) => {
+  if (handleInputCommand(req, res)) return
   const { prompt } = req.body || {}
   if (typeof prompt !== 'string' || !prompt.trim()) return res.status(400).json({ error: 'prompt is required' })
   const corrected = await correctText(prompt, { first: false })
@@ -418,6 +447,7 @@ router.post('/sessions/:id/steer', async (req, res) => {
 })
 
 router.post('/sessions/:id/queue', async (req, res) => {
+  if (handleInputCommand(req, res)) return
   const { prompt, mode } = req.body || {}
   if (typeof prompt !== 'string' || !prompt.trim()) return res.status(400).json({ error: 'prompt is required' })
   if (mode != null && typeof mode !== 'string') return res.status(400).json({ error: 'mode must be a string' })
