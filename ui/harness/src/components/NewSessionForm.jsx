@@ -24,9 +24,9 @@ const NewSessionForm = ({
   onCreated,
 }) => {
   const [workspaceId, setWorkspaceId] = useState(defaults.workspaceId || workspace?.id || '')
-  const [provider, setProvider] = useState(defaults.provider || providers[0]?.id || 'cursor')
+  const [provider, setProvider] = useState(defaults.provider || 'codex')
   const [model, setModel] = useState(defaults.model || '')
-  const [codex, setCodex] = useState({ reasoningEffort: '', sandbox: 'danger-full-access', approvalPolicy: 'never', webSearch: 'cached', ...defaults.codex })
+  const [codex, setCodex] = useState({ reasoningEffort: 'high', sandbox: 'danger-full-access', approvalPolicy: 'never', webSearch: 'cached', ...defaults.codex })
   const [grok, setGrok] = useState({ reasoningEffort: '', ...defaults.grok })
   const [claude, setClaude] = useState({ reasoningEffort: '', permissionMode: 'bypassPermissions', ...defaults.claude })
   const [busy, setBusy] = useState(false)
