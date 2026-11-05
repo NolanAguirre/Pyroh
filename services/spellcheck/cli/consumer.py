@@ -34,7 +34,7 @@ import fsqueue
 DEFAULT_MODEL = os.environ.get("LLM_MODEL", "Qwen/Qwen3.5-9B")
 DEFAULT_QUANT = os.environ.get("LLM_QUANT", "8bit")
 DEFAULT_MAX_MEMORY = os.environ.get("LLM_MAX_MEMORY", "14GiB")
-IDLE_SECONDS = float(os.environ.get("MODEL_IDLE_SECONDS", "300"))
+IDLE_SECONDS = float(os.environ.get("MODEL_IDLE_SECONDS", "3600"))
 POLL_SECONDS = 0.05
 MAX_NEW_TOKENS = 3
 

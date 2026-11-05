@@ -4,7 +4,7 @@ const { sweepDone } = require('./lib/queue')
 
 const PORT = Number(process.env.PORT || 6010)
 const HOST = process.env.HOST || 'localhost'
-const JOB_TIMEOUT_MS = Number(process.env.JOB_TIMEOUT_MS || 9000)
+const JOB_TIMEOUT_MS = Number(process.env.JOB_TIMEOUT_MS || 20000)
 const SWEEP_INTERVAL_MS = 60000
 
 const app = express()
