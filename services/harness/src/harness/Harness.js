@@ -15,6 +15,7 @@ const newChat = require('../modes/newChat')
 const registry = require('../registry')
 const { requestChatName } = require('../categorizer')
 const prompts = require('../prompts')
+const { isDelegatedChild, detachDelegation } = require('../store/delegationBoundary')
 
 const isDecomposeResume = (session) =>
   session &&
@@ -91,7 +92,7 @@ const spawnRun = (sessionId, action, { mode, prompt, autoName = false, handoff, 
     }
     const runAfter = require('./runAfter')
     if (allowQueued && runAfter.cancelled(sessionId)) throw stopped()
-    require('./delegation').assertChildRun(session, mode)
+    require('./delegation').assertChildRun(session, mode, { userFollowup: !delegationDelivery })
     const firstUnnamedRun = Boolean(session) && session.name == null &&
       sessionStore.listRuns(sessionId, config.writeDir).length === 0
     require('fs').rmSync(paths.controlFile(sessionId, config.writeDir), { force: true })
@@ -291,7 +292,7 @@ const run = async (sessionId, { prompt, mode: requested, provider, model, target
     if (runAfterSessionId) throw Object.assign(new Error('Fork cannot be scheduled with run after'), { status: 400 })
     return forkSession(sessionId, prompt, forkRetryKey)
   }
-  require('./delegation').assertChildRun(source, mode)
+  require('./delegation').assertChildRun(source, mode, { userFollowup: true })
   if (runAfterSessionId != null && runAfterSessionId !== '') {
     const outcome = require('./runAfter').enqueue(source, { prompt, mode, runAfterSessionId })
     if (outcome) return outcome
@@ -349,7 +350,8 @@ const resume = (sessionId, { prompt, mode: requested } = {}) => {
   return spawnRun(sessionId, 'resume', { mode, prompt: prompt || prompts.text('resume', session?.provider), plugin: lastPluginRun(sessionId, mode) })
 }
 
-const terminate = (sessionId, intent) => require('./delegation').withDeliveryLock(sessionId, () => {
+const terminate = (sessionId, intent, { delegated = false } = {}) => require('./delegation').withDeliveryLock(sessionId, () => {
+  if (delegated && sessionStore.loadSession(sessionId, config.writeDir)?.delegationDetached) return { signalled: false, pid: null }
   require('../store/queuedMessageStore').clear(sessionId, config.writeDir)
   require('./delegation').cancelChild(sessionId)
   for (const run of sessionStore.listRuns(sessionId, config.writeDir)) require('./delegation').stopChildren(sessionId, run.id)
@@ -358,7 +360,7 @@ const terminate = (sessionId, intent) => require('./delegation').withDeliveryLoc
   const signalled = pid ? proc.signal(pid, 'SIGTERM') : false
   const status = intent === 'stop' ? 'stopped' : 'paused'
   const session = sessionStore.loadSession(sessionId, config.writeDir)
-  if (session) sessionStore.updateSession(sessionId, { status, ...(session.parentRunId ? { stopRequestedAt: session.stopRequestedAt || Date.now() } : {}) }, config.writeDir)
+  if (session) sessionStore.updateSession(sessionId, { status, ...(session.parentRunId && !session.delegationDetached ? { stopRequestedAt: session.stopRequestedAt || Date.now() } : {}) }, config.writeDir)
   return { signalled, pid }
 })
 
@@ -370,9 +372,9 @@ const pause = (sessionId) => {
   return terminate(sessionId, 'pause')
 }
 
-const stop = (sessionId) => {
+const stop = (sessionId, { delegated = false } = {}) => {
   const session = sessionStore.loadSession(sessionId, config.writeDir)
-  if (session?.status !== 'queued') return terminate(sessionId, 'stop')
+  if (session?.status !== 'queued') return terminate(sessionId, 'stop', { delegated })
   const runAfter = require('./runAfter')
   if (sessionLock.holds(sessionId, config.writeDir)) {
     runAfter.requestCancel(sessionId)
@@ -409,6 +411,7 @@ const steer = (sessionId, text) => {
   if (!daemonPidOf(sessionId) || !['running', 'awaiting_input'].includes(session.status)) {
     throw Object.assign(new Error('session has no running agent to steer'), { status: 409 })
   }
+  if (isDelegatedChild(session)) detachDelegation(session, sessionStore.listRuns(sessionId, config.writeDir), config.writeDir)
   return steerStore.write(sessionId, text, config.writeDir)
 }
 

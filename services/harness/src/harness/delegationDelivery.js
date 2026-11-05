@@ -11,7 +11,7 @@ const recoverParent = (sessionId, { withLock, statesFor, describe, retryableDeli
   if (require('../store/queuedMessageStore').hasReadyWork(sessionId, config.writeDir)) return
   const finishedResult = (child) => {
     const result = describe(child)
-    if (!result.done || !child.sessionId) return result
+    if (!result.done || !child.sessionId || store.loadSession(child.sessionId, config.writeDir)?.delegationDetached) return result
     // A continuation may have started since the snapshot. Its session lock
     // makes the final snapshot atomic with continuation creation and launch.
     if (locks.holds(child.sessionId, config.writeDir)) return null
@@ -33,7 +33,7 @@ const recoverParent = (sessionId, { withLock, statesFor, describe, retryableDeli
         let changed = false
         for (const [key, child] of Object.entries(state.children || {})) {
           if (child.childKind === 'workflow') continue
-          if (child.dontReturn === true) {
+          if (child.dontReturn === true || (child.sessionId && store.loadSession(child.sessionId, config.writeDir)?.delegationDetached?.suppressReturn)) {
             if (child.delivery?.status !== 'suppressed') {
               child.delivery = { status: 'suppressed', suppressedAt: Date.now() }
               changed = true
@@ -100,7 +100,7 @@ const recoverParent = (sessionId, { withLock, statesFor, describe, retryableDeli
     store.recoverSession(sessionId, config.writeDir)
     const parent = store.loadSession(sessionId, config.writeDir)
     if (!parent || parent.stopRequestedAt || ['queued', 'stopped'].includes(parent.status)) return
-    if (parent.parentRunId && !require('./delegation').parentAllowed(parent.parentSessionId, parent.parentRunId)) return
+    if (parent.parentRunId && !parent.delegationDetached && !require('./delegation').parentAllowed(parent.parentSessionId, parent.parentRunId)) return
     const runs = store.listRuns(sessionId, config.writeDir)
     // A committed receipt may precede worker launch. Retry that same run,
     // preserving its ID and prompt instead of delivering the batch twice.
@@ -110,7 +110,8 @@ const recoverParent = (sessionId, { withLock, statesFor, describe, retryableDeli
       ['interrupted', 'disconnected'].includes(lastRun.status) ? lastRun : null
     if (unstarted) {
       const cancelled = statesFor(sessionId).some(({ state }) =>
-        Object.values(state?.children || {}).some(child => (state.cancelledAt || child.dontReturn === true) &&
+        Object.values(state?.children || {}).some(child => (state.cancelledAt || child.dontReturn === true ||
+          (child.sessionId && store.loadSession(child.sessionId, config.writeDir)?.delegationDetached?.suppressReturn)) &&
           unstarted.delegationDelivery.resultIds.includes(child.resultId)))
       if (!cancelled) {
         store.updateRun(sessionId, unstarted.id, { status: 'running', endedAt: null, error: null }, config.writeDir)

@@ -193,7 +193,7 @@ const handleTurn = async (action, sessionId, flags) => {
   attachLog(sessionId, config.writeDir)
   try {
     const entry = registry.turnMode(run.mode, run.plugin)
-    if ((!session.parentRunId || session.childKind === 'workflow') && entry?.snapshot) {
+    if ((!session.parentRunId || session.childKind === 'workflow' || sessionStore.loadSession(sessionId, config.writeDir)?.delegationDetached) && entry?.snapshot) {
       const cwd = workspaceStore.resolveSessionCwd(session, config.writeDir)
       const snap = snapshotIfGitRepo(cwd, {
         message: `harness: snapshot before ${action} ${run.id}`,

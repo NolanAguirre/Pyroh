@@ -5,12 +5,15 @@ const runIndexStore = require('./runIndexStore')
 const { readJson, readJsonAsync, writeJson } = require('./jsonFile')
 const { genId, loadSession } = require('./sessionRecord')
 const { writePromptFile, persistRecordPrompt, readRecordPrompt, readRecordPromptAsync } = require('./recordPrompt')
+const { isDelegatedChild, detachDelegation } = require('./delegationBoundary')
 
 const createRun = (sessionId, { mode, prompt, handoff, plugin, delegationDelivery, queuedMessage }, writeDir) => {
-  const session = loadSession(sessionId, writeDir)
-  if (session?.parentRunId && session.childKind !== 'workflow') {
+  let session = loadSession(sessionId, writeDir)
+  if (isDelegatedChild(session)) {
     const runs = listRuns(sessionId, writeDir)
-    if (runs.length) {
+    if (runs.length && !delegationDelivery) {
+      session = detachDelegation(session, runs, writeDir)
+    } else if (runs.length) {
       const results = runs.flatMap(run => {
         const state = readJson(path.join(paths.sessionDir(sessionId, writeDir), 'delegation', `${run.id}.json`))
         return state && !state.cancelledAt ? Object.values(state.children || {}) : []
@@ -21,7 +24,7 @@ const createRun = (sessionId, { mode, prompt, handoff, plugin, delegationDeliver
         delegationDelivery.resultIds.every(id => typeof id === 'string' && id &&
           results.some(child => child.dontReturn !== true && child.resultId === id && child.result?.done && child.delivery?.status === 'pending') &&
           !runs.some(run => run.delegationDelivery?.resultIds?.includes(id)))
-      if (!automaticContinuation) throw new Error('Harness children may only start another run for automatic child results')
+      if (!automaticContinuation) throw new Error('Invalid automatic child result delivery')
     }
   }
   const ancestry = session ? {

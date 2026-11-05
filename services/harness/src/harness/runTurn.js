@@ -90,7 +90,7 @@ const runOneTurn = async ({
   if (outputSchema === undefined && nativeFork && session.fork.sourceConfiguration?.settings.mode === mode) {
     outputSchema = session.fork.sourceConfiguration.outputSchema
   }
-  const child = Boolean(session.parentRunId) && session.childKind !== 'workflow'
+  const child = Boolean(session.parentRunId) && session.childKind !== 'workflow' && !session.delegationDetached
   const managed = primitive || child
   const depth = session.depth ?? sessionStore.loadSession(session.id, writeDir)?.depth ?? 0
   const delegation = require('./delegation')
@@ -291,6 +291,14 @@ const runOneTurn = async ({
       if (!steering || signal?.aborted) break
       const steers = steering.take()
       if (!steers.length) break
+      const currentSession = sessionStore.loadSession(session.id, writeDir)
+      if (child && currentSession?.delegationDetached) {
+        sendOptions.instructions = [
+          instructions,
+          'The user has taken over this conversation. Follow their requests as an independent agent. Your replies are not returned to the original parent.',
+          delegation.guidance(session.provider, false, { session: currentSession, canDelegate: canDelegate && !textOnly }),
+        ].filter(Boolean).join('\n\n')
+      }
       const steerText = steers.map((steer) => steer.text).join('\n\n')
       text = await rewritePrompt(steerText, { cwd: settings.cwd, first: false, provider: session.provider })
       onEvent?.({ type: 'user', steer: true, text, itemId: `steer:${steers[0].id}` })

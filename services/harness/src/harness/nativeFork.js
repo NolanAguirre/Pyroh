@@ -26,7 +26,7 @@ const sourceConfiguration = (source, mode, runs) => {
       list, askUserEnabled: list.includes('ask_user'),
       mcpServers: triggerMcpServers(firedActions(findTriggers(first?.prompt || '')), source),
       disableNativeSpawning: true,
-      restrictedChild: Boolean(source.parentRunId) && mode !== 'agent',
+      restrictedChild: Boolean(source.parentRunId) && !source.delegationDetached && mode !== 'agent',
     },
   }
 }

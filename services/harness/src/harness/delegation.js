@@ -10,6 +10,7 @@ const locks = require('../store/sessionLock')
 const questions = require('../store/questionStore')
 const registry = require('../registry')
 const { getUiSettings } = require('../store/uiSettings')
+const { isDelegatedChild } = require('../store/delegationBoundary')
 
 const fileFor = (sessionId, runId) => path.join(paths.sessionDir(sessionId, config.writeDir), 'delegation', `${runId}.json`)
 const credentialFile = (hash) => path.join(config.writeDir, 'delegation-credentials', `${hash}.json`)
@@ -59,7 +60,7 @@ const workflowAllowed = (sessionId, runId) => {
 
 // Depth limits govern new children, not completion of work already accepted.
 const canDelegate = (session) => Boolean(session && !session.stopRequestedAt && session.status !== 'stopped' &&
-  (!session.parentRunId || parentAllowed(session.parentSessionId, session.parentRunId)))
+  (!session.parentRunId || session.delegationDetached || parentAllowed(session.parentSessionId, session.parentRunId)))
 const canSpawn = (session) => canDelegate(session) && session.depth < getUiSettings(config.writeDir).maxSubagentDepth
 const assertSpawnDepth = (session) => {
   const maxDepth = getUiSettings(config.writeDir).maxSubagentDepth
@@ -141,9 +142,10 @@ const targetFor = (parent, state, args) => {
 }
 
 const describeRecords = (child, session, run, pendingQuestions, runs = run ? [run] : []) => {
-  const cancelled = Boolean(child.cancelRequestedAt || session?.stopRequestedAt)
-  const waiting = Boolean(session && hasPendingChildren(session.id))
-  const done = Boolean((cancelled || child.error || run?.endedAt) && !waiting && runs.every(item => item.endedAt))
+  const detached = session?.delegationDetached
+  const cancelled = Boolean(child.cancelRequestedAt || (detached ? detached.cancelled : session?.stopRequestedAt))
+  const waiting = Boolean(session && !detached && hasPendingChildren(session.id))
+  const done = Boolean(detached || ((cancelled || child.error || run?.endedAt) && !waiting && runs.every(item => item.endedAt)))
   const normalized = runs.map(item => store.normalizeUsage(item.usage, session?.provider)).filter(Boolean)
   const normalizedUsage = normalized.length ? normalized.reduce((total, usage) => {
     for (const [key, value] of Object.entries(usage)) total[key] = (total[key] || 0) + value
@@ -157,7 +159,7 @@ const describeRecords = (child, session, run, pendingQuestions, runs = run ? [ru
     workflow: session?.workflow || child.workflow || null, name: session?.name || null,
     workspaceId: session?.workspaceId, parentRunId: session?.parentRunId,
     transcriptLink: session ? `/?workspace=${encodeURIComponent(session.workspaceId)}&session=${encodeURIComponent(session.id)}` : null,
-    state: cancelled ? 'cancelled' : child.error ? 'error' : done ? run.status : session?.status === 'awaiting_input' ? 'awaiting_input' : waiting && run?.endedAt ? 'subagent' : run?.status || 'starting',
+    state: cancelled ? 'cancelled' : child.error ? 'error' : done ? run?.status || 'detached' : session?.status === 'awaiting_input' ? 'awaiting_input' : waiting && run?.endedAt ? 'subagent' : run?.status || 'starting',
     done, dontReturn: child.dontReturn === true, provider: session?.provider, model: session?.model, mode: run?.mode,
     pendingQuestions: pendingQuestions.filter(q => q.runId === run?.id && q.status === 'pending'),
     error: child.error || run?.error || null,
@@ -168,9 +170,11 @@ const describeRecords = (child, session, run, pendingQuestions, runs = run ? [ru
     ...(done ? { finalResponse: cancelled ? null : run?.result ?? null } : {}),
   }
 }
+const delegatedRuns = (session, runs) => session?.delegationDetached
+  ? runs.filter(run => session.delegationDetached.runIds.includes(run.id)) : runs
 const describe = (child) => {
   const session = child.sessionId && store.loadSession(child.sessionId, config.writeDir)
-  const runs = child.sessionId && child.runId ? store.listRuns(child.sessionId, config.writeDir) : []
+  const runs = delegatedRuns(session, child.sessionId && child.runId ? store.listRuns(child.sessionId, config.writeDir) : [])
   return describeRecords(child, session, runs.at(-1),
     child.sessionId ? questions.listQuestions(child.sessionId, config.writeDir) : [], runs)
 }
@@ -180,7 +184,8 @@ const describeAsync = async (child) => {
     child.sessionId && child.runId ? store.listRunsAsync(child.sessionId, config.writeDir) : [],
     child.sessionId ? questions.listQuestionsAsync(child.sessionId, config.writeDir) : [],
   ])
-  return describeRecords(child, session, runs.at(-1), pendingQuestions, runs)
+  const originalRuns = delegatedRuns(session, runs)
+  return describeRecords(child, session, originalRuns.at(-1), pendingQuestions, originalRuns)
 }
 
 const spawn = (context, args) => withLock(context.sessionId, context.runId, (file) => {
@@ -253,8 +258,9 @@ const ownedChild = (context, args) => {
 const status = (context, args) => describe(ownedChild(context, args))
 const cancelChild = (sessionId) => {
   const session = store.loadSession(sessionId, config.writeDir)
-  if (!session?.parentRunId || session.childKind === 'workflow') return
+  if (!isDelegatedChild(session)) return
   withLock(session.parentSessionId, session.parentRunId, (file) => {
+    if (!isDelegatedChild(store.loadSession(sessionId, config.writeDir))) return
     const state = readJson(file)
     if (!state) return
     for (const child of Object.values(state.children || {})) {
@@ -267,7 +273,7 @@ const stop = (context, args) => {
   const child = ownedChild(context, args)
   if (!describe(child).done || childHasWork(child)) {
     cancelChild(child.sessionId)
-    require('./Harness').stop(child.sessionId)
+    require('./Harness').stop(child.sessionId, { delegated: true })
   }
   return status(context, args)
 }
@@ -301,7 +307,7 @@ const parentAllowed = (sessionId, runId) => {
   return Boolean(canDelegate(parent) && state && !state.cancelledAt && run)
 }
 
-const childHasWork = (child) => Boolean(child.sessionId && (
+const childHasWork = (child) => Boolean(child.sessionId && !store.loadSession(child.sessionId, config.writeDir)?.delegationDetached && (
   store.listRuns(child.sessionId, config.writeDir).some(run => !run.endedAt) || hasPendingChildren(child.sessionId)))
 
 const workflowChildren = (sessionId) => {
@@ -340,7 +346,7 @@ const stopChildren = (sessionId, runId) => {
       writeJson(file, state)
     })
     // Release the record lock before stop calls back into cancelChild.
-    for (const childSessionId of sessions) require('./Harness').stop(childSessionId)
+    for (const childSessionId of sessions) require('./Harness').stop(childSessionId, { delegated: true })
   })
 }
 
@@ -394,14 +400,17 @@ const recoverIdleOwner = (session) => {
 const recoverChild = (child, state) => {
   if (!child.sessionId || !child.runId) return
   const session = store.loadSession(child.sessionId, config.writeDir)
-  if (!session) return
-  if ((state.cancelledAt || child.cancelRequestedAt) && !session.stopRequestedAt) require('./Harness').stop(session.id)
+  if (!session || session.delegationDetached) return
+  if ((state.cancelledAt || child.cancelRequestedAt) && !session.stopRequestedAt) require('./Harness').stop(session.id, { delegated: true })
   const runs = store.listRuns(child.sessionId, config.writeDir)
   if (!runs.some(run => !run.endedAt)) return
   const stopAt = session.stopRequestedAt || child.cancelRequestedAt || state.cancelledAt
   if (stopAt && Date.now() - stopAt > 10000) {
-    const owner = readJson(paths.daemonPid(session.id, config.writeDir))
-    if (locks.ownerAlive(owner)) require('./process').signal(-owner.pid, 'SIGKILL')
+    withDeliveryLock(session.id, () => {
+      if (store.loadSession(session.id, config.writeDir)?.delegationDetached) return
+      const owner = readJson(paths.daemonPid(session.id, config.writeDir))
+      if (locks.ownerAlive(owner)) require('./process').signal(-owner.pid, 'SIGKILL')
+    })
   }
   recoverIdleOwner(session)
 }
@@ -495,8 +504,9 @@ const childrenForAsync = async (sessionId) => {
   return [...children.flat(), ...workflows]
 }
 
-const assertChildRun = (session, mode) => {
-  if (!session?.parentRunId) return
+const assertChildRun = (session, mode, { userFollowup = false } = {}) => {
+  if (!session?.parentRunId || session.delegationDetached) return
+  if (userFollowup && session.childKind !== 'workflow' && store.listRuns(session.id, config.writeDir).length) return
   if (session.stopRequestedAt || session.status === 'stopped') fail('This child was stopped; it cannot start another run')
   if (!parentAllowed(session.parentSessionId, session.parentRunId)) fail('The parent cancelled this child; it cannot start another run')
   const rank = { agent: 0, plan: 1, ask: 2 }

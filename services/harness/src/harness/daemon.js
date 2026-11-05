@@ -199,6 +199,7 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
   if (readControlIntent(sessionId, writeDir)) onSignal().catch(err => fail(err, 'stop failed', 2))
   if (session.parentRunId) {
     const checkParent = () => {
+      if (sessionStore.loadSession(sessionId, writeDir)?.delegationDetached) return
       const delegation = require('./delegation')
       const allowed = session.childKind === 'workflow' ? delegation.workflowAllowed : delegation.parentAllowed
       if (!allowed(session.parentSessionId, session.parentRunId)) {
