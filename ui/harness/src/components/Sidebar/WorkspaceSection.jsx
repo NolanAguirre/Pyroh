@@ -113,7 +113,7 @@ const WorkspaceSection = ({ workspaces, workspace, onSelectWorkspace, onWorkspac
               </button>
             </div>
           </DevScope>
-          {favoriteError?.workspaceId === workspace?.id && (
+          {favoriteError && favoriteError.workspaceId === workspace?.id && (
             <p className="hint hint--error" role="alert">{favoriteError.message}</p>
           )}
           {workspace && (
