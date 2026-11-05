@@ -5,7 +5,7 @@
   grid-template-rows: auto 1fr auto;
   height: 100vh;
   height: 100dvh;
-  overflow: hidden;
+  overflow: auto;
   background: var(--bg);
   color: var(--text);
   font-size: 13px;

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   DropdownTypeahead,
   DropdownTypeaheadTrigger,
@@ -45,7 +45,13 @@ const NewSessionForm = ({
     [providers, provider],
   )
 
-  const modelOptions = (current?.models || []).map((m) => ({
+  // The default provider may be missing from the list; pick the first one so
+  // the dropdowns are never blank once providers load.
+  useEffect(() => {
+    if (providers.length && !current) setProvider(providers[0].id)
+  }, [providers, current])
+
+  const modelOptions =(current?.models || []).map((m) => ({
     value: m.id,
     displayValue: m.displayName || m.id,
   }))

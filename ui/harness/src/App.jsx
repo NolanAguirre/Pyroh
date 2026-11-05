@@ -62,11 +62,25 @@ const App = () => {
 
   const { workspaces, workspacesLoaded, putWorkspace, deleteWorkspace } = useWorkspaces()
 
+  // Retry until the backend answers; a failed first load (e.g. the server is
+  // still starting) used to leave the provider list empty for the whole visit.
   useEffect(() => {
-    api
-      .getProviders()
-      .then(({ providers: list }) => setProviders(list))
-      .catch(() => setProviders([]))
+    let cancelled = false
+    let timer = null
+    const load = (delay) => {
+      api
+        .getProviders()
+        .then(({ providers: list }) => { if (!cancelled) setProviders(list || []) })
+        .catch(() => {
+          if (cancelled) return
+          timer = setTimeout(() => load(Math.min(delay * 2, 10000)), delay)
+        })
+    }
+    load(1000)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
   }, [])
 
   const { transcriptFontSize, changeTranscriptFontSize, maxSubagentDepth, changeMaxSubagentDepth, settingsError } = useTranscriptFontSize()
