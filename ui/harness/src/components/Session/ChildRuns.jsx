@@ -47,7 +47,7 @@ const ChildRuns = ({ devId, session, runs, children }) => {
     <DevScope id={devId} state={{ session: session.id, count: children.length, open }}>
       <Card>
         <CardHeader open={open} onToggle={() => setOpen((prev) => !prev)}>
-          <span className="child-runs__title">Child runs ({children.length})</span>
+          <span className="child-runs__title">Subagents ({children.length})</span>
           {!open && (
             <span className="child-runs__badges">
               {children.map((child, index) => {
@@ -77,35 +77,29 @@ const ChildRuns = ({ devId, session, runs, children }) => {
         </CardHeader>
         {open && <CardSection>
           <p className="hint">Reported tokens: parent {formatNumber(direct)} · children {formatNumber(childTokens)} · combined {formatNumber(direct + childTokens)}</p>
-          {runs.filter(run => children.some(child => child.parentRunId === run.id)).map(run => (
-            <DevScope key={run.id} id="lewycwc" state={{ run: run.id }}>
-              <div>
-                <Matrix
-                  devId="23bx776"
-                  rowDevId="4d28gqi"
-                  colDevId="bbfh0z8"
-                  className="child-runs__matrix"
-                  label={`Children of ${run.id}`}
-                  rowLabel={`Parent run ${run.id}`}
-                  rows={children.filter(child => child.parentRunId === run.id).map((child, index) => ({ ...child, id: child.runId || `pending-${index}` }))}
-                  columns={[{ id: 'kind', title: 'Kind' }, { id: 'state', title: 'Status' }, { id: 'model', title: 'Provider / model' }, { id: 'durationMs', title: 'Duration' }, { id: 'tokens', title: 'Reported tokens' }]}
-                  renderRowHeader={child => child.sessionId ? <a href={link(child)} title="Open child transcript">{childLabel(child)}</a> : `${childLabel(child)} · Spawn failed`}
-                  renderCell={(child, column) => column.id === 'kind' ? child.childKind === 'workflow' ? 'Workflow step' : 'Agent subagent'
-                    : column.id === 'model' ? `${child.provider || ''} / ${child.model || 'default'}`
-                    : column.id === 'durationMs' ? formatDuration(child.durationMs)
-                      : column.id === 'tokens' ? child.normalizedUsage ? formatNumber(child.normalizedUsage.total) : 'Not reported' : child.state}
-                />
-                {children.filter(child => child.parentRunId === run.id).map((child, index) => (
-                  <div key={child.runId || `pending-${index}`}>
-                    {child.error && <p className="hint hint--error">{child.error}</p>}
-                    {(child.pendingQuestions || []).map(question => (
-                      <QuestionCard key={question.id} devId="d90b43g" question={{ ...question, question: `${childLabel(child)}: ${question.question}` }}
-                        onAnswer={(qid, value) => api.answerQuestion(child.sessionId, qid, value)} />
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </DevScope>
+          <Matrix
+            devId="23bx776"
+            rowDevId="4d28gqi"
+            colDevId="bbfh0z8"
+            className="child-runs__matrix"
+            label="Subagents"
+            rowLabel="Subagent"
+            rows={children.map((child, index) => ({ ...child, id: child.runId || child.sessionId || `pending-${index}` }))}
+            columns={[{ id: 'kind', title: 'Kind' }, { id: 'state', title: 'Status' }, { id: 'model', title: 'Provider / model' }, { id: 'durationMs', title: 'Duration' }, { id: 'tokens', title: 'Reported tokens' }]}
+            renderRowHeader={child => child.sessionId ? <a href={link(child)} title="Open child transcript">{childLabel(child)}</a> : `${childLabel(child)} · Spawn failed`}
+            renderCell={(child, column) => column.id === 'kind' ? child.childKind === 'workflow' ? 'Workflow step' : 'Agent subagent'
+              : column.id === 'model' ? `${child.provider || ''} / ${child.model || 'default'}`
+              : column.id === 'durationMs' ? formatDuration(child.durationMs)
+                : column.id === 'tokens' ? child.normalizedUsage ? formatNumber(child.normalizedUsage.total) : 'Not reported' : child.state}
+          />
+          {children.map((child, index) => (
+            <div key={child.runId || child.sessionId || `pending-${index}`}>
+              {child.error && <p className="hint hint--error">{child.error}</p>}
+              {(child.pendingQuestions || []).map(question => (
+                <QuestionCard key={question.id} devId="d90b43g" question={{ ...question, question: `${childLabel(child)}: ${question.question}` }}
+                  onAnswer={(qid, value) => api.answerQuestion(child.sessionId, qid, value)} />
+              ))}
+            </div>
           ))}
         </CardSection>}
       </Card>
