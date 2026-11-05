@@ -5,7 +5,7 @@
   grid-template-rows: auto 1fr auto;
   height: 100vh;
   height: 100dvh;
-  overflow: auto;
+  overflow: hidden;
   background: var(--bg);
   color: var(--text);
   font-size: 13px;
@@ -168,9 +168,8 @@
   pointer-events: none;
 }
 
-.terminal.terminal-panel__xterm {
-  flex: 1 0 130%;
-  height: 130%;
+.terminal-panel__xterm {
+  flex: 1;
   min-height: 0;
 }
 
