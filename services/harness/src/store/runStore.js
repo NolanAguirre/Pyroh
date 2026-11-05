@@ -19,7 +19,7 @@ const createRun = (sessionId, { mode, prompt, handoff, plugin, delegationDeliver
         typeof delegationDelivery?.batchId === 'string' && delegationDelivery.batchId &&
         Array.isArray(delegationDelivery.resultIds) && delegationDelivery.resultIds.length > 0 &&
         delegationDelivery.resultIds.every(id => typeof id === 'string' && id &&
-          results.some(child => child.resultId === id && child.result?.done && child.delivery?.status === 'pending') &&
+          results.some(child => child.dontReturn !== true && child.resultId === id && child.result?.done && child.delivery?.status === 'pending') &&
           !runs.some(run => run.delegationDelivery?.resultIds?.includes(id)))
       if (!automaticContinuation) throw new Error('Harness children may only start another run for automatic child results')
     }

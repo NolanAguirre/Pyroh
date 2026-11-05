@@ -345,6 +345,7 @@ const stopChildren = (sessionId, runId) => {
 }
 
 const retryableDelivery = (child) => {
+  if (child.dontReturn === true) return false
   if (child.delivery?.status !== 'delivered' || !child.delivery.runId) return false
   const run = store.loadRun(child.parentSessionId, child.delivery.runId, config.writeDir)
   if (!run?.delegationDelivery || run.pid || run.providerRunId ||

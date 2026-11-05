@@ -33,6 +33,13 @@ const recoverParent = (sessionId, { withLock, statesFor, describe, retryableDeli
         let changed = false
         for (const [key, child] of Object.entries(state.children || {})) {
           if (child.childKind === 'workflow') continue
+          if (child.dontReturn === true) {
+            if (child.delivery?.status !== 'suppressed') {
+              child.delivery = { status: 'suppressed', suppressedAt: Date.now() }
+              changed = true
+            }
+            continue
+          }
           if (['delivered', 'suppressed'].includes(child.delivery?.status)) continue
           if (!child.resultId) {
             Object.assign(child, { resultId: `${runId}:${key}`, parentSessionId: sessionId, parentRunId: runId })
@@ -102,8 +109,9 @@ const recoverParent = (sessionId, { withLock, statesFor, describe, retryableDeli
     const unstarted = lastRun?.delegationDelivery && !lastRun.pid && !lastRun.providerRunId &&
       ['interrupted', 'disconnected'].includes(lastRun.status) ? lastRun : null
     if (unstarted) {
-      const cancelled = statesFor(sessionId).some(({ state }) => state?.cancelledAt &&
-        Object.values(state.children || {}).some(child => unstarted.delegationDelivery.resultIds.includes(child.resultId)))
+      const cancelled = statesFor(sessionId).some(({ state }) =>
+        Object.values(state?.children || {}).some(child => (state.cancelledAt || child.dontReturn === true) &&
+          unstarted.delegationDelivery.resultIds.includes(child.resultId)))
       if (!cancelled) {
         store.updateRun(sessionId, unstarted.id, { status: 'running', endedAt: null, error: null }, config.writeDir)
         store.updateSession(sessionId, { status: 'running' }, config.writeDir)
