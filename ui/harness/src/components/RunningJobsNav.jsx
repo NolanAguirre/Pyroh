@@ -90,29 +90,6 @@ const RunningJobsNav = ({
   return (
     <DevScope id={devId} state={{ count: jobs.length, session: activeId, collapsed: false }}>
       <aside className="jobs-nav">
-        <div className="jobs-nav__header">
-          <div className="jobs-nav__title-row">
-            <h2>Jobs</h2>
-            <Badge
-              size="small"
-              variant={activeJobs.length > 0 ? 'info' : 'neutral'}
-              count={activeJobs.length}
-              showZero={false}
-            />
-          </div>
-          <div className="jobs-nav__header-actions">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setCollapsed(true)}
-              devId="b1f6n8q"
-              title="Collapse panel"
-            >
-              →
-            </Button>
-          </div>
-        </div>
-
         <div className="jobs-nav__filter-bar">
           <button
             type="button"
@@ -128,6 +105,17 @@ const RunningJobsNav = ({
           >
             Active ({activeJobs.length})
           </button>
+          <div className="jobs-nav__header-actions">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCollapsed(true)}
+              devId="b1f6n8q"
+              title="Collapse panel"
+            >
+              →
+            </Button>
+          </div>
         </div>
 
         <div className="jobs-nav__list">

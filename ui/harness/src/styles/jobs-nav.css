@@ -45,32 +45,16 @@
   text-transform: uppercase;
 }
 
-.jobs-nav__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border);
-}
-
-.jobs-nav__title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.jobs-nav__header h2 {
-  font-size: 15px;
-  font-weight: 700;
-  margin: 0;
-}
-
 .jobs-nav__filter-bar {
   display: flex;
+  align-items: center;
   border-bottom: 1px solid var(--border);
   padding: 4px 8px;
   gap: 4px;
+}
+
+.jobs-nav__header-actions {
+  flex-shrink: 0;
 }
 
 .jobs-nav__tab {
