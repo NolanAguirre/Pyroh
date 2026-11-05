@@ -30,6 +30,7 @@ const createWorkspace = ({ name, cwd }, writeDir) => {
     id,
     name: (name && String(name).trim()) || defaultNameForCwd(cwd),
     cwd,
+    favorite: false,
     createdAt: now,
     updatedAt: now,
   }

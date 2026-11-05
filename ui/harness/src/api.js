@@ -191,9 +191,9 @@ const api = {
   createWorkspace: ({ machine = null, ...payload }) =>
     post(at(machine, '/api/workspaces'), payload)
       .then((data) => ({ ...data, workspace: tagWorkspace(data.workspace, machine) })),
-  updateWorkspace: (workspaceId, { name, cwd }) => {
+  updateWorkspace: (workspaceId, { name, cwd, favorite }) => {
     const { id, machine } = splitId(workspaceId)
-    return send('PATCH', at(machine, `/api/workspaces/${encodeURIComponent(id)}`), { name, cwd })
+    return send('PATCH', at(machine, `/api/workspaces/${encodeURIComponent(id)}`), { name, cwd, favorite })
       .then(json)
       .then((data) => ({ ...data, workspace: tagWorkspace(data.workspace, machine) }))
   },

@@ -6,13 +6,41 @@ import {
   DropdownTypeaheadTrigger,
   DropdownTypeaheadMenu,
   FolderIcon,
+  fuzzyScore,
 } from 'component-library'
+import api from '../../api'
 import EditWorkspaceForm from '../EditWorkspaceForm'
 import { PencilIcon, TrashIcon } from './icons'
+
+const filterWorkspaces = (options, query) => {
+  const normalizedQuery = query.trim()
+  if (!normalizedQuery) return options
+  return options
+    .map((option) => ({ option, score: fuzzyScore(option.displayValue, normalizedQuery) }))
+    .filter(({ score }) => score !== null)
+    .sort((a, b) => Number(b.option.favorite) - Number(a.option.favorite) || b.score - a.score)
+    .map(({ option }) => option)
+}
 
 const WorkspaceSection = ({ workspaces, workspace, onSelectWorkspace, onWorkspaceUpdated, onDeleteWorkspace }) => {
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState('')
+  const [favoriteBusy, setFavoriteBusy] = useState(false)
+  const [favoriteError, setFavoriteError] = useState(null)
+
+  const toggleFavorite = async () => {
+    if (!workspace || favoriteBusy) return
+    setFavoriteBusy(true)
+    setFavoriteError(null)
+    try {
+      const { workspace: next } = await api.updateWorkspace(workspace.id, { favorite: !workspace.favorite })
+      onWorkspaceUpdated?.(next)
+    } catch (err) {
+      setFavoriteError({ workspaceId: workspace.id, message: err?.message || String(err) })
+    } finally {
+      setFavoriteBusy(false)
+    }
+  }
 
   const deleteWorkspace = async () => {
     if (!workspace || deleteBusy || !onDeleteWorkspace) return
@@ -30,6 +58,7 @@ const WorkspaceSection = ({ workspaces, workspace, onSelectWorkspace, onWorkspac
   const workspaceOptions = workspaces.map((item) => ({
     value: item.id,
     displayValue: item.name,
+    favorite: Boolean(item.favorite),
   }))
 
   return (
@@ -49,6 +78,7 @@ const WorkspaceSection = ({ workspaces, workspace, onSelectWorkspace, onWorkspac
                   options={workspaceOptions}
                   change={onSelectWorkspace}
                   filter
+                  filterOptions={filterWorkspaces}
                 >
                   <DropdownTypeaheadTrigger placeholder="Select a workspace…" />
                   <DropdownTypeaheadMenu filterPlaceholder="Find a workspace…" />
@@ -70,8 +100,22 @@ const WorkspaceSection = ({ workspaces, workspace, onSelectWorkspace, onWorkspac
                   <PencilIcon />
                 </button>
               </Popup>
+              <button
+                type="button"
+                className="sidebar__workspace-favorite"
+                title={workspace?.favorite ? 'Remove workspace from favorites' : 'Favorite workspace'}
+                aria-label={workspace?.favorite ? 'Remove workspace from favorites' : 'Favorite workspace'}
+                aria-pressed={Boolean(workspace?.favorite)}
+                disabled={!workspace || favoriteBusy}
+                onClick={toggleFavorite}
+              >
+                <span aria-hidden="true">{workspace?.favorite ? '★' : '☆'}</span>
+              </button>
             </div>
           </DevScope>
+          {favoriteError?.workspaceId === workspace?.id && (
+            <p className="hint hint--error" role="alert">{favoriteError.message}</p>
+          )}
           {workspace && (
             <DevScope id="j6v0e3d" state={{ workspace: workspace.id, deleteBusy }}>
               <div className="sidebar__cwd" title={workspace.cwd}>

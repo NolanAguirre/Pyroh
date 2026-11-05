@@ -121,7 +121,7 @@ const saveWorkspacePatch = async (id, patch) => {
 }
 
 router.patch('/workspaces/:id', async (req, res) => {
-  const { name, cwd, deleted } = req.body || {}
+  const { name, cwd, deleted, favorite } = req.body || {}
   const patch = {}
   if (name !== undefined) {
     const trimmed = String(name).trim()
@@ -131,6 +131,10 @@ router.patch('/workspaces/:id', async (req, res) => {
   if (deleted !== undefined) {
     if (typeof deleted !== 'boolean') return res.status(400).json({ error: 'deleted must be a boolean' })
     patch.deleted = deleted
+  }
+  if (favorite !== undefined) {
+    if (typeof favorite !== 'boolean') return res.status(400).json({ error: 'favorite must be a boolean' })
+    patch.favorite = favorite
   }
   if (cwd !== undefined) {
     try {

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import api from './api'
 
-const byName = (a, b) => a.name.localeCompare(b.name)
+const byFavoriteThenName = (a, b) => Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)) || a.name.localeCompare(b.name)
 
-// Workspace list without deleted rows, kept sorted by name on local edits.
+// Workspace list without deleted rows, with favorites first, then name.
 const useWorkspaces = () => {
   const [workspaces, setWorkspaces] = useState([])
   const [workspacesLoaded, setWorkspacesLoaded] = useState(false)
@@ -12,7 +12,7 @@ const useWorkspaces = () => {
     api
       .listWorkspaces()
       .then(({ workspaces: list }) => {
-        setWorkspaces(list.filter((item) => !item.deleted))
+        setWorkspaces(list.filter((item) => !item.deleted).sort(byFavoriteThenName))
         setWorkspacesLoaded(true)
       })
       .catch(() => {
@@ -26,7 +26,7 @@ const useWorkspaces = () => {
   }, [loadWorkspaces])
 
   const putWorkspace = (workspace) => {
-    setWorkspaces((prev) => [...prev.filter((item) => item.id !== workspace.id), workspace].sort(byName))
+    setWorkspaces((prev) => [...prev.filter((item) => item.id !== workspace.id), workspace].sort(byFavoriteThenName))
   }
 
   const deleteWorkspace = async (id) => {
