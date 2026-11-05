@@ -550,7 +550,7 @@ router.patch('/ui', (req, res) => {
 })
 
 router.get('/config', (_req, res) => {
-  res.json({ spellcheck: Boolean(config.spellcheckUrl) })
+  res.json({ spellcheck: Boolean(config.spellcheckUrl), sessionNaming: Boolean(config.categorizerUrl) })
 })
 
 module.exports = router

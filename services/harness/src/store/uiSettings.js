@@ -10,6 +10,8 @@ const MAX_SUBAGENT_DEPTH = 10
 const parseMaxSubagentDepth = (value) =>
   Number.isInteger(value) && value >= 0 && value <= MAX_SUBAGENT_DEPTH ? value : null
 
+const parseSessionNaming = (value) => (typeof value === 'boolean' ? value : null)
+
 const parseTranscriptFontSize = (value) => {
   if (typeof value !== 'number' || !Number.isInteger(value)) return null
   if (value < MIN_TRANSCRIPT_FONT_SIZE || value > MAX_TRANSCRIPT_FONT_SIZE) return null
@@ -29,9 +31,11 @@ const readStored = (writeDir) => {
 const normalize = (stored) => {
   const size = parseTranscriptFontSize(stored && stored.transcriptFontSize)
   const depth = parseMaxSubagentDepth(stored && stored.maxSubagentDepth)
+  const naming = parseSessionNaming(stored && stored.sessionNaming)
   return {
     transcriptFontSize: size == null ? DEFAULT_TRANSCRIPT_FONT_SIZE : size,
     maxSubagentDepth: depth == null ? DEFAULT_MAX_SUBAGENT_DEPTH : depth,
+    sessionNaming: naming == null ? true : naming,
   }
 }
 
@@ -42,9 +46,10 @@ const updateUiSettings = (patch, writeDir) => {
   const fields = [
     ['transcriptFontSize', parseTranscriptFontSize, MIN_TRANSCRIPT_FONT_SIZE, MAX_TRANSCRIPT_FONT_SIZE],
     ['maxSubagentDepth', parseMaxSubagentDepth, 0, MAX_SUBAGENT_DEPTH],
+    ['sessionNaming', parseSessionNaming],
   ]
   if (!fields.some(([key]) => Object.prototype.hasOwnProperty.call(patch || {}, key))) {
-    const err = new Error('transcriptFontSize or maxSubagentDepth is required')
+    const err = new Error('transcriptFontSize, maxSubagentDepth, or sessionNaming is required')
     err.status = 400
     throw err
   }
@@ -52,7 +57,7 @@ const updateUiSettings = (patch, writeDir) => {
     if (!Object.prototype.hasOwnProperty.call(patch, key)) continue
     const value = parse(patch[key])
     if (value == null) {
-      const err = new Error(`${key} must be an integer from ${min} to ${max}`)
+      const err = new Error(min == null ? `${key} must be a boolean` : `${key} must be an integer from ${min} to ${max}`)
       err.status = 400
       throw err
     }

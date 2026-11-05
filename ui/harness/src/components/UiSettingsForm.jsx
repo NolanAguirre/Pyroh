@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { DevScope, FormRange } from 'component-library'
+import { DevScope, FormRange, FormToggle } from 'component-library'
 import api from '../api'
 
 const MIN_TRANSCRIPT_FONT_SIZE = 12
@@ -7,6 +7,10 @@ const MAX_TRANSCRIPT_FONT_SIZE = 24
 
 const UiSettingsForm = ({ devId, transcriptFontSize, onTranscriptFontSize, maxSubagentDepth, onMaxSubagentDepth, error }) => {
   const [spellcheck, setSpellcheck] = useState(null)
+  // Whether the categorizer is configured, and the saved on/off choice.
+  const [namingAvailable, setNamingAvailable] = useState(null)
+  const [sessionNaming, setSessionNaming] = useState(true)
+  const [namingError, setNamingError] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -15,10 +19,20 @@ const UiSettingsForm = ({ devId, transcriptFontSize, onTranscriptFontSize, maxSu
       .then((body) => {
         if (cancelled) return
         setSpellcheck(Boolean(body && body.spellcheck))
+        setNamingAvailable(Boolean(body && body.sessionNaming))
       })
       .catch(() => {
-        if (!cancelled) setSpellcheck(null)
+        if (!cancelled) {
+          setSpellcheck(null)
+          setNamingAvailable(null)
+        }
       })
+    api
+      .getUiSettings()
+      .then(({ settings }) => {
+        if (!cancelled && settings && typeof settings.sessionNaming === 'boolean') setSessionNaming(settings.sessionNaming)
+      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }
@@ -26,8 +40,18 @@ const UiSettingsForm = ({ devId, transcriptFontSize, onTranscriptFontSize, maxSu
 
   const spellcheckLabel = spellcheck == null ? 'Unknown' : spellcheck ? 'On' : 'Off'
 
+  const changeSessionNaming = (next) => {
+    const previous = sessionNaming
+    setSessionNaming(next)
+    setNamingError('')
+    api.setUiSettings({ sessionNaming: next }).catch((err) => {
+      setSessionNaming(previous)
+      setNamingError(err && err.message ? err.message : String(err))
+    })
+  }
+
   return (
-    <DevScope id={devId} state={{ transcriptFontSize, maxSubagentDepth, spellcheck }}>
+    <DevScope id={devId} state={{ transcriptFontSize, maxSubagentDepth, spellcheck, namingAvailable, sessionNaming }}>
       <form className="ui-settings" onSubmit={(event) => event.preventDefault()}>
         <div className="ui-settings__header">
           <h2>Settings</h2>
@@ -38,6 +62,17 @@ const UiSettingsForm = ({ devId, transcriptFontSize, onTranscriptFontSize, maxSu
             <span className="field__label">Spellcheck</span>
             <span>{spellcheckLabel}</span>
           </p>
+        </DevScope>
+        <DevScope id="s5k9w3m" state={{ namingAvailable, sessionNaming }}>
+          <label className="field">
+            <span className="field__label">Session naming</span>
+            <FormToggle
+              aria-label="Session naming"
+              disabled={!namingAvailable}
+              field={{ value: sessionNaming, onChange: (event) => changeSessionNaming(event.target.checked) }}
+            />
+            {namingAvailable === false ? <span className="hint">Categorizer is not running.</span> : null}
+          </label>
         </DevScope>
         <DevScope id="d8w1j4r" state={{ transcriptFontSize }}>
           <label className="field">
@@ -72,6 +107,7 @@ const UiSettingsForm = ({ devId, transcriptFontSize, onTranscriptFontSize, maxSu
             <span className="hint">Root depth is 0. Limit 0 disables delegation; 1 allows children; 2 lets children delegate once.</span>
           </label>
         </DevScope>
+        {namingError ? <p className="hint hint--error" role="alert">{namingError}</p> : null}
         {error ? <p className="hint hint--error" role="alert">{error}</p> : null}
       </form>
     </DevScope>

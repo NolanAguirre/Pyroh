@@ -1,4 +1,5 @@
 const config = require('./config')
+const { getUiSettings } = require('./store/uiSettings')
 
 const REQUEST_TIMEOUT_MS = 5000
 
@@ -7,6 +8,7 @@ const REQUEST_TIMEOUT_MS = 5000
 const requestChatName = (sessionId, prompt) => {
   if (!config.categorizerUrl || typeof prompt !== 'string' || !prompt.trim()) return
   try {
+    if (!getUiSettings(config.writeDir).sessionNaming) return
     const body = {
       task: 'chat-name',
       key: sessionId,
