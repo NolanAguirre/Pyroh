@@ -55,6 +55,7 @@ const RunningJobsNav = ({
   onSelect,
   collapsed: collapsedProp,
   onCollapsedChange,
+  terminal,
 }) => {
   const [collapsedState, setCollapsedState] = useState(false)
   const collapsed = collapsedProp ?? collapsedState
@@ -147,6 +148,7 @@ const RunningJobsNav = ({
             />
           ))}
         </div>
+        {terminal && <div className="jobs-nav__terminal">{terminal}</div>}
       </aside>
     </DevScope>
   )

@@ -1,0 +1,49 @@
+.workspace-terminal {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--terminal-bg, #1e1e1e);
+}
+
+.workspace-terminal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  padding: 0 8px;
+  flex-shrink: 0;
+  background: var(--bg-elev);
+  font-size: 11px;
+}
+
+.workspace-terminal__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-terminal__status {
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.workspace-terminal__body {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.workspace-terminal__message {
+  margin: 0;
+  padding: 8px;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  color: #ff6b6b;
+  font-size: 12px;
+}

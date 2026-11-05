@@ -112,6 +112,14 @@
   text-align: center;
 }
 
+.jobs-nav__terminal {
+  flex: 0 0 20%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+}
+
 .session-row--job {
   padding: 4px 8px;
   gap: 0;

@@ -9,6 +9,7 @@ import {
 import SessionsSidebar from './components/SessionsSidebar'
 import SessionView from './components/SessionView'
 import RunningJobsNav from './components/RunningJobsNav'
+import WorkspaceTerminal from './components/Terminal/WorkspaceTerminal'
 import AppPlaceholder from './components/AppPlaceholder'
 import { DesktopLayout, MobileLayout, MOBILE_CHAT, MOBILE_SESSIONS } from './components/AppLayout'
 import { createPanelComponents, EDITOR_PANEL, PANEL_CLOSE_PARAMS, PANEL_OPEN_PARAMS } from './components/AppPanels'
@@ -271,6 +272,7 @@ const App = () => {
       onSelect={onSelectJob}
       collapsed={mobile ? false : jobsCollapsed}
       onCollapsedChange={setJobsCollapsed}
+      terminal={workspace ? <WorkspaceTerminal key={`${workspace.id}:${workspace.cwd}`} workspace={workspace} /> : null}
     />
   )
 
