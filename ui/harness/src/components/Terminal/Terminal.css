@@ -168,8 +168,9 @@
   pointer-events: none;
 }
 
-.terminal-panel__xterm {
-  flex: 1;
+.terminal.terminal-panel__xterm {
+  flex: 1 0 130%;
+  height: 130%;
   min-height: 0;
 }
 
