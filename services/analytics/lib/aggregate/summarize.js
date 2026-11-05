@@ -1,6 +1,6 @@
 const { bucketKey } = require('./time')
 const { runKeyOf, countBy, sortedCounts, round, percentile } = require('./stats')
-const { splitUsage, sumUsage } = require('./usage')
+const { splitUsage, sumUsage, usageTotal } = require('./usage')
 const { summarizeWorkspaces } = require('./workspaces')
 const { summarizeTargets } = require('./targets')
 
@@ -62,6 +62,7 @@ const summarizePerRun = (calls, { top, usageRuns }) => {
         workspaceId: call.workspaceId,
         workspaceName: call.workspaceName,
         provider: call.provider,
+        model: call.model,
         step: call.step,
         mode: call.mode,
         firstTs: call.ts,
@@ -76,11 +77,23 @@ const summarizePerRun = (calls, { top, usageRuns }) => {
   for (const run of usageRuns || []) {
     const key = runKeyOf(run)
     const tokens = splitUsage(run.usage)
-    if (tokenRuns.has(key)) tokenRuns.get(key).tokens = tokens
-    else tokenRuns.set(key, { ...run, usage: undefined, count: 0, tokens })
+    if (tokenRuns.has(key)) {
+      const existing = tokenRuns.get(key)
+      existing.tokens = tokens
+      if (!existing.model) existing.model = run.model
+    } else tokenRuns.set(key, { ...run, usage: undefined, count: 0, tokens })
   }
   const tokenRunList = [...tokenRuns.values()]
   const byWorkspace = summarizeWorkspaces(tokenRunList)
+  const modelGroups = new Map()
+  for (const run of tokenRunList) {
+    const model = run.model || '(default)'
+    if (!modelGroups.has(model)) modelGroups.set(model, [])
+    modelGroups.get(model).push(run.tokens)
+  }
+  const tokensByModel = [...modelGroups.entries()]
+    .map(([model, parts]) => ({ model, tokens: sumUsage(parts) }))
+    .sort((a, b) => usageTotal(b.tokens) - usageTotal(a.tokens) || a.model.localeCompare(b.model))
   const runCounts = runList.map((run) => run.count).sort((a, b) => a - b)
   const perRun = {
     runs: runCounts.length,
@@ -93,6 +106,7 @@ const summarizePerRun = (calls, { top, usageRuns }) => {
     p90: percentile(runCounts, 0.9),
     max: runCounts.length ? runCounts[runCounts.length - 1] : 0,
     tokens: sumUsage(tokenRunList.map((run) => run.tokens)),
+    tokensByModel,
     buildTokens: sumUsage(tokenRunList.filter((run) => !READ_ONLY_MODES.includes(run.mode)).map((run) => run.tokens)),
     top: runList.sort((a, b) => b.count - a.count).slice(0, top),
   }
