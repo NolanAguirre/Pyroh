@@ -1,5 +1,5 @@
 const { findTriggers } = require('../../../packages/prompt-triggers/index.js')
-const { findCandidates, matchCase } = require('./words')
+const { findCandidates, findMechanicalFixes, matchCase } = require('./words')
 const { runJob } = require('./queue')
 
 const MAX_SUGGESTIONS = 5
@@ -45,18 +45,19 @@ const applyFixes = (text, fixes, first) => {
 }
 
 const checkText = async (text, { triggers, ignore, first = true, timeoutMs }) => {
+  const fixes = findMechanicalFixes(text, { triggers, ignore })
   const spell = await loadSpell()
   const unknown = findCandidates(text, { triggers, ignore })
+    .filter((c) => !fixes.some((fix) => c.start < fix.end && c.end > fix.start))
     .filter((c) => !spell.correct(c.check))
     .map((c) => ({ ...c, suggestions: spell.suggest(c.check).slice(0, MAX_SUGGESTIONS) }))
     .filter((c) => c.suggestions.length)
-  if (!unknown.length) return { text, fixes: [] }
+  if (!unknown.length) return applyFixes(text, fixes, first)
 
   const result = await runJob(unknown.map(({ word, before, after, suggestions }) =>
     ({ word, before, after, suggestions })), timeoutMs)
   const picks = Array.isArray(result?.picks) ? result.picks : []
 
-  const fixes = []
   unknown.forEach((c, i) => {
     const pick = picks[i]
     if (!Number.isInteger(pick) || pick < 1 || pick > c.suggestions.length) return
