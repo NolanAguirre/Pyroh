@@ -272,6 +272,7 @@ const api = {
   stop: (id) => sessionPost(id, '/stop'),
   steer: (id, prompt) => sessionPost(id, '/steer', { prompt }),
   queueMessage: (id, { prompt, mode }) => sessionPost(id, '/queue', { prompt, mode }),
+  sendQueuedMessage: (id, messageId) => sessionPost(id, `/queue/${encodeURIComponent(messageId)}/send`),
   removeQueuedMessage: (id, messageId) => fetch(sessionUrl(id, `/queue/${encodeURIComponent(messageId)}`).url, {
     method: 'DELETE',
   }).then(empty),

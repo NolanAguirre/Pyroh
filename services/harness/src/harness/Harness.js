@@ -401,7 +401,7 @@ const stop = (sessionId, { delegated = false } = {}) => {
 const answer = (sessionId, qid, value) =>
   questionStore.answer(sessionId, qid, value, config.writeDir)
 
-const steer = (sessionId, text) => {
+const steer = (sessionId, text, options) => {
   const session = sessionStore.loadSession(sessionId, config.writeDir)
   if (!session) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
   if (session.status === 'queued') throw Object.assign(new Error('session is queued'), { status: 409 })
@@ -412,7 +412,7 @@ const steer = (sessionId, text) => {
     throw Object.assign(new Error('session has no running agent to steer'), { status: 409 })
   }
   if (isDelegatedChild(session)) detachDelegation(session, sessionStore.listRuns(sessionId, config.writeDir), config.writeDir)
-  return steerStore.write(sessionId, text, config.writeDir)
+  return steerStore.write(sessionId, text, config.writeDir, options)
 }
 
 const status = async (sessionId) => {
@@ -473,6 +473,7 @@ module.exports = {
   steer,
   queue: (sessionId, options) => require('./queuedMessages').enqueue(sessionId, options),
   cancelQueuedMessage: (sessionId, messageId) => require('./queuedMessages').cancel(sessionId, messageId),
+  sendQueuedMessage: (sessionId, messageId) => require('./queuedMessages').send(sessionId, messageId),
   status,
   list,
   recoverDeadDaemon,

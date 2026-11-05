@@ -17,8 +17,18 @@ const steerFiles = (dir) => {
 }
 
 // Called by the API: drop a steer message into the mailbox.
-const write = (sessionId, text, writeDir) => {
-  const record = { id: genId(), text: String(text), createdAt: Date.now() }
+const queuedId = (messageId) => `steer_queue_${crypto.createHash('sha256').update(messageId).digest('hex')}`
+const queuedReceipt = (sessionId, messageId, writeDir) => {
+  const dir = paths.steerDir(sessionId, writeDir)
+  const id = queuedId(messageId)
+  return readJson(path.join(dir, `${id}.json`)) || readJson(path.join(dir, `.${id}.claimed.json`))
+}
+
+const write = (sessionId, text, writeDir, { queuedMessageId } = {}) => {
+  const existing = queuedMessageId && queuedReceipt(sessionId, queuedMessageId, writeDir)
+  if (existing) return existing
+  const record = { id: queuedMessageId ? queuedId(queuedMessageId) : genId(), text: String(text), createdAt: Date.now(),
+    ...(queuedMessageId ? { queuedMessageId } : {}) }
   writeJson(path.join(paths.steerDir(sessionId, writeDir), `${record.id}.json`), record)
   return record
 }
@@ -35,7 +45,10 @@ const takePending = (sessionId, writeDir) => {
     } catch {
       record = null
     }
-    fs.rmSync(file, { force: true })
+    // Keep a receipt when consuming queued input so queue reconciliation cannot
+    // resend it if the API process exits before removing the queued row.
+    if (record?.queuedMessageId) fs.renameSync(file, path.join(dir, `.${record.id}.claimed.json`))
+    else fs.rmSync(file, { force: true })
     if (record && typeof record.text === 'string') steers.push(record)
   }
   steers.sort((a, b) => a.createdAt - b.createdAt)
@@ -81,4 +94,4 @@ const watch = (sessionId, writeDir, onSteer) => {
   return stop
 }
 
-module.exports = { write, takePending, watch }
+module.exports = { write, takePending, watch, queuedReceipt }

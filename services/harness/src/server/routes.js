@@ -459,6 +459,14 @@ router.post('/sessions/:id/queue', async (req, res) => {
   }
 })
 
+router.post('/sessions/:id/queue/:messageId/send', async (req, res) => {
+  try {
+    res.status(202).json(await Harness.sendQueuedMessage(req.params.id, req.params.messageId))
+  } catch (err) {
+    res.status(err.status || 400).json({ error: err.message })
+  }
+})
+
 router.delete('/sessions/:id/queue/:messageId', (req, res) => {
   try {
     Harness.cancelQueuedMessage(req.params.id, req.params.messageId)

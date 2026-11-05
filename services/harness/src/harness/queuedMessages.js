@@ -3,6 +3,7 @@ const config = require('../config')
 const paths = require('../store/paths')
 const store = require('../store/sessionStore')
 const queue = require('../store/queuedMessageStore')
+const steerStore = require('../store/steerStore')
 const locks = require('../store/sessionLock')
 const registry = require('../registry')
 
@@ -53,7 +54,7 @@ const cancel = (sessionId, messageId) => {
     const message = state.messages.find(item => item.id === messageId)
     if (!message) fail('queued message not found', 404)
     const receipt = store.listRuns(sessionId, config.writeDir).find(run => run.queuedMessage?.messageId === messageId)
-    if (message.runId || receipt) fail('message has already been dispatched', 409)
+    if (message.runId || receipt || steerStore.queuedReceipt(sessionId, messageId, config.writeDir)) fail('message has already been dispatched', 409)
     state.messages = state.messages.filter(item => item.id !== messageId)
     queue.save(sessionId, state)
   })
@@ -97,6 +98,10 @@ const reconcile = (sessionId, state) => {
   const runs = store.listRuns(sessionId, config.writeDir)
   let changed = false
   state.messages = state.messages.filter(message => {
+    if (steerStore.queuedReceipt(sessionId, message.id, config.writeDir)) {
+      changed = true
+      return false
+    }
     const run = runs.find(item => item.queuedMessage?.messageId === message.id)
     if (!run) return true
     if (run.queuedMessage.attemptStartedAt || run.pid || run.providerRunId || run.providerAgentId ||
@@ -109,6 +114,46 @@ const reconcile = (sessionId, state) => {
   })
   if (changed) queue.save(sessionId, state)
   return state
+}
+
+const send = async (sessionId, messageId) => {
+  loadSession(sessionId)
+  const pending = () => {
+    const state = queue.read(sessionId)
+    const message = state.messages.find(item => item.id === messageId)
+    if (!message) fail('queued message not found', 404)
+    const receipt = store.listRuns(sessionId, config.writeDir).find(run => run.queuedMessage?.messageId === messageId)
+    if (message.runId || receipt || steerStore.queuedReceipt(sessionId, messageId, config.writeDir)) {
+      fail('message has already been dispatched', 409)
+    }
+    return { state, message }
+  }
+  const next = withDeliveryLock(sessionId, () => ({ session: loadSession(sessionId), ...pending() }))
+  const prepared = await prepare(next.session, next.message)
+  return withDeliveryLock(sessionId, () => {
+    // Preparation may await a plugin. The pump, Cancel, or another Send now
+    // request may have claimed this row in the meantime.
+    const { state, message } = pending()
+    const started = withIdle(sessionId, session => {
+      resolve(session, message.mode)
+      const run = require('./Harness').spawnRun(sessionId, prepared.mode === 'plan' ? 'plan' : 'run', {
+        ...prepared,
+        queuedMessage: { messageId },
+        onPrepared: run => {
+          message.runId = run.id
+          message.retryAt = Date.now() + 30000
+          queue.save(sessionId, state)
+        },
+      })
+      return { run }
+    })
+    if (started) return started
+    resolve(loadSession(sessionId), message.mode)
+    const steer = require('./Harness').steer(sessionId, prepared.prompt, { queuedMessageId: messageId })
+    state.messages = state.messages.filter(item => item.id !== messageId)
+    queue.save(sessionId, state)
+    return { steer }
+  })
 }
 
 const dispatchOne = async (sessionId) => {
@@ -182,4 +227,4 @@ const pump = async () => {
   } finally { pumping = false }
 }
 
-module.exports = { enqueue, cancel, dispatchOne, pump }
+module.exports = { enqueue, cancel, send, dispatchOne, pump }

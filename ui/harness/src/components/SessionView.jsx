@@ -426,6 +426,17 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                             <span className="composer__queue-text">{message.text}</span>
                           </div>
                           <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={busy}
+                            onClick={act(() => api.sendQueuedMessage(sessionId, message.id))}
+                            title="Send immediately, interrupting the current turn if needed"
+                            aria-label={`Send queued message now: ${message.text}`}
+                            devId="hqu9n3s"
+                          >
+                            Send now
+                          </Button>
+                          <Button
                             variant="ghost"
                             size="sm"
                             disabled={busy}
