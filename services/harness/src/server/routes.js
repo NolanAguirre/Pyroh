@@ -13,7 +13,8 @@ const { readJsonAsync } = require('../store/jsonFile')
 const { listProviders } = require('../agents/driver')
 const registry = require('../registry')
 const prompts = require('../prompts')
-const { TRIGGERS, parseInputCommand } = require('../prompt/triggers')
+const { TRIGGERS, INPUT_COMMANDS, parseInputCommand } = require('../prompt/triggers')
+const { executeInputCommand } = require('../harness/inputCommands')
 const { rewritePrompt } = require('../prompt/rewrite')
 const { correctText } = require('../spellcheck')
 const questionStore = require('../store/questionStore')
@@ -355,7 +356,7 @@ router.get('/sessions/:id', async (req, res) => {
   res.json(status)
 })
 
-// Input commands are independent of model, mode, spellcheck, and run state.
+// Input commands are independent of model, mode, and spellcheck.
 // Return true even on command errors so invalid commands never reach an agent.
 const handleInputCommand = (req, res) => {
   const command = parseInputCommand((req.body || {}).prompt)
@@ -367,8 +368,7 @@ const handleInputCommand = (req, res) => {
       res.status(404).json({ error: 'session not found' })
       return true
     }
-    const checkpoint = checkpointStore.create({ name: command.name, sessionId: session.id, at })
-    res.json({ command: command.type, checkpoint, message: `Created checkpoint "${checkpoint.name}".` })
+    res.json(executeInputCommand({ session, prompt: req.body.prompt, command, at }))
   } catch (err) {
     res.status(err.status || 500).json({ error: err && err.message ? err.message : String(err) })
   }
@@ -377,7 +377,7 @@ const handleInputCommand = (req, res) => {
 
 router.post('/sessions/:id/commands', (req, res) => {
   if (handleInputCommand(req, res)) return
-  res.status(400).json({ error: 'Expected command: create checkpoint <name>' })
+  res.status(400).json({ error: `Expected command: ${INPUT_COMMANDS.map(command => command.usage).join(', ')}` })
 })
 
 // Validates the mode against the registry before running, so prompt rules and

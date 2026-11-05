@@ -7,10 +7,10 @@ const { genId, loadSession } = require('./sessionRecord')
 const { writePromptFile, persistRecordPrompt, readRecordPrompt, readRecordPromptAsync } = require('./recordPrompt')
 const { isDelegatedChild, detachDelegation } = require('./delegationBoundary')
 
-const createRun = (sessionId, { mode, prompt, handoff, plugin, delegationDelivery, queuedMessage }, writeDir) => {
+const createRun = (sessionId, { mode, prompt, handoff, plugin, delegationDelivery, queuedMessage, localCommand }, writeDir) => {
   let session = loadSession(sessionId, writeDir)
-  if (isDelegatedChild(session)) {
-    const runs = listRuns(sessionId, writeDir)
+  if (isDelegatedChild(session) && !localCommand) {
+    const runs = listRuns(sessionId, writeDir).filter(run => !run.localCommand)
     if (runs.length && !delegationDelivery) {
       session = detachDelegation(session, runs, writeDir)
     } else if (runs.length) {
@@ -42,6 +42,7 @@ const createRun = (sessionId, { mode, prompt, handoff, plugin, delegationDeliver
     ...ancestry,
     mode,
     prompt,
+    ...(localCommand ? { localCommand } : {}),
     ...(handoff ? { handoff } : {}),
     ...(plugin ? { plugin } : {}),
     ...(delegationDelivery ? { delegationDelivery } : {}),

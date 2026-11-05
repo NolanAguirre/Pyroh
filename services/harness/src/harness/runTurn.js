@@ -1,4 +1,6 @@
 const config = require('../config')
+const crypto = require('crypto')
+const { createRequestMetrics, summarizeRequestMetrics } = require('../agents/requestMetrics')
 const { createDriver, MEMORY_SERVER_NAME } = require('../agents/driver')
 const { AGENT_MODES } = require('../agents/modes')
 const registry = require('../registry')
@@ -150,6 +152,19 @@ const runOneTurn = async ({
   let driver = makeDriver()
   let usage = null
   let durationMs = null
+  let requestMetrics = null
+  let requestMetricsOpen = false
+  const requestSegments = new Map()
+  const publishRequestMetrics = (segmentResult) => {
+    if (!requestMetrics) return null
+    const metrics = { ...requestMetrics.snapshot(segmentResult), updatedAt: Date.now() }
+    requestSegments.set(metrics.segmentId, metrics)
+    if (segmentResult) requestMetricsOpen = false
+    const modelRequests = { ...summarizeRequestMetrics([...requestSegments.values()]), updatedAt: metrics.updatedAt }
+    onEvent?.({ type: 'model_request_metrics', metrics })
+    if (runId) sessionStore.updateRun(session.id, runId, { modelRequests }, writeDir)
+    return modelRequests
+  }
 
   try {
     if (signal?.aborted) return { result: { status: 'cancelled' }, providerAgentId: session.providerAgentId }
@@ -184,6 +199,12 @@ const runOneTurn = async ({
     // Persist snapshots separately from totals so reconnects retain the latest
     // context size, including decreases after compaction, in every run mode.
     const handleEvent = (event) => {
+      if (event.type === 'model_request' && requestMetrics) {
+        requestMetrics.observe(event)
+        onEvent?.({ ...event, segmentId: requestMetrics.segmentId, providerRunId: event.runId })
+        publishRequestMetrics()
+        return
+      }
       if (event.type === 'provider_settings') {
         configuration.settings = { ...configuration.settings, ...event.settings }
         sessionStore.updateSession(session.id, { providerConfiguration: configuration }, writeDir)
@@ -260,6 +281,11 @@ const runOneTurn = async ({
         historySent = false
         historyObserved = false
       }
+      // A segment is an SDK send, not a model request. Persist even unsupported
+      // and interrupted segments so a later steer cannot conceal missing usage.
+      requestMetrics = createRequestMetrics({ provider: session.provider, segmentId: crypto.randomUUID() })
+      requestMetricsOpen = true
+      publishRequestMetrics()
       const inflight = firstSend ? await driver.send(sendText, firstSendOptions) : await sendFollowUp(sendText)
       historySent = true
       if (historyObserved) markHistorySeeded()
@@ -286,7 +312,7 @@ const runOneTurn = async ({
 
       usage = addUsage(usage, segment.usage)
       durationMs = (durationMs || 0) + (segment.durationMs ?? Date.now() - segmentStart)
-      result = { ...segment, usage, durationMs }
+      result = { ...segment, usage, durationMs, modelRequests: publishRequestMetrics(segment) }
 
       if (!steering || signal?.aborted) break
       const steers = steering.take()
@@ -313,6 +339,7 @@ const runOneTurn = async ({
     }
     return { result, providerAgentId }
   } catch (err) {
+    if (requestMetricsOpen) publishRequestMetrics({ status: signal?.aborted ? 'cancelled' : 'error' })
     if (signal?.aborted) return { result: { status: 'cancelled', usage, durationMs }, providerAgentId: driver.providerAgentId() }
     throw err
   } finally {

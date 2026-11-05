@@ -6,7 +6,8 @@ export const transcriptItems = (events) => {
   const rows = []
   const byId = new Map()
   for (const event of events) {
-    if (event.type === 'usage' || event.type === 'context' || event.type === 'question') continue
+    if (event.type === 'usage' || event.type === 'context' || event.type === 'question'
+      || event.type === 'model_request' || event.type === 'model_request_metrics') continue
     if (!event.itemId) {
       const last = rows[rows.length - 1]
       if ((event.type === 'text' || event.type === 'thinking') && last && !last.itemId

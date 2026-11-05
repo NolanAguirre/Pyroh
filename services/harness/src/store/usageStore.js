@@ -34,9 +34,8 @@ const jsonRecords = (dir) => {
   })
 }
 
-const runRecords = (sessionId, writeDir) => {
-  const dir = paths.sessionDir(sessionId, writeDir)
-  const directories = [paths.runsDir(sessionId, writeDir), dir]
+const runRecords = (sessionId, writeDir, dir = paths.sessionDir(sessionId, writeDir)) => {
+  const directories = [path.join(dir, 'runs'), dir]
   for (const name of fs.readdirSync(dir, { withFileTypes: true })) {
     if (name.isDirectory() && /^phase-/.test(name.name)) directories.push(path.join(dir, name.name))
   }
@@ -71,11 +70,11 @@ const totalsMatch = (left, right) => {
 
 // One entry per run: usage records win over the usage copied onto run records.
 // Usage records whose run record was replaced fall back to the file's mtime.
-const listRunUsage = (sessionId, writeDir) => {
-  const entries = new Map(runRecords(sessionId, writeDir).map(({ record }) => [record.id, {
+const listRunUsage = (sessionId, writeDir, dir = paths.sessionDir(sessionId, writeDir)) => {
+  const entries = new Map(runRecords(sessionId, writeDir, dir).map(({ record }) => [record.id, {
     runId: record.id, startedAt: record.startedAt, step: record.step ?? null, usage: record.usage, durationMs: record.durationMs,
   }]))
-  for (const { file, record } of jsonRecords(usageDir(sessionId, writeDir))) {
+  for (const { file, record } of jsonRecords(path.join(dir, 'usage'))) {
     if (!record?.runId) continue
     const run = entries.get(record.runId)
     entries.set(record.runId, {

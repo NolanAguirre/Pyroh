@@ -18,6 +18,7 @@ const recordRun = (run, session, writeDir, runFile) => {
     workspaceId: session?.workspaceId || null,
     mode: run.step ? 'decompose' : run.mode,
     agentMode: run.mode,
+    ...(run.localCommand ? { localCommand: run.localCommand } : {}),
     step: run.step || null,
     phase: run.phase ?? null,
     provider: session?.provider || null,

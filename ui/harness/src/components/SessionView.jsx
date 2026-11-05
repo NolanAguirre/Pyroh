@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, DevScope, Popup, PromptInput, SplitPane, useSpeechRecognition } from 'component-library'
-import { TRIGGERS, parseInputCommand } from 'prompt-triggers'
+import { INPUT_COMMANDS, TRIGGERS, parseInputCommand } from 'prompt-triggers'
 import useSessionEvents from '../useSessionEvents'
 import api from '../api'
 import Transcript from './Transcript'
@@ -162,6 +162,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const canQueue = submitted && session?.childKind !== 'workflow' && !spawnsSession
     && ['turn', 'plugin'].includes(active?.kind)
   const inputCommand = parseInputCommand(prompt)
+  const commandEntry = INPUT_COMMANDS.find((item) => item.type === inputCommand?.type)
   const queueDisabled = Boolean(inputCommand) || !canQueue || queued || !prompt.trim()
   const spawnEntry = providers.find((item) => item.id === spawnProvider)
   const spawnModelId = spawnModel || spawnEntry?.models?.[0]?.id || null
@@ -208,8 +209,9 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
     try {
       if (inputCommand) {
         const { checkpoint } = await api.inputCommand(sessionId, prompt)
-        setCommandNotice(`Checkpoint “${checkpoint.name}” created at ${new Date(checkpoint.at).toLocaleString()}. Available in analytics.`)
+        if (checkpoint) setCommandNotice(`Checkpoint “${checkpoint.name}” created at ${new Date(checkpoint.at).toLocaleString()}. Available in analytics.`)
         setPrompt('')
+        refresh()
         return
       }
       if (delivery === 'queue') await api.queueMessage(sessionId, { prompt, mode })
@@ -466,7 +468,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                   />
                 )}
               </div>
-              <span className="composer__mode-hint">{inputCommand ? 'Create an analytics checkpoint at the current time.' : modeHint}</span>
+              <span className="composer__mode-hint">{inputCommand ? commandEntry?.description : modeHint}</span>
             </div>
             {picksSpawnTarget && (
               <NewChatTarget
@@ -515,10 +517,10 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                   onClick={send}
                   loading={busy}
                   disabled={sendDisabled}
-                  title={inputCommand ? 'Save an analytics checkpoint' : nativeForkUnavailable ? modeHint : steering ? 'Interrupt the current turn and send' : undefined}
+                  title={inputCommand ? commandEntry?.description : nativeForkUnavailable ? modeHint : steering ? 'Interrupt the current turn and send' : undefined}
                   devId="hr2t9h5"
                 >
-                  {inputCommand ? 'Create checkpoint' : steering ? 'Send' : active?.sendLabel || 'Send'}
+                  {inputCommand ? commandEntry?.label || 'Run command' : steering ? 'Send' : active?.sendLabel || 'Send'}
                 </Button>
                 {speech.supported && (
                   <Button
@@ -540,7 +542,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
             </div>
             {actionError ? <p className="composer__error hint hint--error" role="alert">{actionError}</p> : null}
             {commandNotice ? <p className="hint" role="status">{commandNotice}</p> : null}
-            {inputCommand ? <p className="hint">Command: create checkpoint &lt;name&gt;</p> : null}
+            {commandEntry ? <p className="hint">Command: {commandEntry.usage}</p> : null}
             {speech.status ? <p className="hint" role="status">{speech.status}</p> : null}
             {speech.error ? <p className="composer__error hint hint--error" role="alert">Dictation error: {speech.error}</p> : null}
           </footer>

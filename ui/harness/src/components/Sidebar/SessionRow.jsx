@@ -73,6 +73,7 @@ const SessionRow = memo(({ session, active, onSelect, onRename, onArchive, archi
   }
 
   const isLive = session.status === 'running' || session.status === 'awaiting_input'
+  const isSubagent = Boolean(session.parentSessionId) && session.childKind !== 'fork'
   const tokenTotal = session.totals?.tokens?.total ?? 0
   const durationMs = session.totals?.durationMs || 0
 
@@ -148,18 +149,20 @@ const SessionRow = memo(({ session, active, onSelect, onRename, onArchive, archi
                   ✎
                 </button>
               </DevScope>
-              <DevScope id="p5t1m7k">
-                <button
-                  type="button"
-                  className={`session-row__edit-btn ${session.archived ? 'session-row__restore-btn' : 'session-row__trash-btn'}`}
-                  title={session.archived ? 'Restore session' : 'Archive session'}
-                  aria-label={session.archived ? 'Restore session' : 'Archive session'}
-                  disabled={archiveBusy}
-                  onClick={handleArchiveClick}
-                >
-                  {session.archived ? <RestoreIcon /> : <TrashIcon />}
-                </button>
-              </DevScope>
+              {!isSubagent && (
+                <DevScope id="p5t1m7k">
+                  <button
+                    type="button"
+                    className={`session-row__edit-btn ${session.archived ? 'session-row__restore-btn' : 'session-row__trash-btn'}`}
+                    title={session.archived ? 'Restore session' : 'Archive session'}
+                    aria-label={session.archived ? 'Restore session' : 'Archive session'}
+                    disabled={archiveBusy}
+                    onClick={handleArchiveClick}
+                  >
+                    {session.archived ? <RestoreIcon /> : <TrashIcon />}
+                  </button>
+                </DevScope>
+              )}
             </div>
           )}
           <DevScope id="l9d2h6e" state={{ status: session.status, live: isLive }}>

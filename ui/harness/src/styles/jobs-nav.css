@@ -161,6 +161,8 @@
   border-color: var(--success);
 }
 
-.session-row__status-dot--live {
+.session-row__status-dot.session-row__status-dot--live {
+  background: var(--accent);
+  border-color: var(--accent);
   animation: pulse-dot 1.5s infinite;
 }

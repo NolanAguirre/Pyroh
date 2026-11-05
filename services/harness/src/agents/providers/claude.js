@@ -25,6 +25,20 @@ const normalizeUsage = (usage) => {
   return { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, totalTokens: inputTokens + outputTokens }
 }
 
+// Evidence must retain missing fields. Zero defaults are only for the existing
+// authoritative usage path above; cache creation is already part of input.
+const requestUsage = (usage) => {
+  const token = (key) => Number.isSafeInteger(usage?.[key]) && usage[key] >= 0 ? usage[key] : null
+  const fresh = token('input_tokens')
+  const cacheReadTokens = token('cache_read_input_tokens')
+  const cacheWriteTokens = token('cache_creation_input_tokens')
+  const inputTokens = [fresh, cacheReadTokens, cacheWriteTokens].every(value => value !== null)
+    ? fresh + cacheReadTokens + cacheWriteTokens : null
+  const outputTokens = token('output_tokens')
+  return { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens,
+    totalTokens: inputTokens !== null && outputTokens !== null ? inputTokens + outputTokens : null }
+}
+
 const contextTokens = (usage) => usage
   ? (usage.input_tokens || 0) + (usage.cache_read_input_tokens || 0)
     + (usage.cache_creation_input_tokens || 0) + (usage.output_tokens || 0)
@@ -130,6 +144,7 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
       status,
       result: active.result ?? [...active.texts.values()].join('\n\n'),
       usage: active.usage,
+      reportedModelRequests: active.reportedModelRequests,
       durationMs: Date.now() - active.startedAt,
       error,
     }
@@ -210,10 +225,33 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     }
   }
 
+  const emitRequest = (request) => emit({ type: 'model_request', version: 1,
+    provider: 'claude', requestId: request.id, model: request.model,
+    providerRequestId: request.providerRequestId || null, scope: 'main_agent_loop',
+    provenance: request.streamed ? 'messages_api_stream' : 'assistant_message',
+    status: request.completed ? 'completed' : 'streaming', usage: requestUsage(request.usage) })
+
   const onStreamEvent = (turn, event) => {
     if (event.type === 'message_start') {
       turn.seq += 1
       turn.messageId = event.message?.id || `${turn.id}:${turn.seq}`
+      // Only real provider IDs count. The display fallback above is not evidence.
+      turn.streamRequestId = event.message?.id || null
+      if (turn.streamRequestId && event.message.model !== '<synthetic>') {
+        const request = { id: turn.streamRequestId, model: event.message.model,
+          usage: event.message.usage, streamed: true, completed: false }
+        turn.requests.set(request.id, request)
+        emitRequest(request)
+      }
+    } else if (event.type === 'message_delta' || event.type === 'message_stop') {
+      const request = turn.requests.get(turn.streamRequestId)
+      if (request && !request.completed) {
+        // message_delta usage is a cumulative replacement, never an increment.
+        if (event.usage) request.usage = { ...request.usage,
+          ...Object.fromEntries(Object.entries(event.usage).filter(([, value]) => value != null)) }
+        if (event.type === 'message_stop') request.completed = true
+        emitRequest(request)
+      }
     } else if (event.type === 'content_block_delta') {
       const itemId = `${turn.messageId}:${event.index}`
       if (event.delta?.type === 'text_delta') {
@@ -246,6 +284,9 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
   }
 
   const onResult = (turn, message) => {
+    // SDK num_turns is model round trips in this main-loop turn, not tool count.
+    turn.reportedModelRequests = Number.isSafeInteger(message.num_turns) && message.num_turns >= 0
+      ? message.num_turns : null
     const usage = normalizeUsage(message.usage)
     if (usage) {
       turn.usage = usage
@@ -267,6 +308,19 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     if (message.type === 'stream_event') {
       if (!message.parent_tool_use_id) onStreamEvent(turn, message.event || {})
     } else if (message.type === 'assistant') {
+      // result.usage excludes native subagents. Their responses must not enter
+      // this denominator. Per-block assistant snapshots are usually not final.
+      const response = message.message
+      if (!message.parent_tool_use_id && !message.error && !message.aborted
+        && response?.id && response.model !== '<synthetic>') {
+        const previous = turn.requests.get(response.id)
+        if (!previous?.streamed && (!previous?.completed || response.stop_reason)) {
+          const request = { id: response.id, model: response.model, usage: response.usage,
+            providerRequestId: message.request_id, streamed: false, completed: Boolean(response.stop_reason) }
+          turn.requests.set(request.id, request)
+          emitRequest(request)
+        }
+      }
       for (const block of message.message?.content || []) {
         if (!['tool_use', 'server_tool_use', 'mcp_tool_use'].includes(block.type)) continue
         emit({ type: 'tool_call', itemId: block.id, name: block.name, input: block.input, status: 'started' })
@@ -414,6 +468,7 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
       const id = `claude_${crypto.randomBytes(8).toString('hex')}`
       active = { id, emit: onEvent || (() => {}), resolve, mode, startedAt: Date.now(), done: false,
         texts: new Map(), messageId: `${id}:0`, seq: 0, usage: null, result: null, model: null,
+        requests: new Map(), streamRequestId: null, reportedModelRequests: null,
         lastContext: 0, cancelRequested: false, planToolUseId: null }
     })
     const turn = active

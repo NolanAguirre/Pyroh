@@ -127,7 +127,8 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
       if (total) {
         cumulativeUsage = total
         if (!active.baseline) {
-          // The first update's `last` is this turn's first model request.
+          // Preserve the existing baseline estimate when no pre-turn total is
+          // available. `last` is not evidence of a unique request boundary.
           active.baseline = {}
           for (const key of Object.keys(total)) {
             active.baseline[key] = Math.max(0, total[key] - (params.tokenUsage.last?.[key] || 0))

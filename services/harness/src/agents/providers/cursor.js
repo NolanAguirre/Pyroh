@@ -85,6 +85,8 @@ const mapMessage = (message, emit, runId, segment = { kind: null, seq: 0 }) => {
   }
 
   if (type === 'usage' && message.usage) {
+    // SDK usage is per agent turn, which may contain multiple model calls.
+    // Neither this notification nor the SDK request_id is a model-request ID.
     emit({ type: 'usage', usage: normalizeUsage(message.usage), runId })
     return
   }
