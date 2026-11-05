@@ -178,6 +178,7 @@ const api = {
   getProviders: () => fetch(at(null, '/api/providers')).then(json),
   getPromptTriggers: () => fetch(at(null, '/api/prompt-triggers')).then(json),
   getUiSettings: () => fetch(at(null, '/api/ui')).then(json),
+  getConfig: () => fetch(at(null, '/api/config')).then(json),
   setUiSettings: (patch) => send('PATCH', at(null, '/api/ui'), patch).then(json),
   listWorkDir: (path, machine = null) =>
     fetch(at(machine, `/api/workdir${path ? `?path=${encodeURIComponent(path)}` : ''}`)).then(json),
