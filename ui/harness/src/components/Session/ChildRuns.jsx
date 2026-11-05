@@ -36,6 +36,7 @@ const ChildRuns = ({ devId, session, runs, children }) => {
                   devId="23bx776"
                   rowDevId="4d28gqi"
                   colDevId="bbfh0z8"
+                  className="child-runs__matrix"
                   label={`Children of ${run.id}`}
                   rowLabel={`Parent run ${run.id}`}
                   rows={children.filter(child => child.parentRunId === run.id).map((child, index) => ({ ...child, id: child.runId || `pending-${index}` }))}
