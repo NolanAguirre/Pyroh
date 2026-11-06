@@ -1,6 +1,6 @@
 .PHONY: services.terminal.install services.terminal.build services.terminal.start services.terminal.stop-host services.terminal.host services.terminal.help services.editor.install services.editor.build services.editor.start services.editor.help services.git.install services.git.build services.git.start services.git.help
 
-.PHONY: help install install.js install.py start \
+.PHONY: help install install.js install.py start component-library.clone \
 	services.harness.install services.harness.start services.harness.cli services.harness.models services.harness.models.refresh services.harness.tool-stats services.harness.index.rebuild \
 	services.categorizer.install services.categorizer.install.js services.categorizer.install.python services.categorizer.install.model services.categorizer.start services.categorizer.consumer \
 	services.analytics.install services.analytics.build services.analytics.start services.analytics.sync services.analytics.backfill \
@@ -141,7 +141,7 @@ services.mcpdevid.reclaim: ## mcpdevid: Free unused prefetched ids older than 24
 services.mcpdevid.help: ## mcpdevid: Show service help
 	$(MAKE) -C services/mcpdevid help
 
-ui.harness.install: ## Install harness UI deps
+ui.harness.install: component-library.clone ## Install harness UI deps
 	$(MAKE) -C ui/harness install
 
 ui.harness.dev: ## Start the harness UI dev server
@@ -216,7 +216,12 @@ services.git.start: ## git: Start the foreground API server
 services.git.help: ## git: Show service help
 	$(MAKE) -C services/git help
 
-install: ## Install all services and UIs, including python venvs
+component-library.clone: ## Clone component-library into the sibling directory if missing
+	@if [ ! -d "../component-library" ]; then \
+		git clone git@github.com:NolanAguirre/component-library.git "../component-library"; \
+	fi
+
+install: component-library.clone ## Install all services and UIs, including python venvs
 	$(MAKE) services.harness.install
 	$(MAKE) services.terminal.install
 	$(MAKE) services.editor.install
@@ -228,7 +233,7 @@ install: ## Install all services and UIs, including python venvs
 	$(MAKE) services.mcpdevid.install
 	$(MAKE) ui.harness.install
 
-install.js: ## Install only JS packages across all services and UIs
+install.js: component-library.clone ## Install only JS packages across all services and UIs
 	$(MAKE) services.harness.install
 	$(MAKE) services.terminal.install
 	$(MAKE) services.editor.install
