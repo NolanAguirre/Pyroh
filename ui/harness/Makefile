@@ -1,7 +1,12 @@
-.PHONY: help install dev build lint preview
+.PHONY: help setup install dev build lint preview
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_.-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
+
+setup: ## Clone component-library beside the project if missing
+	@if [ ! -d "../../../component-library" ]; then \
+		git clone git@github.com:NolanAguirre/component-library.git "../../../component-library"; \
+	fi
 
 install: ## Install dependencies
 	npm install
