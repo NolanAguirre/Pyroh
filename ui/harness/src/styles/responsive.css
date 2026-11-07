@@ -124,6 +124,7 @@
   }
 
   .new-session-panel,
+  .new-workspace-panel,
   .edit-workspace-panel,
   .ui-settings-panel {
     min-width: 0;

@@ -33,6 +33,16 @@
   min-width: 320px;
 }
 
+.new-workspace-panel {
+  min-width: 640px;
+  width: min(720px, calc(100vw - 32px));
+}
+
+.new-workspace-panel .workdir__list {
+  min-height: 280px;
+  max-height: 420px;
+}
+
 .edit-workspace-panel {
   min-width: 440px;
   max-width: 560px;

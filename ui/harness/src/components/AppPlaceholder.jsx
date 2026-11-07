@@ -71,7 +71,7 @@ const AppPlaceholder = ({ workspace, workspaces = [], sessions = [], providers =
             <CardSection>
               <p className="hint">No workspace selected. Create a workspace to point at your working directory.</p>
               <div className="app__hero-actions">
-                <Popup devId="a4r9b2m" panelClassName="new-session-panel">
+                <Popup devId="a4r9b2m" panelClassName="new-session-panel new-workspace-panel">
                   <NewWorkspaceForm devId="u7m1v5c" onCreated={onWorkspaceCreated} />
                   <Button variant="primary" size="sm">
                     + Create Workspace

@@ -65,7 +65,7 @@ const SidebarHeader = ({
             </Button>
           )
         })}
-        <Popup devId="hr8v4j2" panelClassName="new-session-panel">
+        <Popup devId="hr8v4j2" panelClassName="new-session-panel new-workspace-panel">
           <NewWorkspaceForm devId="hr0k6t2" onCreated={onWorkspaceCreated} />
           <Button variant="secondary" size="sm" devId="hr2p9x5" title="Create a new workspace" aria-label="New workspace">
             <Icon d={ICONS.workspace} />

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Button, DevScope, FolderIcon } from 'component-library'
+import { Button, DevScope, FolderIcon, FormSearch } from 'component-library'
 import api from '../api'
 
 const WorkDirPicker = ({ devId, machine = null, onChange }) => {
   const [listing, setListing] = useState(null)
   const [error, setError] = useState(null)
+  const [query, setQuery] = useState('')
 
   const load = (path) => {
     api
@@ -19,14 +20,23 @@ const WorkDirPicker = ({ devId, machine = null, onChange }) => {
 
   useEffect(() => {
     setListing(null)
+    setQuery('')
     load()
   }, [machine])
 
+  useEffect(() => {
+    setQuery('')
+  }, [listing?.path])
+
   const atBase = !listing || listing.parent === null
   const segments = listing?.path ? listing.path.split('/').filter(Boolean) : []
+  const needle = query.trim().toLowerCase()
+  const entries = (listing?.entries || []).filter((entry) =>
+    entry.name.toLowerCase().includes(needle)
+  )
 
   return (
-    <DevScope id={devId} state={{ path: listing?.path, error: Boolean(error) }}>
+    <DevScope id={devId} state={{ path: listing?.path, error: Boolean(error), search: Boolean(needle) }}>
       <div className="workdir">
         <div className="workdir__bar">
           <div className="workdir__breadcrumbs" title={listing?.path || ''}>
@@ -66,12 +76,20 @@ const WorkDirPicker = ({ devId, machine = null, onChange }) => {
           </Button>
         </div>
 
+        <FormSearch
+          field={{ value: query, onChange: (e) => setQuery(e.target.value) }}
+          placeholder="Search folders…"
+        />
+
         <div className="workdir__list">
           {listing && listing.entries.length === 0 && (
             <p className="hint">No subdirectories in this path.</p>
           )}
+          {listing && listing.entries.length > 0 && entries.length === 0 && (
+            <p className="hint">No matching folders.</p>
+          )}
           {listing &&
-            listing.entries.map((entry) => (
+            entries.map((entry) => (
               <DevScope key={entry.path} id="hr6t1v5" state={{ path: entry.path }}>
                 <button
                   type="button"
