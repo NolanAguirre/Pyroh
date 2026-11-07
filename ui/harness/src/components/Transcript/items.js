@@ -34,8 +34,38 @@ const isBlock = (event) => event.type === 'tool_call' || event.type === 'plan' |
 
 export const userEvents = (runs) => runs.flatMap((run) => {
   if (typeof run.prompt !== 'string' || run.prompt === '') return []
-  return [{ type: 'user', text: run.prompt, runId: run.id, ts: run.startedAt || 0, itemId: `user:${run.id}` }]
+  return [{ type: 'user', text: run.prompt, runPrompt: true, runId: run.id, ts: run.startedAt || 0, itemId: `user:${run.id}` }]
 })
+
+// Pair captured provider input with its source message after replayed items have
+// been merged. Further sends remain visible, including retries and continuations.
+export const withProviderPrompts = (events) => {
+  const messages = new Map()
+  const attached = new Map()
+  const consumed = new Set()
+  events.forEach((event, index) => {
+    if (event.type === 'user' && event.itemId) messages.set(`${event.runId}:${event.itemId}`, index)
+  })
+  events.forEach((event, index) => {
+    if (event.type !== 'provider_prompt' || typeof event.text !== 'string') return
+    // Older Cursor captures did not identify their source. Only the first can
+    // safely be associated with the opening message.
+    const sourceId = event.userItemId || `user:${event.runId}`
+    const messageIndex = messages.get(`${event.runId}:${sourceId}`)
+    if (messageIndex === undefined || attached.has(messageIndex)) return
+    attached.set(messageIndex, event)
+    consumed.add(index)
+  })
+  return events.flatMap((event, index) => {
+    if (consumed.has(index)) return []
+    if (attached.has(index)) return [{ ...event, providerPrompt: attached.get(index) }]
+    if (event.type === 'provider_prompt') {
+      if (typeof event.text !== 'string') return []
+      return [{ ...event, type: 'user', providerPrompt: event, generatedPrompt: true }]
+    }
+    return [event]
+  })
+}
 
 const answerText = (answer) => {
   if (Array.isArray(answer)) return answer.map(answerText).join('\n')

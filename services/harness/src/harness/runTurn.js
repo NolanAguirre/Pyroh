@@ -7,10 +7,11 @@ const registry = require('../registry')
 const workspaceStore = require('../store/workspaceStore')
 const paths = require('../store/paths')
 const sessionStore = require('../store/sessionStore')
-const { rewritePrompt } = require('../prompt/rewrite')
+const { rewritePromptWithProvenance } = require('../prompt/rewrite')
+const provenance = require('../prompt/provenance')
 const { sessionModel } = require('../prompt/context')
 const { findTriggers } = require('../prompt/triggers')
-const { firedActions, triggerMcpServers, prependNotes } = require('../prompt/actions')
+const { firedActions, triggerMcpServers, prependNotesWithProvenance } = require('../prompt/actions')
 
 const addUsage = (total, usage) => {
   if (!usage) return total
@@ -63,6 +64,7 @@ const runOneTurn = async ({
   mode,
   plugin,
   prompt,
+  promptProvenance,
   model,
   tools,
   outputSchema,
@@ -270,18 +272,20 @@ const runOneTurn = async ({
       }
     }
 
-    let text = await rewritePrompt(prompt, { cwd: settings.cwd, first, provider: session.provider, ...promptContext() })
-    if (text !== prompt) onPromptRewrite?.(text)
-    text = await prependNotes(fired, { ...session, ...promptContext() }, text)
+    let assembled = await rewritePromptWithProvenance(provenance.supplied(prompt, promptProvenance),
+      { cwd: settings.cwd, first, provider: session.provider, ...promptContext() })
+    if (runId) assembled.userItemId = `user:${runId}`
+    if (assembled.text !== prompt) onPromptRewrite?.(assembled.text, assembled)
+    assembled = await prependNotesWithProvenance(fired, { ...session, ...promptContext() }, assembled)
     let firstSend = true
     let result
     while (true) {
       const segmentStart = Date.now()
-      let sendText = text
+      let sendPrompt = assembled
       if (needsHistory) {
         const history = require('./fork').historyPrompt(session.id, writeDir)
         if (typeof history !== 'string' || !history.trim()) throw new Error(`Fork history unavailable: ${session.id}`)
-        sendText = `${history}\n\n${text}`
+        sendPrompt = provenance.prepend([provenance.section('context', 'Fork conversation history', history)], assembled)
         historySent = false
         historyObserved = false
       }
@@ -292,8 +296,9 @@ const runOneTurn = async ({
       publishRequestMetrics()
       const collector = requestMetrics
       const options = { ...(firstSend ? firstSendOptions : sendOptions), evidenceSegmentId: collector.segmentId,
+        promptProvenance: sendPrompt,
         onEvent: event => handleEvent(event, collector) }
-      const inflight = firstSend ? await driver.send(sendText, options) : await sendFollowUp(sendText, options)
+      const inflight = firstSend ? await driver.send(sendPrompt.text, options) : await sendFollowUp(sendPrompt.text, options)
       historySent = true
       if (historyObserved) markHistorySeeded()
       firstSend = false
@@ -332,9 +337,17 @@ const runOneTurn = async ({
           delegation.guidance(session.provider, false, { session: currentSession, canDelegate: canDelegate && !textOnly, ...promptContext() }),
         ].filter(Boolean).join('\n\n')
       }
-      const steerText = steers.map((steer) => steer.text).join('\n\n')
-      text = await rewritePrompt(steerText, { cwd: settings.cwd, first: false, provider: session.provider, ...promptContext() })
-      onEvent?.({ type: 'user', steer: true, text, itemId: `steer:${steers[0].id}` })
+      const sources = steers.map(steer => provenance.supplied(steer.text, steer.promptProvenance))
+      const sections = sources.flatMap((source, index) => source.sections.map((part, partIndex) => ({
+        ...part, text: part.text + (index < sources.length - 1 && partIndex === source.sections.length - 1 ? '\n\n' : ''),
+      })))
+      const metadata = { userItemId: `steer:${steers[0].id}` }
+      if (sources.every(source => typeof source.originalText === 'string')) {
+        metadata.originalText = sources.map(source => source.originalText).join('\n\n')
+      }
+      assembled = await rewritePromptWithProvenance(provenance.assemble(sections, metadata),
+        { cwd: settings.cwd, first: false, provider: session.provider, ...promptContext() })
+      onEvent?.({ type: 'user', steer: true, text: assembled.text, itemId: assembled.userItemId })
       if (signal?.aborted) break
     }
 

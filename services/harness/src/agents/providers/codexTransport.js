@@ -57,7 +57,8 @@ const createTransport = ({ binary, env, cwd, onNotification, onRequest, onFailur
     })
     exited = new Promise((resolve) => {
       child.once('close', (code, signal) => {
-        telemetry?.closed()
+        try { telemetry?.closed() }
+        catch (err) { onDiagnostic?.(`Cannot record telemetry transport shutdown: ${err.message}`) }
         fail(new Error(`Codex app-server exited (${signal || code})`))
         resolve()
       })

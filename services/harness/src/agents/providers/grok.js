@@ -2,7 +2,8 @@ const crypto = require('crypto')
 const config = require('../../config')
 const { createGrokClient } = require('../grok')
 const { normalizeGrokOptions } = require('./grokOptions')
-const { composePrompt } = require('../modes')
+const { composePromptWithProvenance } = require('../modes')
+const { capture } = require('../../prompt/provenance')
 const { providerMode } = require('../providerModes')
 
 const CANCELLED = { outcome: { outcome: 'cancelled' } }
@@ -186,7 +187,7 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
     await applyMode(settings.mode)
   }
 
-  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, terse = false, instructions } = {}) => {
+  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, terse = false, instructions, promptProvenance } = {}) => {
     if (!sessionId) throw new Error('Grok session not created')
     if (active && !active.done) throw new Error('Grok turn already running')
     await applyMode(mode)
@@ -196,7 +197,9 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
     })
     const turn = active
     emit({ type: 'status', status: 'running' })
-    client.prompt(sessionId, composePrompt(prompt, { mode, logicalMode, model: selectedModel, terse, instructions, provider: 'grok' }), onUpdate).then((response) => {
+    const composed = composePromptWithProvenance(prompt, { mode, logicalMode, model: selectedModel, terse, instructions, provider: 'grok', promptProvenance })
+    emit(capture(composed, { provider: 'grok', providerAgentId: sessionId }))
+    client.prompt(sessionId, composed.text, onUpdate).then((response) => {
       if (turn !== active) return
       const usage = normalizeUsage(response?._meta?.usage)
       if (usage) {

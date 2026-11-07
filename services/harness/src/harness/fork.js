@@ -28,10 +28,9 @@ const createFork = (source, options, writeDir = config.writeDir) => {
   let raw = ''
   try { raw = fs.readFileSync(paths.eventsFile(source.id, writeDir), 'utf8') }
   catch (err) { if (err.code !== 'ENOENT') throw err }
-  // Provider prompts may contain a previous fork's complete replay envelope.
-  // The actual user prompts are preserved separately, without that duplicate.
+  // Keep immutable prompt captures for the inherited UI transcript. The replay
+  // builder below excludes them, so nested history envelopes are never sent back.
   const events = raw.split('\n').filter(line => line.trim()).map(line => JSON.parse(line))
-    .filter(event => event.type !== 'provider_prompt')
     .map(event => ({ ...event, inherited: true }))
   const created = store.createSession(options, writeDir)
   try {

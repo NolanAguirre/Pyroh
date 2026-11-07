@@ -232,6 +232,7 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
       action,
       mode: entry || driverMode,
       prompt,
+      promptProvenance: sourceRun?.promptProvenance,
       outputSchema: sourceRun?.outputSchema,
       onEvent,
       askUser,
@@ -246,7 +247,10 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
           questionAbort = new AbortController()
         },
       },
-      onPromptRewrite: (text) => sessionStore.writeRunPrompt(sessionId, runId, text, writeDir),
+      onPromptRewrite: (text, promptProvenance) => {
+        sessionStore.writeRunPrompt(sessionId, runId, text, writeDir)
+        sessionStore.updateRun(sessionId, runId, { promptProvenance }, writeDir)
+      },
       onInflight: (next) => {
         inflight = next
         if (next) sessionStore.updateRun(sessionId, runId, { providerRunId: next.providerRunId || next.runId }, writeDir)

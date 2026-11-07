@@ -12,8 +12,8 @@ const capabilities = {
   },
   codex: {
     support: 'partial', scope: 'provider_run',
-    provenance: 'codex app-server token snapshots; opt-in OTLP API/SSE/WebSocket event records',
-    limitation: 'Snapshots are not requests. Telemetry can be delayed, dropped or missing response/turn identity; API attempts and stream events are not unique completed model responses. Exact counts and request averages remain unknown.',
+    provenance: 'codex app-server optional rawResponse/completed IDs/usage and token snapshots; opt-in OTLP API/SSE/WebSocket event records',
+    limitation: 'Optional raw completion IDs are partial evidence; delivery coverage is not established for every send/resume. Snapshots are not requests. Telemetry can be delayed, dropped or missing response/turn identity; API attempts and stream events are not unique completed model responses. Exact counts and request averages remain unknown.',
   },
   cursor: {
     support: 'partial', scope: 'main_agent_loop',

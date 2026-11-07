@@ -3,6 +3,7 @@ const path = require('path')
 const { TRIGGERS, inScope } = require('./triggers')
 const prompts = require('../prompts')
 const paths = require('../store/paths')
+const provenance = require('./provenance')
 
 // --null puts a NUL after the path so paths containing ':' still parse.
 const findLocations = (needle, cwd) => new Promise((resolve) => {
@@ -62,4 +63,34 @@ const rewritePrompt = async (text, context = {}) => {
   return out
 }
 
-module.exports = { rewritePrompt, rules }
+// Use the same full-string matches and replacements as rewritePrompt. Section
+// boundaries describe sources; they must never change regex matching behavior.
+const rewritePromptWithProvenance = async (prompt, context = {}) => {
+  let out = prompt
+  for (const { trigger: { patterns }, rewrite } of rules.filter(rule => inScope(rule.trigger, context))) {
+    const matches = [...out.text.matchAll(patterns[0])]
+    const replacements = await Promise.all(matches.map(match => rewrite(match, context)))
+    const parts = []
+    let last = 0
+    matches.forEach((match, index) => {
+      parts.push(...provenance.slice(out, last, match.index))
+      const end = match.index + match[0].length
+      const source = provenance.slice(out, match.index, end)
+      if (replacements[index] === match[0]) parts.push(...source)
+      else {
+        const user = source.every(part => ['user', 'rewritten'].includes(part.kind))
+        const kind = user ? 'rewritten' : source.every(part => part.kind === 'system') ? 'system' : 'context'
+        parts.push(provenance.section(kind, user ? 'Rewritten user text' : 'Rewritten supplied context', replacements[index]))
+      }
+      last = end
+    })
+    parts.push(...provenance.slice(out, last, out.text.length))
+    out = provenance.assemble(parts, out)
+  }
+  if (out.sections.some(part => part.kind === 'rewritten')) {
+    out.rewrittenText = out.sections.filter(part => ['user', 'rewritten'].includes(part.kind)).map(part => part.text).join('')
+  }
+  return out
+}
+
+module.exports = { rewritePrompt, rewritePromptWithProvenance, rules }

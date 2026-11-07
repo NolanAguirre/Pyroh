@@ -6,7 +6,8 @@ const usageStore = require('../store/usageStore')
 const runIndex = require('../store/runIndexStore')
 const { readJson } = require('../store/jsonFile')
 const { parseInputCommand } = require('../prompt/triggers')
-const { summarizeRequestMetrics } = require('../agents/requestMetrics')
+const { createRequestMetrics, summarizeRequestMetrics } = require('../agents/requestMetrics')
+const { readEvidence: readCodexEvidence } = require('../agents/providers/codexTelemetry')
 
 const fields = ['input', 'output', 'cacheRead', 'cacheWrite', 'fresh', 'reasoning', 'total', 'requests']
 const number = (value) => Number.isSafeInteger(value) && value >= 0
@@ -60,10 +61,11 @@ const metric = (value) => value.value !== null ? fmt(value.value)
   : `unknown (${fmt(value.subtotal)} known; ${value.covered}/${value.count} runs)`
 const average = (rows, key) => {
   const covered = rows.filter(row => row[key] !== null && row.requests !== null && row.requestFields?.includes(key))
+  if (!rows.length || covered.length !== rows.length) return 'unknown'
   const requests = covered.reduce((total, row) => total + row.requests, 0)
   if (!requests) return 'unknown'
   const value = fmt(covered.reduce((total, row) => total + row[key], 0) / requests)
-  return covered.length === rows.length ? value : `${value} (${covered.length}/${rows.length} runs only)`
+  return value
 }
 
 const requestFields = (keys) => [
@@ -74,19 +76,40 @@ const requestFields = (keys) => [
 
 // Live summaries reconcile every send segment before reconciling the whole run.
 // Repeated summaries replace by segment ID; they are never additive snapshots.
-const requestEvidence = (events, usage, provider, saved, cutoff) => {
+const requestEvidence = (events, usage, provider, saved, cutoff, context) => {
   const segments = new Map()
   const accept = (metrics) => {
-    if (metrics?.version !== 1 || metrics.provider !== provider || !metrics.segmentId
+    if (![1, 2].includes(metrics?.version) || metrics.provider !== provider || !metrics.segmentId
       || !number(metrics.updatedAt) || metrics.updatedAt > cutoff) return
     if ((segments.get(metrics.segmentId)?.updatedAt ?? -1) <= metrics.updatedAt) segments.set(metrics.segmentId, metrics)
   }
   for (const event of events) if (event.type === 'model_request_metrics') accept(event.metrics)
-  if (saved?.version === 1 && number(saved.updatedAt) && saved.updatedAt <= cutoff) {
+  if ([1, 2].includes(saved?.version) && number(saved.updatedAt) && saved.updatedAt <= cutoff) {
     for (const segment of saved.segments || []) accept(segment)
   }
-  if (segments.size || events.some(event => event.type === 'model_request' && event.version === 1)) {
+  // A crash can leave raw evidence after the last summary. Recover those IDs
+  // and timings as partial observations, never as a newly complete count.
+  const raw = new Map()
+  for (const event of events) {
+    if (!['model_request', 'model_request_evidence'].includes(event.type) || ![1, 2].includes(event.version)
+      || event.provider !== provider || !event.segmentId || event.parentToolUseId || event.nested) continue
+    if (!raw.has(event.segmentId)) raw.set(event.segmentId, [])
+    raw.get(event.segmentId).push(event)
+  }
+  for (const [segmentId, records] of raw) {
+    const previous = segments.get(segmentId)
+    if (previous && !records.some(record => record.ts > previous.updatedAt)) continue
+    const collector = createRequestMetrics({ provider, segmentId, startedAt: previous?.startedAt ?? records[0].ts })
+    for (const event of [...(previous?.requestRecords || []), ...(previous?.evidence || []), ...records]) collector.observe(event)
+    segments.set(segmentId, { ...collector.snapshot(), endedAt: previous?.endedAt ?? null,
+      status: previous?.status || 'unknown', updatedAt: Math.max(...records.map(record => record.ts)),
+      reason: 'Raw evidence lacks a matching final coverage summary.' })
+  }
+  if (segments.size || events.some(event => ['model_request', 'model_request_evidence'].includes(event.type) && [1, 2].includes(event.version))) {
     const metrics = summarizeRequestMetrics([...segments.values()])
+    const telemetry = provider === 'codex' ? readCodexEvidence({ segments: metrics.segments, cutoff, ...context }) : null
+    const telemetryRecords = telemetry ? [...telemetry.bySegment.values()].flat() : []
+    const telemetryConfigured = metrics.segments.some(segment => segment.telemetryCaptures?.length)
     const tokens = measuredUsage(metrics.coveredUsage, provider)
     const reconciled = metrics.coverage === 'complete' && usage.input !== null && usage.output !== null
       && tokens.input === usage.input && tokens.output === usage.output
@@ -99,11 +122,15 @@ const requestEvidence = (events, usage, provider, saved, cutoff) => {
       fields: reconciled ? requestFields(matching) : [],
       coverage: reconciled ? 'complete' : metrics.coverage === 'unsupported' ? 'unsupported' : 'partial',
       observed: metrics.observedRequests,
+      segments: metrics.segments.map(segment => ({ ...segment, telemetry: telemetry?.bySegment.get(segment.segmentId) || [] })),
       detail: [...new Set([
         metrics.reason,
         ...metrics.segments.flatMap(segment => [segment.provenance, segment.limitation, segment.reason]),
         !reconciled && metrics.coverage === 'complete' && 'Segment totals do not reconcile with authoritative run usage.',
         !segments.size && 'Request snapshots exist without a final coverage summary.',
+        telemetryConfigured && `Codex telemetry: ${telemetryRecords.length} attributed log records (${telemetryRecords.filter(record => record.attribution === 'thread_and_time_window').length} by thread/time window); ${telemetry.unattributed} unattributed; ${telemetry.excluded} other-thread records excluded. Log records are not request counts; export completeness is unknown.`,
+        provider === 'codex' && !telemetryConfigured && 'No local telemetry capture was configured for these segments.',
+        ...(telemetry?.issues || []),
       ].filter(Boolean))].join(' ') }
   }
 
@@ -111,11 +138,11 @@ const requestEvidence = (events, usage, provider, saved, cutoff) => {
   // Usage-only history remains unknown.
   const requests = new Map()
   for (const event of events) {
-    if (event.type !== 'model_request' || !event.requestId || event.provider !== provider) continue
+    if (event.type !== 'model_request' || !event.requestId || event.provider !== provider || event.parentToolUseId || event.nested) continue
     requests.set(event.requestId, measuredUsage(event.usage, provider))
   }
   const rows = [...requests.values()]
-  const matched = requests.size > 0 && usage.input !== null && usage.output !== null
+  const matched = provider === 'claude' && requests.size > 0 && usage.input !== null && usage.output !== null
     && sum(rows.map(row => row.input)) === usage.input && sum(rows.map(row => row.output)) === usage.output
   const cacheMatched = usage.cacheRead !== null && sum(rows.map(row => row.cacheRead)) === usage.cacheRead
   return { requests: matched ? requests.size : null, fields: matched ? ['input', ...(cacheMatched ? ['cacheRead', 'fresh'] : [])] : [],
@@ -243,7 +270,7 @@ const collect = (current, writeDir, cutoff) => {
           if (!line.trim()) continue
           let event
           try { event = JSON.parse(line) } catch { warnings.add(`Incomplete transcript lines in ${node.id}; request coverage may be missing.`); continue }
-          if (!number(event.ts) || event.ts > cutoff || !['model_request', 'model_request_metrics'].includes(event.type)) continue
+          if (!number(event.ts) || event.ts > cutoff || !['model_request', 'model_request_evidence', 'model_request_metrics'].includes(event.type)) continue
           if (!events.has(event.runId)) events.set(event.runId, [])
           events.get(event.runId).push(event)
         }
@@ -276,7 +303,8 @@ const collect = (current, writeDir, cutoff) => {
       const reported = usage.has(record.id) ? usage.get(record.id).usage : record.usage
       const tokens = measuredUsage(complete ? reported : null, provider)
       if (!complete) warnings.add(`Run ${record.id} was ongoing or lacked a completion timestamp at cutoff; usage is unknown.`)
-      const evidence = requestEvidence(events.get(record.id) || [], tokens, provider, record.modelRequests, cutoff)
+      const evidence = requestEvidence(events.get(record.id) || [], tokens, provider, record.modelRequests, cutoff,
+        { writeDir, sessionId: node.id, runId: record.id })
       rows.push({ ...tokens, requests: complete ? evidence.requests : null, requestFields: evidence.fields, requestEvidence: evidence,
         id: record.id, sessionId: node.id, provider, model: record.model || session.model || 'unknown',
         startedAt: record.startedAt, endedAt: complete ? record.endedAt : null, status: complete ? record.status || 'finished' : 'incomplete at cutoff' })
@@ -318,7 +346,7 @@ const comparison = (agents, assumptions, warnings) => {
   const root = aggregate(agents.filter(agent => agent.depth === 0).flatMap(agent => agent.rows))
   const complete = descendants.length > 0 && descendants.every(agent => {
     const totals = aggregate(agent.rows)
-    return totals.input.value !== null && totals.requests.value > 0
+    return totals.input.value !== null && totals.requests.value > 0 && agent.rows.every(row => row.requestFields?.includes('input'))
   })
   const summedAverages = complete ? descendants.reduce((total, agent) => {
     const totals = aggregate(agent.rows)
@@ -367,6 +395,17 @@ const comparison = (agents, assumptions, warnings) => {
   return lines.join('\n\n')
 }
 
+const timestamp = value => number(value) && Number.isFinite(new Date(value).getTime()) ? new Date(value).toISOString() : 'unknown'
+const timeWindow = values => {
+  const known = values.filter(number)
+  return known.length ? `${timestamp(Math.min(...known))} → ${timestamp(Math.max(...known))}` : 'unknown'
+}
+const durations = values => {
+  const known = values.filter(value => (typeof value === 'number' || typeof value === 'string' && value.trim() !== '')
+    && Number.isFinite(Number(value)) && Number(value) >= 0).map(Number)
+  return known.length ? `${known.length} records; ${fmt(Math.min(...known))}–${fmt(Math.max(...known))} ms` : 'unknown'
+}
+
 const analyzeSubagents = (session, writeDir, assumptions = {}) => {
   const data = collect(session, writeDir, Date.now())
   const rows = data.agents.flatMap(agent => agent.rows)
@@ -374,6 +413,12 @@ const analyzeSubagents = (session, writeDir, assumptions = {}) => {
   const tableHeader = '| Agent / run | Input | Output | Cache read | Cache write | Fresh | Reasoning | Total | Model requests |'
   const tableRule = '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |'
   const tableRow = (label, values) => `| ${cell(label)} | ${fields.map(key => metric(values[key])).join(' | ')} |`
+  const timingRows = rows.flatMap(row => (row.requestEvidence.segments || []).map(segment => {
+    const localTimes = [...(segment.requestRecords || []).flatMap(record => [record.firstObservedAt, record.lastObservedAt]),
+      ...(segment.evidence || []).map(record => record.observedAt)]
+    const steps = (segment.evidence || []).filter(record => record.kind === 'step' && record.eventType === 'step-completed')
+    return `| ${cell(`${row.id} / ${segment.segmentId}`)} | ${timestamp(segment.startedAt)} → ${timestamp(segment.endedAt)} | ${timeWindow(localTimes)} | ${durations(steps.map(record => record.durationMs))} | ${timeWindow((segment.telemetry || []).map(record => record.occurredAt))} | ${durations((segment.telemetry || []).map(record => record.attributes?.duration_ms))} |`
+  }))
   const lines = [
     '## Subagent usage analysis',
     `Source: ${cell(data.source.id)}${data.source.id !== session.id ? ` (requested from ${cell(session.id)})` : ''}. Cutoff: ${new Date(data.cutoff).toISOString()}.`,
@@ -387,15 +432,20 @@ const analyzeSubagents = (session, writeDir, assumptions = {}) => {
     '', '### Measured usage by run', tableHeader, tableRule,
     ...data.agents.flatMap(agent => agent.rows.map(row => tableRow(`${agent.id} / ${row.id} · ${row.provider}/${row.model} · ${row.status}`, aggregate([row])))),
     '', '### Whole-token request averages',
-    'Weighted by model requests and rounded to whole tokens. Average context = total input / model-request count. Cache and fresh averages use their corresponding covered requests. Tool calls, user turns, and run counts are never request counts.',
+    'Weighted by model requests and rounded to whole tokens. Average context = total input / model-request count. Every run in a displayed scope must have complete reconciled coverage for that average; partial observed IDs are never denominators. Tool calls, user turns, and run counts are never request counts.',
     '', '| Scope | Average request context | Average cached input | Average fresh input |', '| --- | ---: | ---: | ---: |',
     ...data.agents.map(agent => `| ${cell(agent.id)} | ${average(agent.rows, 'input')} | ${average(agent.rows, 'cacheRead')} | ${average(agent.rows, 'fresh')} |`),
     ...rows.map(row => `| ${cell(row.id)} | ${average([row], 'input')} | ${average([row], 'cacheRead')} | ${average([row], 'fresh')} |`),
     `| Located subtree | ${average(rows, 'input')} | ${average(rows, 'cacheRead')} | ${average(rows, 'fresh')} |`,
     '', 'Live request counts require unique completed response IDs, complete coverage of every steering segment, and input/output reconciliation with authoritative segment and run usage. Claude also checks reported model round trips when supplied. Cache/fresh averages require matching covered cache usage. Historical direct response evidence is labeled separately; usage-only history stays unknown.',
     '', '### Request evidence and limits',
-    '| Run | Coverage | Observed response IDs | Provenance / limits |', '| --- | --- | ---: | --- |',
+    '| Run | Coverage | Observed model/response IDs (may be partial) | Provenance / limits |', '| --- | --- | ---: | --- |',
     ...rows.map(row => `| ${cell(row.id)} | ${cell(row.requestEvidence.coverage)} | ${fmt(row.requestEvidence.observed)} | ${cell(row.requestEvidence.detail)} |`),
+    '', '### Recorded evidence timing',
+    'Observation timestamps, conversation-step durations, and Codex transport/event durations are different measurements. Ranges describe only recorded evidence, not model-request latency or complete request order. Codex batches can arrive after run completion; only records received by the report cutoff are included. Unattributed and native child-thread events are excluded from the intervals below. Per-event values remain in the durable evidence records.',
+    '| Run / steering segment | Segment interval | Local evidence observed | Cursor step durations | Codex event timestamps | Codex transport/event durations |',
+    '| --- | --- | --- | --- | --- | --- |',
+    ...(timingRows.length ? timingRows : ['| Historical records | unknown | unknown | unknown | unknown | unknown |']),
     '', comparison(data.agents, assumptions, data.warnings),
   ]
   if (data.warnings.length) lines.push('', '### Coverage gaps', '', ...data.warnings.map(warning => `- ${cell(warning)}`))

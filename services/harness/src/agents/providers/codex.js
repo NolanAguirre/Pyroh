@@ -5,7 +5,8 @@ const config = require('../../config')
 const { createTransport } = require('./codexTransport')
 const { createCapture } = require('./codexTelemetry')
 const { normalizeCodexOptions } = require('./codexOptions')
-const { composePrompt } = require('../modes')
+const { composePromptWithProvenance } = require('../modes')
+const { capture } = require('../../prompt/provenance')
 const { providerMode } = require('../providerModes')
 const prompts = require('../../prompts')
 
@@ -48,6 +49,16 @@ const normalizeUsage = (usage) => usage ? {
   reasoningTokens: usage.reasoningOutputTokens || 0,
   totalTokens: usage.totalTokens ?? ((usage.inputTokens || 0) + (usage.outputTokens || 0)),
 } : null
+
+// Raw completion usage is evidence, so missing fields stay unknown. Installed
+// app-server schemas include both TokenUsage and TokenUsageBreakdown shapes.
+const requestUsage = usage => Object.fromEntries(Object.entries({
+  inputTokens: ['inputTokens', 'input_tokens'], outputTokens: ['outputTokens', 'output_tokens'],
+  cacheReadTokens: ['cachedInputTokens', 'cached_input_tokens'],
+  cacheWriteTokens: ['cacheWriteInputTokens', 'cache_write_input_tokens'],
+  reasoningTokens: ['reasoningOutputTokens', 'reasoning_output_tokens'],
+  totalTokens: ['totalTokens', 'total_tokens'],
+}).map(([key, names]) => [key, names.map(name => usage?.[name]).find(value => Number.isSafeInteger(value) && value >= 0) ?? null]))
 
 const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requestEvidence } = {}) => {
   const options = normalizeCodexOptions(codex)
@@ -107,6 +118,18 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
     if (eventTurnId && !active.id) active.id = eventTurnId
     if (eventTurnId) telemetry?.bindTurn(active.evidenceSegmentId, eventTurnId)
     if (method === 'turn/started') emit({ type: 'status', status: 'running' })
+    else if (method === 'rawResponse/completed') {
+      // This optional notification exists in the installed app-server schema.
+      // Require explicit ownership; never count a native child or an unbound
+      // response. Its delivery contract does not establish full loop coverage.
+      if (params.threadId !== threadId || !params.turnId || params.turnId !== active.id
+        || typeof params.responseId !== 'string' || !params.responseId) return
+      emit({ type: 'model_request', version: 2, provider: 'codex', requestId: params.responseId,
+        evidenceScopeId: JSON.stringify([threadId, active.id]), providerAgentId: threadId,
+        status: 'completed', observedAt: Date.now(), usage: requestUsage(params.usage),
+        providerUsage: params.usage || null, provenance: 'codex app-server:rawResponse/completed',
+        timingSemantics: 'response_completion_observed; request start unavailable' })
+    }
     else if (method === 'turn/completed') {
       const status = params.turn.status
       finish(status === 'completed' ? 'completed' : status === 'interrupted' ? 'cancelled' : 'error',
@@ -346,6 +369,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
     threadOptions = settings
     cumulativeUsage = null
     const params = { model, cwd: settings.cwd,
+      ...(method === 'thread/start' ? { experimentalRawEvents: true } : {}),
       sandbox: tools.restrictedChild ? 'read-only' : providerMode('codex', settings.mode).sandbox || options.sandbox,
       approvalPolicy: approvalFor(settings.mode, options.approvalPolicy),
       approvalsReviewer: 'user',
@@ -405,7 +429,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
     }
   }
 
-  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, outputSchema, terse = false, instructions, evidenceSegmentId = crypto.randomUUID() } = {}) => {
+  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, outputSchema, terse = false, instructions, promptProvenance, evidenceSegmentId = crypto.randomUUID() } = {}) => {
     if (!threadId) throw new Error('Codex thread not created')
     if (active && !active.done) throw new Error('Codex turn already running')
     const wait = new Promise((resolve) => {
@@ -422,9 +446,11 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
     const policy = providerMode('codex', mode)
     const sandbox = tools.restrictedChild ? 'read-only' : policy.sandbox || options.sandbox
     // Ask keeps shell reads available and injects the provider's no-change prompt.
-    const text = composePrompt(prompt, { mode, logicalMode, model: selectedModel, terse, instructions, provider: 'codex' })
+    const composed = composePromptWithProvenance(prompt, { mode, logicalMode, model: selectedModel, terse, instructions, provider: 'codex', promptProvenance })
+    const text = composed.text
     for (const message of diagnostics) emit({ type: 'status', status: `Codex diagnostic: ${message}` })
     try {
+      emit(capture(composed, { provider: 'codex', providerAgentId: threadId }))
       const response = await transport.request('turn/start', {
         threadId, input: [{ type: 'text', text, text_elements: [] }],
         model: selectedModel, cwd: threadOptions.cwd,

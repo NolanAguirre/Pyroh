@@ -2,6 +2,7 @@ const config = require('../config')
 const prompts = require('../prompts')
 const { sessionContext } = require('./context')
 const { DEVID_SERVER_NAME } = require('../agents/driver')
+const provenance = require('./provenance')
 
 // Server-side effects for triggers found by `findTriggers`, keyed by trigger
 // id. mcpServers(session) returns { name, url } entries; prepend() resolves to
@@ -48,9 +49,12 @@ const firedActions = (matches) => [...new Set(matches.map((match) => match.id))]
 
 const triggerMcpServers = (fired, session) => fired.flatMap((action) => action.mcpServers?.(session) || [])
 
-const prependNotes = async (fired, session, text) => {
+const prependNotesWithProvenance = async (fired, session, prompt) => {
   const notes = (await Promise.all(fired.map((action) => action.prepend?.(session)))).filter(Boolean)
-  return notes.length ? `${notes.join('\n\n')}\n\n${text}` : text
+  return provenance.prepend(notes.map(note => provenance.section('system', 'Harness trigger instructions', note)), prompt)
 }
 
-module.exports = { actions, firedActions, triggerMcpServers, prependNotes }
+const prependNotes = async (fired, session, text) =>
+  (await prependNotesWithProvenance(fired, session, provenance.supplied(text))).text
+
+module.exports = { actions, firedActions, triggerMcpServers, prependNotes, prependNotesWithProvenance }

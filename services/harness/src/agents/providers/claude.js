@@ -1,7 +1,8 @@
 const crypto = require('crypto')
 const config = require('../../config')
 const { normalizeClaudeOptions } = require('./claudeOptions')
-const { composePrompt } = require('../modes')
+const { composePromptWithProvenance } = require('../modes')
+const { capture } = require('../../prompt/provenance')
 const { providerMode } = require('../providerModes')
 
 const CLIENT_APP = 'harness/0.1.0'
@@ -460,7 +461,7 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     }
   }
 
-  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, outputSchema, terse = false, instructions } = {}) => {
+  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, outputSchema, terse = false, instructions, promptProvenance } = {}) => {
     if (!sessionId) throw new Error('Claude session not created')
     if (active && !active.done) throw new Error('Claude turn already running')
     const { query } = await loadSdk()
@@ -494,7 +495,9 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     input = createInput()
     // Claude Code has no ask mode. Ask uses the default permission mode, blocks
     // edit tools, and denies every approval request, plus an instruction.
-    const content = composePrompt(prompt, { mode, logicalMode, model: settings.model, terse, instructions, provider: 'claude' })
+    const composed = composePromptWithProvenance(prompt, { mode, logicalMode, model: settings.model, terse, instructions, provider: 'claude', promptProvenance })
+    const content = composed.text
+    emit(capture(composed, { provider: 'claude', providerAgentId: sessionId }))
     input.push({ type: 'user', message: { role: 'user', content }, parent_tool_use_id: null })
     const source = query({ prompt: input.iterable, options: {
       ...baseOptions(),

@@ -1,7 +1,8 @@
 const crypto = require('crypto')
 const config = require('../../config')
 const { errorMessage } = require('../../store/formatError')
-const { composePrompt } = require('../modes')
+const { composePromptWithProvenance } = require('../modes')
+const { capture } = require('../../prompt/provenance')
 const { providerMode } = require('../providerModes')
 const prompts = require('../../prompts')
 
@@ -258,19 +259,19 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
     return agent
   }
 
-  const send = async (prompt, { mode, logicalMode = mode || selectedLogicalMode, onEvent, terse = false, instructions } = {}) => {
+  const send = async (prompt, { mode, logicalMode = mode || selectedLogicalMode, onEvent, terse = false, instructions, promptProvenance } = {}) => {
     if (!agent) throw new Error('cursor driver: agent not created')
     const emit = typeof onEvent === 'function' ? onEvent : () => {}
     // The caller holds the session lock. Any persisted active run belongs to a
     // dead prior daemon; force expires it without discarding its checkpoint.
     const options = { ...(mode ? { mode: sdkMode(mode) } : {}), ...(selectedModel ? { model: { id: selectedModel } } : {}),
       ...(resumed ? { local: { force: true } } : {}) }
-    const text = composePrompt(prompt, { mode, logicalMode, model: selectedModel, terse, instructions, provider: 'cursor' })
+    const composed = composePromptWithProvenance(prompt, { mode, logicalMode, model: selectedModel, terse, instructions, provider: 'cursor', promptProvenance })
+    const text = composed.text
     let streamError = null
     const notify = (event) => {
       try { emit(event) } catch (err) { streamError = streamError || errorMessage(err) }
     }
-    notify({ type: 'provider_prompt', text, options, providerAgentId: providerAgentId() })
     // Callbacks may precede send() resolving. Keep one stable identity scope
     // rather than changing dedupe keys when the SDK run ID becomes available.
     const evidenceScopeId = crypto.randomUUID()
@@ -312,6 +313,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
           timingSemantics: 'agent_turn_observed; may contain multiple model calls' })
       }
     }
+    notify(capture(composed, { provider: 'cursor', options: { ...options, onDelta: undefined }, providerAgentId: providerAgentId() }))
     const run = await agent.send(text, options)
     const runId = run.id || null
     evidenceRunId = runId

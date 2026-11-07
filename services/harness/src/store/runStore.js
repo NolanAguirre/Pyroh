@@ -7,7 +7,7 @@ const { genId, loadSession } = require('./sessionRecord')
 const { writePromptFile, persistRecordPrompt, readRecordPrompt, readRecordPromptAsync } = require('./recordPrompt')
 const { isDelegatedChild, detachDelegation } = require('./delegationBoundary')
 
-const createRun = (sessionId, { mode, prompt, handoff, plugin, delegationDelivery, queuedMessage, localCommand }, writeDir) => {
+const createRun = (sessionId, { mode, prompt, promptProvenance, handoff, plugin, delegationDelivery, queuedMessage, localCommand }, writeDir) => {
   let session = loadSession(sessionId, writeDir)
   if (isDelegatedChild(session) && !localCommand) {
     const runs = listRuns(sessionId, writeDir).filter(run => !run.localCommand)
@@ -42,6 +42,7 @@ const createRun = (sessionId, { mode, prompt, handoff, plugin, delegationDeliver
     ...ancestry,
     mode,
     prompt,
+    ...(promptProvenance ? { promptProvenance: require('../prompt/provenance').supplied(prompt, promptProvenance) } : {}),
     ...(localCommand ? { localCommand } : {}),
     ...(handoff ? { handoff } : {}),
     ...(plugin ? { plugin } : {}),
