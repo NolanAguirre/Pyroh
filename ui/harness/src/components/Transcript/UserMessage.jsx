@@ -69,7 +69,7 @@ const UserMessage = ({ event, sessionId }) => {
           </DevScope>
         </div>
         {captured ? <ProviderPrompt prompt={captured} devId="md9l4wi" /> : <div className="tx__user-body">{text}</div>}
-        <SessionImagePreviews images={event.images || dependency?.images} sessionId={sessionId || event.viewerSessionId} />
+        <SessionImagePreviews images={event.images || captured?.images || dependency?.images} sessionId={sessionId || event.viewerSessionId} />
         {!captured && !dependency && (event.runPrompt || event.steer) && (
           <DevScope id="8yxr6ek" state={{ runPrompt: Boolean(event.runPrompt) }}>
             <p className="tx__prompt-note">Saved message. The full agent prompt has not been captured.</p>

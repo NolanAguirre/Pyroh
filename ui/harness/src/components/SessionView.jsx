@@ -178,7 +178,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const hasContent = Boolean(prompt.trim()) || hasImages
   const imageModeError = hasImages && (inputCommand
     ? 'Commands cannot include images. Remove the images or change the prompt.'
-    : isDecompose || isNewChat || isFork || spawnsSession || session?.workflowPlugin || session?.childKind === 'workflow'
+    : isDecompose || active?.kind === 'workflow' || session?.workflowPlugin || session?.childKind === 'workflow'
       ? 'Images are not supported in this workflow. Use an ordinary session or remove the images.'
       : '')
   const imagesBlocked = attachments.blocked || Boolean(imageModeError)
@@ -267,7 +267,9 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
       }
       if (isFork) {
         const saved = forkRetry.current.sessionId === sessionId ? forkRetry.current.retry : loadForkRetry(sessionId)
-        const retry = saved?.prompt === prompt ? saved : { prompt, key: crypto.randomUUID() }
+        const imagesKey = attachments.images.map((image) => `${image.sessionId}:${image.id}`).join(',')
+        const retry = saved?.prompt === prompt && (saved.imagesKey || '') === imagesKey
+          ? saved : { prompt, imagesKey, key: crypto.randomUUID() }
         forkRetry.current = { sessionId, retry }
         saveForkRetry(sessionId, retry)
         request.forkRetryKey = retry.key

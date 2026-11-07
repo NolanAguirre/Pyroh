@@ -298,19 +298,20 @@ const api = {
     }
     return post(url, body).then(({ submission }) => ({ submission: tagSubmission(submission, machine) }))
   },
-  run: (id, { prompt, mode, provider, model, runAfterSessionId }) => sessionPost(id, '/run', {
+  run: (id, { prompt, images, mode, provider, model, runAfterSessionId }) => sessionPost(id, '/run', {
     prompt,
+    images,
     mode,
     provider,
     model,
     ...(runAfterSessionId ? { runAfterSessionId: splitId(runAfterSessionId).id } : {}),
   }),
   decompose: (id, prompt) => sessionPost(id, '/decompose', { prompt }),
-  resume: (id, { prompt, mode } = {}) => sessionPost(id, '/resume', { prompt, mode }),
+  resume: (id, { prompt, mode, images } = {}) => sessionPost(id, '/resume', { prompt, mode, images }),
   pause: (id) => sessionPost(id, '/pause'),
   stop: (id) => sessionPost(id, '/stop'),
-  steer: (id, prompt) => sessionPost(id, '/steer', { prompt }),
-  queueMessage: (id, { prompt, mode }) => sessionPost(id, '/queue', { prompt, mode }),
+  steer: (id, prompt, { images } = {}) => sessionPost(id, '/steer', { prompt, images }),
+  queueMessage: (id, { prompt, mode, images }) => sessionPost(id, '/queue', { prompt, mode, images }),
   sendQueuedMessage: (id, messageId) => sessionPost(id, `/queue/${encodeURIComponent(messageId)}/send`),
   removeQueuedMessage: (id, messageId) => fetch(sessionUrl(id, `/queue/${encodeURIComponent(messageId)}`).url, {
     method: 'DELETE',
