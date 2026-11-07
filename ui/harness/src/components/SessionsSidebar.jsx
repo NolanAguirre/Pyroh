@@ -97,9 +97,8 @@ const SessionsSidebar = ({
     return [...roots, ...shownSessions.filter(session => !visited.has(session.id)).map(branch).filter(Boolean)]
   }, [shownSessions])
 
-  const renderSession = ({ session, children }) => {
+  const renderSession = ({ session, children }, nested = false) => {
     const waste = session.mode === 'token-waste' && session.sourceSessionId
-    const nested = waste || (session.parentSessionId && session.childKind !== 'fork')
     return (
       <div
         key={session.id}
@@ -117,7 +116,7 @@ const SessionsSidebar = ({
           onPin={rowHandlers.onPin}
           pinBusy={pinBusy}
         />
-        {children.map(renderSession)}
+        {children.map(child => renderSession(child, true))}
       </div>
     )
   }
@@ -235,7 +234,7 @@ const SessionsSidebar = ({
                 <p className="hint sidebar__empty-hint">No sessions match &ldquo;{searchQuery}&rdquo;</p>
               </DevScope>
             )}
-            {groupedSessions.map(renderSession)}
+            {groupedSessions.map(root => renderSession(root))}
             {hiddenArchived > 0 && (
               <DevScope id="m4r8s2v" state={{ hidden: hiddenArchived }}>
                 <div className="sidebar__show-more">
