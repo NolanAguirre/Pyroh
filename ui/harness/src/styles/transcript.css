@@ -257,6 +257,53 @@
   font-size: 11px;
 }
 
+.tx__prompt-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tx__prompt-section {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.tx__prompt-section .fold {
+  border: none;
+  border-radius: 0;
+}
+
+.tx__prompt-section .fold__trigger {
+  padding: 6px 8px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.tx__prompt-section .fold__trigger:hover {
+  background: rgba(127, 127, 127, 0.12);
+}
+
+.tx__prompt-section .fold__trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.tx__prompt-section .fold__content--open {
+  max-height: none;
+}
+
+.tx__prompt-section .fold__content-inner {
+  padding: 8px;
+  border-top-color: var(--border);
+  color: inherit;
+  line-height: inherit;
+}
+
 .tx__prompt-source--system,
 .tx__prompt-section--system {
   background: rgba(196, 155, 255, 0.16);

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CodeDiff, FoldContent, FoldDisplay, FoldTrigger } from 'component-library'
+import { CodeDiff, Fold, FoldContent, FoldDisplay, FoldTrigger } from 'component-library'
 
 const kinds = {
   system: 'Harness instructions',
@@ -33,12 +33,18 @@ const ProviderPrompt = ({ prompt }) => {
           </span>
         ))}
       </div>
-      <div className="tx__user-body tx__prompt-text">{sections.map((section, index) => (
-        <span
+      <div className="tx__prompt-sections">{sections.map((section, index) => (
+        <div
           key={index}
           className={`tx__prompt-section tx__prompt-section--${kinds[section.kind] ? section.kind : 'unknown'}`}
-          title={section.label || kinds[section.kind] || 'Source unavailable'}
-        >{section.text}</span>
+        >
+          <Fold defaultOpen>
+            <FoldTrigger>{section.label || kinds[section.kind] || 'Source unavailable'}</FoldTrigger>
+            <FoldContent>
+              <div className="tx__user-body tx__prompt-text">{section.text}</div>
+            </FoldContent>
+          </Fold>
+        </div>
       ))}</div>
       {hasRewrite && (
         <FoldDisplay isOpen={compare} toggle={() => setCompare((value) => !value)}>
