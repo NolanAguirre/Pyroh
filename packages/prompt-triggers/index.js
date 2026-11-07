@@ -1,5 +1,6 @@
 import { devIds } from './triggers/devIds.js'
 import { devIdPaths } from './triggers/devIdPaths.js'
+import { sessionIdPaths } from './triggers/sessionIdPaths.js'
 
 // Keep command matching and help text together as the command list grows.
 export const INPUT_COMMANDS = [
@@ -57,7 +58,7 @@ export const parseInputCommand = (text) => {
 // scope: 'message' applies to every user message (prompts, follow-ups,
 // queued messages, steers, answers); 'first' only to the first prompt sent
 // to a new agent or subagent.
-export const TRIGGERS = [devIds, devIdPaths]
+export const TRIGGERS = [devIds, devIdPaths, sessionIdPaths]
 
 export const inScope = (trigger, { first = true } = {}) => first || trigger.scope !== 'first'
 

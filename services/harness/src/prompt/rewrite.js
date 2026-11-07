@@ -36,6 +36,7 @@ const trigger = (id) => TRIGGERS.find((item) => item.id === id)
 // pattern and scope.
 const rules = [
   { name: 'devId', trigger: trigger('devIdPaths'), rewrite: devIdPaths },
+  { name: 'sessionId', trigger: trigger('sessionIdPaths'), rewrite: sessionIdPaths },
 ]
 
 const replaceAsync = async (text, pattern, rewrite, context) => {
