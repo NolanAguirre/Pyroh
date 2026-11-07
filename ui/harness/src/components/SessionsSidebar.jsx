@@ -75,7 +75,8 @@ const SessionsSidebar = ({
     const parentId = (session) => {
       const wasteParent = wasteParentId(session)
       if (wasteParent && ids.has(wasteParent)) return wasteParent
-      return null
+      if (session.childKind === 'fork' || !session.parentSessionId || !ids.has(session.parentSessionId)) return null
+      return session.parentSessionId
     }
     const children = new Map()
     for (const session of shownSessions) {
