@@ -3,6 +3,7 @@ const fs = require('fs')
 const path = require('path')
 const config = require('../../config')
 const { createTransport } = require('./codexTransport')
+const { createCapture } = require('./codexTelemetry')
 const { normalizeCodexOptions } = require('./codexOptions')
 const { composePrompt } = require('../modes')
 const { providerMode } = require('../providerModes')
@@ -48,11 +49,12 @@ const normalizeUsage = (usage) => usage ? {
   totalTokens: usage.totalTokens ?? ((usage.inputTokens || 0) + (usage.outputTokens || 0)),
 } : null
 
-const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {}) => {
+const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requestEvidence } = {}) => {
   const options = normalizeCodexOptions(codex)
   const harnessMcp = Array.isArray(tools.mcpServers) ? tools.mcpServers : []
   const harnessMcpNames = harnessMcp.map((server) => server.name)
   let transport = null
+  let telemetry = null
   let threadId = null
   let threadOptions = {}
   let selectedModel = null
@@ -73,6 +75,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
   const finish = (status, error = null) => {
     if (!active || active.done) return
     active.done = true
+    telemetry?.endSegment(active.evidenceSegmentId, status)
     clearTimeout(active.cancelTimer)
     clearRequests()
     const messages = [...active.messages.values()]
@@ -102,6 +105,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     const eventTurnId = params.turnId || params.turn?.id
     if (eventTurnId && active.id && eventTurnId !== active.id) return
     if (eventTurnId && !active.id) active.id = eventTurnId
+    if (eventTurnId) telemetry?.bindTurn(active.evidenceSegmentId, eventTurnId)
     if (method === 'turn/started') emit({ type: 'status', status: 'running' })
     else if (method === 'turn/completed') {
       const status = params.turn.status
@@ -114,6 +118,14 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     } else if (method === 'thread/tokenUsage/updated') {
       // `last` measures active context; `total` accumulates billable usage.
       const snapshot = params.tokenUsage
+      if (snapshot) {
+        const fingerprint = crypto.createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')
+        emit({ type: 'model_request_evidence', version: 2, provider: 'codex',
+          kind: 'token_usage_snapshot', evidenceId: `${threadId}:${active.id}:${fingerprint}`,
+          providerAgentId: threadId, observedAt: Date.now(), snapshot,
+          provenance: 'codex app-server:thread/tokenUsage/updated',
+          timingSemantics: 'snapshot_observed; not a unique request boundary' })
+      }
       if (Number.isFinite(snapshot?.last?.totalTokens)) {
         emit({ type: 'context', context: {
           usedTokens: snapshot.last.totalTokens,
@@ -283,7 +295,10 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     delete env.HARNESS_CODEX_API_KEY
     delete env.CODEX_API_KEY
     delete env.OPENAI_API_KEY
-    transport = createTransport({ binary: config.codexBin, env, cwd, onNotification, onRequest,
+    if (config.codexRequestTelemetry && requestEvidence?.runId && requestEvidence?.sessionId) {
+      telemetry = createCapture({ writeDir, ...requestEvidence })
+    }
+    transport = createTransport({ binary: config.codexBin, env, cwd, onNotification, onRequest, telemetry,
       onDiagnostic: (message) => {
         diagnostics.push(message)
         if (active && !active.done) emit({ type: 'status', status: `Codex diagnostic: ${message}` })
@@ -390,13 +405,20 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     }
   }
 
-  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, outputSchema, terse = false, instructions } = {}) => {
+  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, outputSchema, terse = false, instructions, evidenceSegmentId = crypto.randomUUID() } = {}) => {
     if (!threadId) throw new Error('Codex thread not created')
     if (active && !active.done) throw new Error('Codex turn already running')
     const wait = new Promise((resolve) => {
-      active = { id: null, emit: onEvent || (() => {}), resolve, mode, startedAt: Date.now(), done: false,
+      active = { id: null, emit: onEvent || (() => {}), resolve, mode, evidenceSegmentId, startedAt: Date.now(), done: false,
         messages: new Map(), items: new Map(), plan: '', usage: null, baseline: cumulativeUsage }
     })
+    telemetry?.startSegment({ segmentId: evidenceSegmentId, threadId, startedAt: active.startedAt })
+    emit({ type: 'model_request_evidence', version: 2, provider: 'codex', kind: 'telemetry_capture',
+      evidenceId: `${evidenceSegmentId}:telemetry`, captureId: telemetry?.id || null,
+      providerAgentId: threadId, observedAt: Date.now(),
+      captureStatus: telemetry ? 'configured' : 'disabled',
+      provenance: 'codex OTLP JSON logs; existing harness API receiver',
+      limitation: 'Exporter configuration is not proof of delivery or complete request coverage.' })
     const policy = providerMode('codex', mode)
     const sandbox = tools.restrictedChild ? 'read-only' : policy.sandbox || options.sandbox
     // Ask keeps shell reads available and injects the provider's no-change prompt.
@@ -417,6 +439,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
         ...(outputSchema ? { outputSchema } : {}),
       })
       active.id = response.turn.id
+      telemetry?.bindTurn(evidenceSegmentId, active.id)
     } catch (err) { finish('error', err.message) }
     const cancel = async () => {
       if (active.done) return

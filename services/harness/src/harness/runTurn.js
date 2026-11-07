@@ -148,6 +148,7 @@ const runOneTurn = async ({
     grok: session.grok,
     claude: session.claude,
     permissions: session.claudePermissions,
+    requestEvidence: runId ? { sessionId: session.id, runId } : undefined,
     onPermissions: (claudePermissions) => sessionStore.updateSession(session.id, { claudePermissions }, writeDir),
     tools: configuredTools,
   })
@@ -157,11 +158,11 @@ const runOneTurn = async ({
   let requestMetrics = null
   let requestMetricsOpen = false
   const requestSegments = new Map()
-  const publishRequestMetrics = (segmentResult) => {
-    if (!requestMetrics) return null
-    const metrics = { ...requestMetrics.snapshot(segmentResult), updatedAt: Date.now() }
+  const publishRequestMetrics = (segmentResult, collector = requestMetrics) => {
+    if (!collector) return null
+    const metrics = { ...collector.snapshot(segmentResult), updatedAt: Date.now() }
     requestSegments.set(metrics.segmentId, metrics)
-    if (segmentResult) requestMetricsOpen = false
+    if (segmentResult && collector === requestMetrics) requestMetricsOpen = false
     const modelRequests = { ...summarizeRequestMetrics([...requestSegments.values()]), updatedAt: metrics.updatedAt }
     onEvent?.({ type: 'model_request_metrics', metrics })
     if (runId) sessionStore.updateRun(session.id, runId, { modelRequests }, writeDir)
@@ -201,11 +202,11 @@ const runOneTurn = async ({
     }
     // Persist snapshots separately from totals so reconnects retain the latest
     // context size, including decreases after compaction, in every run mode.
-    const handleEvent = (event) => {
-      if (event.type === 'model_request' && requestMetrics) {
-        requestMetrics.observe(event)
-        onEvent?.({ ...event, segmentId: requestMetrics.segmentId, providerRunId: event.runId })
-        publishRequestMetrics()
+    const handleEvent = (event, collector = requestMetrics) => {
+      if (['model_request', 'model_request_evidence'].includes(event.type) && collector) {
+        if (!collector.observe(event)) return
+        onEvent?.({ ...event, segmentId: collector.segmentId, providerRunId: event.providerRunId ?? event.runId })
+        publishRequestMetrics(undefined, collector)
         return
       }
       if (event.type === 'provider_settings') {
@@ -251,9 +252,9 @@ const runOneTurn = async ({
     if (terse) firstSendOptions.terse = true
     // Codex and Grok drop their transport when a cancel overruns its grace
     // period, so a follow-up send may need a fresh driver on the same agent.
-    const sendFollowUp = async (text) => {
+    const sendFollowUp = async (text, options) => {
       try {
-        return await driver.send(text, sendOptions)
+        return await driver.send(text, options)
       } catch (err) {
         if (signal?.aborted) throw err
         try {
@@ -265,7 +266,7 @@ const runOneTurn = async ({
         await driver.resume(providerAgentId, settings)
         if (nativeFork && driver.providerAgentId() !== providerAgentId) throw new Error('Native fork reconnect returned a different provider thread')
         providerAgentId = driver.providerAgentId() || providerAgentId
-        return driver.send(text, sendOptions)
+        return driver.send(text, options)
       }
     }
 
@@ -286,10 +287,13 @@ const runOneTurn = async ({
       }
       // A segment is an SDK send, not a model request. Persist even unsupported
       // and interrupted segments so a later steer cannot conceal missing usage.
-      requestMetrics = createRequestMetrics({ provider: session.provider, segmentId: crypto.randomUUID() })
+      requestMetrics = createRequestMetrics({ provider: session.provider, segmentId: crypto.randomUUID(), startedAt: segmentStart })
       requestMetricsOpen = true
       publishRequestMetrics()
-      const inflight = firstSend ? await driver.send(sendText, firstSendOptions) : await sendFollowUp(sendText)
+      const collector = requestMetrics
+      const options = { ...(firstSend ? firstSendOptions : sendOptions), evidenceSegmentId: collector.segmentId,
+        onEvent: event => handleEvent(event, collector) }
+      const inflight = firstSend ? await driver.send(sendText, options) : await sendFollowUp(sendText, options)
       historySent = true
       if (historyObserved) markHistorySeeded()
       firstSend = false

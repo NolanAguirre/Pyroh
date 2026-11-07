@@ -11,14 +11,14 @@ const capabilities = {
     limitation: 'Matches result.usage (main loop only). Native subagents, sidechains, helpers and hidden calls are outside this scope; retries without a completed response are not counted.',
   },
   codex: {
-    support: 'unsupported', scope: 'provider_run',
-    provenance: 'codex app-server: thread/tokenUsage/updated {threadId, turnId, tokenUsage: {total, last, modelContextWindow}}',
-    limitation: 'No model-response ID or guaranteed one-notification-per-request boundary. Cumulative/last snapshots and item IDs cannot establish a request count.',
+    support: 'partial', scope: 'provider_run',
+    provenance: 'codex app-server token snapshots; opt-in OTLP API/SSE/WebSocket event records',
+    limitation: 'Snapshots are not requests. Telemetry can be delayed, dropped or missing response/turn identity; API attempts and stream events are not unique completed model responses. Exact counts and request averages remain unknown.',
   },
   cursor: {
-    support: 'unsupported', scope: 'provider_run',
-    provenance: '@cursor/sdk: SDKUsageMessage from turn-ended; RunResult.usage sums reported agent turns',
-    limitation: 'Public messages omit internal modelCallId and step boundaries. request_id identifies the SDK run execution; turn-ended usage can cover multiple model calls.',
+    support: 'partial', scope: 'main_agent_loop',
+    provenance: '@cursor/sdk onDelta: top-level tool modelCallId; stepId/stepDurationMs; turn-ended usage',
+    limitation: 'Tool-linked modelCallIds are partial observations: calls without tools may be absent. Steps and SDK requestId are not model requests; step durations are not request latency. Nested task updates are excluded. Per-request usage and final response boundaries are unavailable.',
   },
 }
 
@@ -26,19 +26,37 @@ const totalUsage = (rows) => Object.fromEntries(tokenFields.map(key => [key, row
   ? sum(rows.map(row => row?.[key])) : null]))
 
 // One collector per harness steering segment. Snapshots replace by response ID.
-const createRequestMetrics = ({ provider, segmentId }) => {
+const createRequestMetrics = ({ provider, segmentId, startedAt = Date.now() }) => {
   const capability = capabilities[provider] || { support: 'unsupported', scope: 'provider_run',
     provenance: provider, limitation: 'No model-request instrumentation for this provider.' }
   const requests = new Map()
+  const evidence = new Map()
+  let finalResult = null
+  let endedAt = null
   const observe = (event) => {
-    if (event.provider !== provider || !event.requestId || event.parentToolUseId) return
-    const previous = requests.get(event.requestId)
+    if (event.provider !== provider || event.parentToolUseId || event.nested) return false
+    if (event.type === 'model_request_evidence') {
+      if (!event.evidenceId) return false
+      evidence.set(event.evidenceId, { ...event, observedAt: event.observedAt ?? Date.now() })
+      return true
+    }
+    if (!event.requestId) return false
+    // Cursor IDs belong to one send. Claude message IDs identify a response
+    // across streaming snapshots and steering segments.
+    const requestKey = JSON.stringify([provider, provider === 'claude' ? 'message'
+      : event.evidenceScopeId || event.providerRunId || event.runId || segmentId, event.requestId])
+    const previous = requests.get(requestKey)
     // A late block snapshot must not replace final streaming usage.
     if (previous?.status === 'completed' && event.status !== 'completed'
-      && event.provenance !== 'messages_api_stream') return
-    requests.set(event.requestId, event)
+      && event.provenance !== 'messages_api_stream') return false
+    const observedAt = event.observedAt ?? Date.now()
+    requests.set(requestKey, { ...previous, ...event, requestKey,
+      firstObservedAt: previous?.firstObservedAt ?? observedAt, lastObservedAt: observedAt })
+    return true
   }
   const snapshot = (result) => {
+    if (result) { finalResult = result; endedAt = endedAt ?? Date.now() }
+    result = finalResult
     const rows = [...requests.values()]
     const completed = rows.filter(row => row.status === 'completed')
     const coveredUsage = totalUsage(completed.map(row => row.usage))
@@ -49,17 +67,24 @@ const createRequestMetrics = ({ provider, segmentId }) => {
       && rows.length > 0 && completed.length === rows.length
       && matchedFields.includes('inputTokens') && matchedFields.includes('outputTokens')
       && (reportedCount === null || reportedCount === rows.length)
-    const reason = capability.support === 'unsupported' ? capability.limitation
+    const reason = capability.support !== 'supported' ? capability.limitation
       : !result ? 'Request stream is still open.'
       : result.status !== 'completed' ? 'Interrupted or failed segment; request coverage is incomplete.'
       : !rows.length ? 'No identified model responses were observed.'
       : completed.length !== rows.length ? 'Some responses lack a final boundary.'
       : reportedCount !== null && reportedCount !== rows.length ? 'Observed responses do not match provider-reported model round trips.'
       : !complete ? 'Request input/output does not reconcile with authoritative segment usage.' : null
-    return { version: 1, provider, segmentId, ...capability,
+    const records = [...evidence.values()]
+    const times = [...rows.flatMap(row => [row.firstObservedAt, row.lastObservedAt]), ...records.map(row => row.observedAt)].filter(number)
+    return { version: 2, provider, segmentId, ...capability, startedAt, endedAt,
       coverage: complete ? 'complete' : capability.support === 'unsupported' ? 'unsupported' : 'partial',
-      requests: complete ? rows.length : null, observedRequests: rows.length,
+      requests: complete ? rows.length : null, estimatedRequests: null,
+      observedRequests: rows.length || (provider === 'claude' || records.some(row => row.kind === 'capture_started') ? 0 : null),
       completedRequests: completed.length, requestIds: rows.map(row => row.requestId),
+      requestKeys: rows.map(row => row.requestKey), requestRecords: rows, evidence: records,
+      telemetryCaptures: [...new Set(records.map(row => row.captureId).filter(Boolean))],
+      firstObservedAt: times.length ? Math.min(...times) : null,
+      lastObservedAt: times.length ? Math.max(...times) : null,
       coveredUsage, matchedFields: complete ? matchedFields : [], reportedModelRequests: reportedCount,
       status: result?.status || 'running', reason }
   }
@@ -67,14 +92,17 @@ const createRequestMetrics = ({ provider, segmentId }) => {
 }
 
 const summarizeRequestMetrics = (segments) => {
-  const identities = segments.flatMap(segment => (segment.requestIds || []).map(id => `${segment.provider}:${id}`))
+  const identities = segments.flatMap(segment => segment.requestKeys
+    || (segment.requestIds || []).map(id => JSON.stringify([segment.provider, segment.provider === 'claude' ? 'message' : segment.segmentId, id])))
   const unique = new Set(identities)
   const duplicate = unique.size !== identities.length
   const complete = segments.length > 0 && !duplicate && segments.every(segment => segment.coverage === 'complete')
-  return { version: 1, coverage: complete ? 'complete'
+  return { version: 2, coverage: complete ? 'complete'
     : segments.length && segments.every(segment => segment.coverage === 'unsupported') ? 'unsupported' : 'partial',
   requests: complete ? sum(segments.map(segment => segment.requests)) : null,
-  observedRequests: unique.size, coveredUsage: totalUsage(segments.map(segment => segment.coveredUsage)),
+  estimatedRequests: null,
+  observedRequests: segments.some(segment => number(segment.observedRequests)) ? unique.size : null,
+  coveredUsage: totalUsage(segments.map(segment => segment.coveredUsage)),
   matchedFields: complete ? tokenFields.filter(key => segments.every(segment => segment.matchedFields?.includes(key))) : [],
   reason: duplicate ? 'A response ID appeared in multiple steering segments; ownership is ambiguous.' : null,
   segments }

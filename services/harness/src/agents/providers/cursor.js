@@ -271,8 +271,52 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
       try { emit(event) } catch (err) { streamError = streamError || errorMessage(err) }
     }
     notify({ type: 'provider_prompt', text, options, providerAgentId: providerAgentId() })
+    // Callbacks may precede send() resolving. Keep one stable identity scope
+    // rather than changing dedupe keys when the SDK run ID becomes available.
+    const evidenceScopeId = crypto.randomUUID()
+    let evidenceRunId = null
+    let evidenceSequence = 0
+    const seenEvidence = new Set()
+    const evidence = (event) => notify({ version: 2, provider: 'cursor', evidenceScopeId,
+      providerAgentId: providerAgentId(), providerRunId: evidenceRunId,
+      observedAt: Date.now(), ...event })
+    evidence({ type: 'model_request_evidence', kind: 'capture_started',
+      evidenceId: `${evidenceScopeId}:capture`, provenance: '@cursor/sdk:onDelta' })
+    options.onDelta = ({ update }) => {
+      if (!update || typeof update !== 'object') return
+      const { type, modelCallId, callId, stepId, stepDurationMs } = update
+      if (['tool-call-started', 'tool-call-completed', 'partial-tool-call', 'tool-call-delta'].includes(type)) {
+        if (typeof modelCallId !== 'string' || !modelCallId) return
+        const key = JSON.stringify([type, modelCallId, callId])
+        if (seenEvidence.has(key)) return
+        seenEvidence.add(key)
+        // Only the outer envelope belongs to this agent. taskUpdate contains
+        // native subagent evidence and is deliberately not traversed.
+        evidence({ type: 'model_request', requestId: modelCallId, status: 'observed',
+          eventType: type, toolCallId: callId, usage: null,
+          provenance: '@cursor/sdk:onDelta.modelCallId',
+          timingSemantics: 'tool_event_observed; not model start/completion' })
+      } else if (type === 'step-started' || type === 'step-completed') {
+        if (!Number.isSafeInteger(stepId) || stepId < 0) return
+        const key = `${type}:${stepId}`
+        if (seenEvidence.has(key)) return
+        seenEvidence.add(key)
+        evidence({ type: 'model_request_evidence', kind: 'step', eventType: type, stepId,
+          evidenceId: `${evidenceScopeId}:${key}`,
+          durationMs: Number.isFinite(stepDurationMs) && stepDurationMs >= 0 ? stepDurationMs : null,
+          provenance: '@cursor/sdk:onDelta', timingSemantics: 'conversation_step; not model request latency' })
+      } else if (type === 'turn-ended') {
+        evidence({ type: 'model_request_evidence', kind: 'turn_usage', eventType: type,
+          evidenceId: `${evidenceScopeId}:turn:${++evidenceSequence}`,
+          usage: update.usage || null, provenance: '@cursor/sdk:onDelta',
+          timingSemantics: 'agent_turn_observed; may contain multiple model calls' })
+      }
+    }
     const run = await agent.send(text, options)
     const runId = run.id || null
+    evidenceRunId = runId
+    evidence({ type: 'model_request_evidence', kind: 'provider_run',
+      evidenceId: `${evidenceScopeId}:run`, provenance: '@cursor/sdk:Run.id' })
     notify({ type: 'status', status: 'running', runId })
 
     const segment = { kind: null, seq: 0 }

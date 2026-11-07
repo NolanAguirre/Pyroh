@@ -9,6 +9,7 @@ const { startMaintenance } = require('./maintenance')
 const createApp = () => {
   const app = express()
   app.use(express.json({ limit: '4mb' }))
+  app.post('/api/provider-telemetry/codex/:captureId/v1/logs', require('../agents/providers/codexTelemetry').receive)
   app.use('/mcp/agents', require('./delegationMcp'))
   app.use('/api/analytics', analyticsRoutes)
   app.use('/api', routes)

@@ -60,6 +60,9 @@ const config = {
   claudeBin: (process.env.HARNESS_CLAUDE_BIN || '').trim() ? expandHome(process.env.HARNESS_CLAUDE_BIN.trim()) : null,
   codexHome: process.env.HARNESS_CODEX_HOME ? path.resolve(expandHome(process.env.HARNESS_CODEX_HOME)) : null,
   codexApiKey: (process.env.HARNESS_CODEX_API_KEY || '').trim(),
+  // Opt this harness's app-server processes into local request evidence export.
+  // Uses the existing API via publicUrl/nginx; no separate listener or port.
+  codexRequestTelemetry: process.env.HARNESS_CODEX_REQUEST_TELEMETRY !== '0',
   host: process.env.HOST || '0.0.0.0',
   port,
   // Unset disables automatic chat naming.
