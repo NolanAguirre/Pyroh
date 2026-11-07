@@ -226,6 +226,41 @@
   margin: 6px 0 0;
 }
 
+.registry__prompts-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1 1 280px;
+  justify-content: flex-end;
+}
+
+.registry__prompt-search {
+  flex: 1 1 240px;
+  min-width: 200px;
+  max-width: 480px;
+}
+
+.registry__prompt-search .form-search {
+  width: 100%;
+}
+
+.registry__prompt-search .form-search__input {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  font-size: 12px;
+  border-radius: 4px;
+  color: var(--text);
+  background: var(--bg);
+  border-color: var(--border);
+}
+
+.registry__search-hit {
+  background: color-mix(in srgb, var(--accent, #eab308) 45%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+
 .registry__prompt-families {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(580px, 100%), 1fr));

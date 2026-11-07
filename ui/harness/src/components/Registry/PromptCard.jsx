@@ -14,10 +14,33 @@ import {
 } from 'component-library'
 import api from '../../api'
 
-const Template = ({ template }) => (
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const highlightText = (text, query) => {
+  const parts = query.trim().split(/\s+/).filter(Boolean)
+  if (!parts.length || !text) return text
+  const pattern = new RegExp(parts.map(escapeRegExp).join('\\s+'), 'gi')
+  const nodes = []
+  let cursor = 0
+  let key = 0
+  let match = pattern.exec(text)
+  while (match) {
+    if (match.index > cursor) nodes.push(text.slice(cursor, match.index))
+    nodes.push(<mark key={key} className="registry__search-hit">{match[0]}</mark>)
+    key += 1
+    cursor = match.index + match[0].length
+    if (match[0].length === 0) pattern.lastIndex += 1
+    match = pattern.exec(text)
+  }
+  if (!nodes.length) return text
+  if (cursor < text.length) nodes.push(text.slice(cursor))
+  return nodes
+}
+
+const Template = ({ template, query = '' }) => (
   <pre className="registry__prompt">
     {template === '' ? '(Empty template)' : template.split(/(\{\{\w+\}\})/g).map((part, index) => (
-      index % 2 ? <mark key={index} className="registry__var">{part}</mark> : part
+      index % 2 ? <mark key={index} className="registry__var">{highlightText(part, query)}</mark> : highlightText(part, query)
     ))}
   </pre>
 )
@@ -29,7 +52,7 @@ const versionStatus = (version) => {
   return version.customized ? 'Built-in variant' : 'Inherits shared default'
 }
 
-const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange }) => {
+const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange, query = '' }) => {
   const { provider, model, mode } = scope
   const mounted = useRef(false)
   const [open, setOpen] = useState(false)
@@ -52,6 +75,10 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange 
       onBusyChange(prompt.id, false)
     }
   }, [prompt.id, onBusyChange])
+
+  useEffect(() => {
+    if (query.trim()) setOpen(true)
+  }, [query])
 
   const edit = () => {
     onBusyChange(prompt.id, true)
@@ -137,7 +164,7 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange 
                     {prompt.vars.map((item) => <li key={item.name}><code>{`{{${item.name}}}`}</code> {item.description}</li>)}
                   </ul>}
                   <DevScope id="dx7104n" state={{ editing: draft != null }}>
-                    {draft == null ? <Template template={selected.template} /> : <>
+                    {draft == null ? <Template template={selected.template} query={query} /> : <>
                       <div className="registry__prompt-applicability" role="group" aria-label={`${prompt.name}: ${scopeName} incoming message targets`}>
                         <strong>Incoming message targets</strong>
                         {['user', 'agent'].map((type) => (
