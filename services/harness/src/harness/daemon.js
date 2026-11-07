@@ -336,8 +336,9 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
       if (!def) throw new Error(`plugin mode ${id} is unavailable`)
       registry.assertCompatiblePlugin(plugin, def)
       if (def.onComplete) {
-        const sourceSession = session.sourceSessionId
-          ? harness.sessions.inspect(session.sourceSessionId) : session
+        const sourceSessionId = plugin?.sourceSessionId || (def.newSession ? session.sourceSessionId : session.id)
+        const sourceSession = sourceSessionId && sourceSessionId !== session.id
+          ? harness.sessions.inspect(sourceSessionId) : session
         const options = plugin?.options || (sourceRun?.handoff ? {
           provider: sourceRun.handoff.provider, model: sourceRun.handoff.model, targetMode: sourceRun.handoff.mode,
         } : {})

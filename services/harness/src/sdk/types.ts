@@ -144,7 +144,7 @@ export interface PluginDefinition {
   getModes(api: HarnessApi): PluginMode[]
   policy?: (ctx: PolicyContext) => { effect: Effect; reason?: string } | null | void
 }
-export interface SessionTarget { provider: string; model: string | null; mode?: string }
+export interface SessionTarget { provider: string; model: string | null; mode: string }
 export interface SessionOptions {
   provider?: string | null
   model?: string | null
@@ -188,6 +188,7 @@ export interface HarnessApi {
 }
 export interface SavedModeDescriptor extends Omit<ModeBehavior, 'instructions'> {
   id: string
+  sourceSessionId?: string
   base: CoreMode
   kind?: 'plugin' | 'workflow'
   manifest?: PluginManifest

@@ -30,9 +30,9 @@ const sharedPrompt = (entry, mode) => {
   return Object.values(prompts).find((text) => typeof text === 'string' && text) || ''
 }
 
-// Replies stay in the mode the session was spawned in. Decompose is a pipeline, not a reply.
+// Workflow controllers reply through Execute. Keep the legacy saved-mode fallback.
 export const replyMode = (session) =>
-  session?.mode && session.mode !== 'decompose' ? session.mode : 'agent'
+  session?.mode && !session.workflowPlugin && session.mode !== 'decompose' ? session.mode : 'agent'
 
 export const loadComposer = (sessionId, fallbackMode) => {
   const entry = sessionId ? readDrafts()[sessionId] : null

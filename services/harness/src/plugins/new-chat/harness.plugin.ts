@@ -12,11 +12,12 @@ export default definePlugin({
     sendLabel: 'Continue in new chat',
     placeholder: 'Optional focus for the handoff summary…',
     buildPrompt: async (ctx, api) => {
-      await api.sessions.resolveTarget(ctx.sourceSession.id, {
+      const target = await api.sessions.resolveTarget(ctx.sourceSession.id, {
         provider: ctx.options.provider,
         model: ctx.options.model,
         mode: ctx.options.targetMode,
       })
+      Object.assign(ctx.options, { provider: target.provider, model: target.model, targetMode: target.mode })
       return api.prompts.render('newChat', {
         focus: await api.prompts.focus(ctx.prompt, ctx.session, 'new-chat', ctx.promptProvenance),
       }, ctx.session, 'new-chat', ctx.promptProvenance)

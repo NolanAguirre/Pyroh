@@ -72,7 +72,11 @@ export const validatePipeline = (value: unknown): PhasePipeline => {
       string(step.promptKey, `${stepId}.promptKey`, true)
       if (step.label !== undefined) string(step.label, `${stepId}.label`, true)
       if (step.requiresPlan !== undefined && typeof step.requiresPlan !== 'boolean') throw validationError(`${stepId}.requiresPlan must be a boolean`)
-      if (step.write !== undefined) string(step.write, `${stepId}.write`, true)
+      if (step.write !== undefined) {
+        const filename = string(step.write, `${stepId}.write`, true)
+        if (!/^[a-z0-9][a-z0-9_.-]*$/i.test(filename)) throw validationError(`${stepId}.write must be a filename`)
+        if (filename === `${stepId}.json` || filename === `${stepId}.prompt.txt`) throw validationError(`${stepId}.write conflicts with its step record`)
+      }
       if (step.parse !== undefined && typeof step.parse !== 'function') throw validationError(`${stepId}.parse must be a function`)
       if (step.outputSchema !== undefined) validateJson(record(step.outputSchema, `${stepId}.outputSchema`), `${stepId}.outputSchema`)
     }
@@ -124,6 +128,7 @@ export const definePlugin = <T extends PluginDefinition>(plugin: T): T => {
 export const validateSavedDescriptor = (value: unknown): SavedModeDescriptor => {
   const input = record(value, 'saved mode descriptor')
   id(input.id, 'saved mode descriptor.id')
+  if (input.sourceSessionId !== undefined) string(input.sourceSessionId, 'saved mode descriptor.sourceSessionId', true)
   if (!CORE_MODES.includes(input.base as CoreMode)) throw validationError('saved mode descriptor.base must be a core mode')
   validateBehavior(input)
   if (input.instructions != null) string(input.instructions, 'saved mode descriptor.instructions')

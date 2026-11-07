@@ -18,6 +18,7 @@ const { isDelegatedChild, detachDelegation } = require('../store/delegationBound
 
 const workflowMode = (session) => {
   if (!session?.mode) return null
+  if (['agent', 'ask', 'plan'].includes(session.mode)) return null
   const entry = registry.findMode(registry.sessionWorkspace(session), session.mode)
   return entry?.pipeline ? entry : null
 }
@@ -279,7 +280,7 @@ const preparePluginTurn = async (source, plugin, harness, options = {}) => {
   return {
     session, prompt: text,
     promptProvenance: typeof built === 'string' ? options.promptProvenance : built,
-    plugin: { ...registry.turnDescriptor(plugin, instructions), options },
+    plugin: { ...registry.turnDescriptor(plugin, instructions), sourceSessionId: source.id, options },
   }
 }
 
@@ -319,7 +320,7 @@ const run = async (sessionId, input = {}) => {
   require('./delegation').assertChildRun(source, mode, { userFollowup: true })
   if (runAfterSessionId != null && runAfterSessionId !== '') {
     const outcome = require('./runAfter').enqueue(source, { prompt, mode, runAfterSessionId, promptProvenance })
-    if (outcome) return outcome
+    if (outcome) return { sessionId, mode, ...outcome }
   }
   if (repliesInPlace(source, entry)) {
     const plugin = entry.kind === 'plugin' ? lastPluginRun(sessionId, mode) || registry.turnDescriptor(entry) : undefined

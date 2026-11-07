@@ -373,7 +373,7 @@ const runPipelineDaemon = async ({ sessionId, mode, resume = false }) => {
     }, writeDir)
     sessionStore.updateSession(
       sessionId,
-      { mode, status: 'running', lastError: null },
+      { mode, workflowPlugin: registry.turnDescriptor(entry), status: 'running', lastError: null },
       writeDir,
     )
     logLine(`${resume ? 'resuming' : 'starting'} ${mode} pipeline`)

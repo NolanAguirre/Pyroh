@@ -45,7 +45,7 @@ export default definePlugin({
           additionalProperties: false,
         },
         parse: parsePhaseCount,
-        write: 'count.json',
+        write: 'count-output.json',
       }],
       eachPhase: [{
         id: 'plan',
