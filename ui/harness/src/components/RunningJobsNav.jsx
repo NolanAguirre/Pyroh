@@ -73,15 +73,17 @@ const RunningJobsNav = ({
     return (
       <DevScope id={devId} state={{ count: jobs.length, collapsed: true }}>
         <aside className="jobs-nav jobs-nav--collapsed">
-          <button
-            type="button"
-            className="jobs-nav__collapsed-btn"
-            onClick={() => setCollapsed(false)}
-            title="Expand Jobs panel"
-          >
-            <span className="jobs-nav__collapsed-text">Jobs</span>
-            <Badge size="small" variant={activeJobs.length > 0 ? 'info' : 'neutral'} count={activeJobs.length || jobs.length} showZero />
-          </button>
+          <DevScope id="sec5v5m" state={{ count: jobs.length, running: activeJobs.length > 0 }}>
+            <button
+              type="button"
+              className="jobs-nav__collapsed-btn"
+              onClick={() => setCollapsed(false)}
+              title="Expand Jobs panel"
+            >
+              <span className="jobs-nav__collapsed-text">Jobs</span>
+              <Badge size="small" variant={activeJobs.length > 0 ? 'info' : 'neutral'} count={activeJobs.length || jobs.length} showZero />
+            </button>
+          </DevScope>
         </aside>
       </DevScope>
     )
@@ -90,52 +92,60 @@ const RunningJobsNav = ({
   return (
     <DevScope id={devId} state={{ count: jobs.length, session: activeId, collapsed: false }}>
       <aside className="jobs-nav">
-        <div className="jobs-nav__filter-bar">
-          <button
-            type="button"
-            className={`jobs-nav__tab${!filterActiveOnly ? ' jobs-nav__tab--active' : ''}`}
-            onClick={() => setFilterActiveOnly(false)}
-          >
-            All ({jobs.length})
-          </button>
-          <button
-            type="button"
-            className={`jobs-nav__tab${filterActiveOnly ? ' jobs-nav__tab--active' : ''}`}
-            onClick={() => setFilterActiveOnly(true)}
-          >
-            Active ({activeJobs.length})
-          </button>
-          <div className="jobs-nav__header-actions">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setCollapsed(true)}
-              devId="b1f6n8q"
-              title="Collapse panel"
-            >
-              →
-            </Button>
-          </div>
-        </div>
-
-        <div className="jobs-nav__list">
-          {displayedJobs.length === 0 && (
-            <DevScope id="hr9q4t0">
-              <div className="jobs-nav__empty">
-                <p className="hint">{filterActiveOnly ? 'No active background jobs.' : 'No recent jobs.'}</p>
-              </div>
+        <DevScope id="a541bhg" state={{ active: filterActiveOnly }}>
+          <div className="jobs-nav__filter-bar">
+            <DevScope id="rjd0q3g" state={{ selected: !filterActiveOnly, count: jobs.length }}>
+              <button
+                type="button"
+                className={`jobs-nav__tab${!filterActiveOnly ? ' jobs-nav__tab--active' : ''}`}
+                onClick={() => setFilterActiveOnly(false)}
+              >
+                All ({jobs.length})
+              </button>
             </DevScope>
-          )}
-          {displayedJobs.map((job) => (
-            <JobRow
-              key={job.id}
-              job={job}
-              workspaceName={nameById[job.workspaceId] || job.cwd}
-              active={job.id === activeId}
-              onSelect={onSelect}
-            />
-          ))}
-        </div>
+            <DevScope id="ugtnyfv" state={{ selected: filterActiveOnly, count: activeJobs.length }}>
+              <button
+                type="button"
+                className={`jobs-nav__tab${filterActiveOnly ? ' jobs-nav__tab--active' : ''}`}
+                onClick={() => setFilterActiveOnly(true)}
+              >
+                Active ({activeJobs.length})
+              </button>
+            </DevScope>
+            <div className="jobs-nav__header-actions">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCollapsed(true)}
+                devId="b1f6n8q"
+                title="Collapse panel"
+              >
+                →
+              </Button>
+            </div>
+          </div>
+        </DevScope>
+
+        <DevScope id="8gz83r1" state={{ count: displayedJobs.length, active: filterActiveOnly }}>
+          <div className="jobs-nav__list">
+            {displayedJobs.length === 0 && (
+              <DevScope id="hr9q4t0">
+                <div className="jobs-nav__empty">
+                  <p className="hint">{filterActiveOnly ? 'No active background jobs.' : 'No recent jobs.'}</p>
+                </div>
+              </DevScope>
+            )}
+            {displayedJobs.map((job) => (
+              <JobRow
+                key={job.id}
+                job={job}
+                workspaceName={nameById[job.workspaceId] || job.cwd}
+                active={job.id === activeId}
+                onSelect={onSelect}
+              />
+            ))}
+          </div>
+        </DevScope>
         {terminal && <div className="jobs-nav__terminal">{terminal}</div>}
       </aside>
     </DevScope>
