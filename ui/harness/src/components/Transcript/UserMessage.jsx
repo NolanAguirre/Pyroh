@@ -47,7 +47,7 @@ const UserMessage = ({ event }) => {
   }
 
   return (
-    <DevScope id="hr9k4u2" state={{ runId: event.runId, queued: Boolean(dependency) }}>
+    <DevScope id="hr9k4u2" state={{ runId: event.runId, queued: Boolean(dependency), captured: Boolean(captured), answer: Boolean(event.answer), steer: Boolean(event.steer) }}>
       <div className="tx tx--user">
         <div className="tx__user-header">
           <span className="tx__user-tag">{captured ? 'Agent prompt' : 'You'}</span>
@@ -55,7 +55,7 @@ const UserMessage = ({ event }) => {
           {event.answer && <span className="tx__steer-tag">Answer</span>}
           {event.steer && <span className="tx__steer-tag">Steer</span>}
           {dependency && <span className="tx__steer-tag">Queued</span>}
-          <DevScope id="k3w8n1p">
+          <DevScope id="k3w8n1p" state={{ copied }}>
             <button
               type="button"
               className="tx__user-copy"
@@ -67,21 +67,25 @@ const UserMessage = ({ event }) => {
             </button>
           </DevScope>
         </div>
-        {captured ? <ProviderPrompt prompt={captured} /> : <div className="tx__user-body">{text}</div>}
+        {captured ? <ProviderPrompt prompt={captured} devId="md9l4wi" /> : <div className="tx__user-body">{text}</div>}
         {!captured && !dependency && (event.runPrompt || event.steer) && (
-          <p className="tx__prompt-note">Saved message. The full agent prompt has not been captured.</p>
+          <DevScope id="8yxr6ek" state={{ runPrompt: Boolean(event.runPrompt) }}>
+            <p className="tx__prompt-note">Saved message. The full agent prompt has not been captured.</p>
+          </DevScope>
         )}
         {dependency && (
-          <div className="tx__user-after">
-            <span className="tx__user-after-label">
-              After {dependency.sessionTitle || dependency.sessionId || 'session'}
-            </span>
-            {href ? (
-              <DevScope id="l5s8n2q" state={{ session: dependencySessionId(event) }}>
-                <a className="tx__user-after-load" href={href}>Load session</a>
-              </DevScope>
-            ) : null}
-          </div>
+          <DevScope id="qb25om0" state={{ session: dependency.sessionId || '', load: Boolean(href) }}>
+            <div className="tx__user-after">
+              <span className="tx__user-after-label">
+                After {dependency.sessionTitle || dependency.sessionId || 'session'}
+              </span>
+              {href ? (
+                <DevScope id="l5s8n2q" state={{ session: dependencySessionId(event) }}>
+                  <a className="tx__user-after-load" href={href}>Load session</a>
+                </DevScope>
+              ) : null}
+            </div>
+          </DevScope>
         )}
       </div>
     </DevScope>

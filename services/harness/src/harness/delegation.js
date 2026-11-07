@@ -521,11 +521,9 @@ const guidance = (provider, child = false, { session, canDelegate: enabled, mode
   const allowed = enabled ?? (session ? canSpawn(session) : !child && maxDepth > 0)
   const prompts = require('../prompts')
   const context = { model: model || require('../prompt/context').sessionModel(session), mode: mode ?? session?.mode }
-  const depth = session ? `This session is at depth ${session.depth}. ` : ''
-  const limit = `${depth}The current maximum subagent depth is ${maxDepth}; root sessions are depth 0. Each child is one level deeper. The harness checks the current limit at every spawn.`
-  if (!allowed) return `${prompts.text('delegationChild', provider, context)}\n${limit}\nDelegation is unavailable for this turn. Finish the assigned work yourself.`
-  const scope = child ? 'You are a harness child. Stay within your assigned question, context, scope, expected output, and stopping point. You may delegate bounded parts of that task through harness_agents within the depth limit. Return your result to your parent after your child work is complete; do not expand into adjacent work.' : ''
-  return [scope, prompts.text('delegationParent', provider, context), limit].filter(Boolean).join('\n\n')
+  if (!allowed) return prompts.text('delegationChild', provider, context)
+  const scope = child ? 'Stay within your assigned task. Return findings to your parent after any child work finishes, then stop.' : ''
+  return [scope, prompts.text('delegationParent', provider, context)].filter(Boolean).join('\n\n')
 }
 
 const withDeliveryLock = (sessionId, fn) => withLock(sessionId, 'delivery', fn)
