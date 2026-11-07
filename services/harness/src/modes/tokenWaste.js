@@ -18,10 +18,10 @@ const transcriptDirectories = (sessionId, writeDir) => {
   return directories
 }
 
-const buildPrompt = (sessionId, focus, writeDir, provider) => prompts.render('tokenWaste', {
+const buildPrompt = (sessionId, focus, writeDir, provider, context = {}) => prompts.render('tokenWaste', {
   sessionId,
   directories: prompts.directoryLines(transcriptDirectories(sessionId, writeDir)),
-  focus: prompts.focusBlock(focus, provider),
-}, provider)
+  focus: prompts.focusBlock(focus, provider, context),
+}, provider, context)
 
 module.exports = { MODE, NAME, buildPrompt, transcriptDirectories }

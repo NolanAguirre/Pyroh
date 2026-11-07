@@ -4,7 +4,7 @@
 // (Cursor SDK, Claude, ...). The daemon owns exactly one driver per process.
 //
 // Driver shape:
-//   create({ model, cwd, mode, tools }) -> Promise<void>
+//   create({ model, cwd, mode, logicalMode?, tools }) -> Promise<void>
 //     Start a fresh agent. `tools` is the SDK built-in tool list (`[]` = text-only).
 //     Harness tools go to createDriver({ tools: { list, askUser?, mcpServers? } }):
 //     `list` is the registry tool ids allowed this turn, and a tool's callback is
@@ -12,7 +12,7 @@
 //     mechanism (custom tool, dynamic tool, permission flow); the registry does
 //     the gating. `mcpServers` is [{ name, url }] of streamable HTTP MCP servers
 //     each driver converts to its provider's config and auto-approves.
-//   resume(providerAgentId, { model, cwd, mode, tools }) -> Promise<void>
+//   resume(providerAgentId, { model, cwd, mode, logicalMode?, tools }) -> Promise<void>
 //     Rehydrate an existing agent by its provider-specific id and restore settings.
 //   fork(sourceProviderAgentId, { model, cwd, mode, tools, childProviderAgentId? })
 //     -> Promise<string>
@@ -29,13 +29,14 @@
 //     inherited provider totals are context/baseline, not new billable usage.
 //   resolvedSettings?() -> { model?, reasoningEffort? }
 //     Capture provider-selected defaults so forks keep the source's actual model.
-//   send(prompt, { mode, onEvent, outputSchema?, terse? }) -> Promise<{ cancel, wait }>
+//   send(prompt, { mode, logicalMode?, onEvent, outputSchema?, terse? }) -> Promise<{ cancel, wait }>
 //     Kick off a run. `onEvent(event)` receives normalized events as they stream.
 //     `cancel()` cancels the in-flight run. `wait()` resolves the terminal result:
 //       { status, result, usage, durationMs, error }
 //     `mode` is one of modes.AGENT_MODES. Each driver maps it to the provider's
 //     native mode or emulates it through the provider mode registry. Ask
 //     restrictions depend on the provider; Codex permits shell reads by prompt.
+//     `logicalMode` retains the requested plugin/special mode for prompt lookup.
 //     `terse` prefixes modes.tersePrompt(). The caller sets it on the first prompt
 //     of an execute, ask, plan, or token-waste session.
 //   listModels() -> Promise<Array<{ id, displayName? }>>

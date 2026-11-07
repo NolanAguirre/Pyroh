@@ -1,5 +1,6 @@
 const config = require('../config')
 const prompts = require('../prompts')
+const { sessionContext } = require('./context')
 const { DEVID_SERVER_NAME } = require('../agents/driver')
 
 // Server-side effects for triggers found by `findTriggers`, keyed by trigger
@@ -35,7 +36,7 @@ const actions = {
     },
     prepend: async (session) => {
       if (!config.devIdMcpUrl || !session.workspaceId) return null
-      return prompts.render('devIds', { ids: await prefetchDevIds(session) }, session.provider)
+      return prompts.render('devIds', { ids: await prefetchDevIds(session) }, session.provider, sessionContext(session))
     },
   },
 }

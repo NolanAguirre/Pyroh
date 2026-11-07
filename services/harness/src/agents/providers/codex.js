@@ -27,9 +27,9 @@ const sandboxTypes = { 'read-only': 'readOnly', 'workspace-write': 'workspaceWri
 const approvalTypes = { 'on-request': 'on-request', never: 'never', untrusted: 'untrusted' }
 const approvalFor = (mode, configured) => approvalTypes[providerMode('codex', mode).approvalPolicy || configured]
 const ASK_TOOL_NAME = 'harness_ask_user'
-const askTool = () => ({
+const askTool = (context = {}) => ({
   name: ASK_TOOL_NAME,
-  description: prompts.text('askUserCodex', 'codex'),
+  description: prompts.text('askUserCodex', 'codex', context),
   inputSchema: {
     type: 'object', properties: {
       question: { type: 'string' }, options: { type: 'array', items: { type: 'string' } },
@@ -340,7 +340,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
         ...(tools.disableNativeSpawning ? { 'features.multi_agent': false } : {}),
         ...(harnessMcp.length ? { mcp_servers: Object.fromEntries(harnessMcp.map((server) => [server.name, { url: server.url }])) } : {}),
       },
-      dynamicTools: typeof tools.askUser === 'function' ? [askTool()] : [],
+      dynamicTools: typeof tools.askUser === 'function' ? [askTool({ model, mode: settings.logicalMode || settings.mode || 'agent' })] : [],
     }
     if (method === 'thread/fork') {
       // Fork inherits persisted dynamic tools; the fork RPC does not accept a
@@ -390,7 +390,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     }
   }
 
-  const send = async (prompt, { mode = 'agent', onEvent, outputSchema, terse = false, instructions } = {}) => {
+  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, outputSchema, terse = false, instructions } = {}) => {
     if (!threadId) throw new Error('Codex thread not created')
     if (active && !active.done) throw new Error('Codex turn already running')
     const wait = new Promise((resolve) => {
@@ -400,7 +400,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir } = {
     const policy = providerMode('codex', mode)
     const sandbox = tools.restrictedChild ? 'read-only' : policy.sandbox || options.sandbox
     // Ask keeps shell reads available and injects the provider's no-change prompt.
-    const text = composePrompt(prompt, { mode, terse, instructions, provider: 'codex' })
+    const text = composePrompt(prompt, { mode, logicalMode, model: selectedModel, terse, instructions, provider: 'codex' })
     for (const message of diagnostics) emit({ type: 'status', status: `Codex diagnostic: ${message}` })
     try {
       const response = await transport.request('turn/start', {

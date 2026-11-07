@@ -15,6 +15,7 @@ const newChat = require('../modes/newChat')
 const registry = require('../registry')
 const { requestChatName } = require('../categorizer')
 const prompts = require('../prompts')
+const { sessionModel, sessionContext } = require('../prompt/context')
 const { isDelegatedChild, detachDelegation } = require('../store/delegationBoundary')
 
 const isDecomposeResume = (session) =>
@@ -47,14 +48,14 @@ const resolveSpawnTarget = (source, target = {}) => {
   }
   const requested = target.model
   const model = requested == null || requested === ''
-    ? (provider === source.provider ? (source.model || null) : null)
+    ? (provider === source.provider ? (sessionModel(source) || null) : null)
     : requested
   return { provider, model }
 }
 
 // Provider options such as reasoning effort only carry over to the same provider and model.
 const spawnSessionFields = (source, { provider, model }) => {
-  const keepOptions = provider === source.provider && (model || null) === (source.model || null)
+  const keepOptions = provider === source.provider && (model || null) === (sessionModel(source) || null)
   return {
     provider,
     model,
@@ -176,7 +177,7 @@ const createSiblingSession = (modeId, buildPrompt, sourceSessionId, { focus, pro
   if (!source) throw Object.assign(new Error(`session not found: ${sourceSessionId}`), { status: 404 })
   const target = resolveSpawnTarget(source, { provider, model })
   registry.requireMode(registry.sessionWorkspace(source), entry.id, { provider: target.provider })
-  const prompt = buildPrompt(sourceSessionId, focus, config.writeDir, target.provider)
+  const prompt = buildPrompt(sourceSessionId, focus, config.writeDir, target.provider, { model: target.model, mode: modeId })
   const workspaceId = source.workspaceId || workspaceStore.findWorkspaceByCwd(source.cwd, config.writeDir)?.id
   const created = createSession({ workspaceId, ...spawnSessionFields(source, target) })
   const session = sessionStore.updateSession(created.id, {
@@ -302,7 +303,7 @@ const run = async (sessionId, { prompt, mode: requested, provider, model, target
   const entry = registry.requireMode(workspace, mode, { harness, provider: source.provider })
   if (repliesInPlace(source, entry)) {
     const plugin = entry.kind === 'plugin' ? lastPluginRun(sessionId, entry.id) : undefined
-    return spawnRun(sessionId, 'run', { mode, prompt: prompt || prompts.text('resume', source.provider), plugin })
+    return spawnRun(sessionId, 'run', { mode, prompt: prompt || prompts.text('resume', source.provider, sessionContext(source, mode)), plugin })
   }
   if (entry.kind === 'turn' && !source.mode) sessionStore.updateSession(sessionId, { mode: entry.id }, config.writeDir)
   switch (entry.kind) {
@@ -319,7 +320,7 @@ const run = async (sessionId, { prompt, mode: requested, provider, model, target
     }
     case 'new-chat': {
       const handoff = resolveNewChatTarget(source, { provider, model, mode: targetMode })
-      return spawnRun(sessionId, 'run', { mode, prompt: newChat.buildPrompt(prompt, source.provider), handoff })
+      return spawnRun(sessionId, 'run', { mode, prompt: newChat.buildPrompt(prompt, source.provider, sessionContext(source, mode)), handoff })
     }
     case 'decompose':
       return decompose(sessionId, { prompt })
@@ -347,7 +348,7 @@ const resume = (sessionId, { prompt, mode: requested } = {}) => {
   const retry = !prompt && undeliveredRun(sessionId, session)
   if (retry) return spawnRun(sessionId, 'resume', { mode: retry.mode, prompt: retry.prompt, handoff: retry.handoff, plugin: retry.plugin })
   const mode = requested || replyMode(session)
-  return spawnRun(sessionId, 'resume', { mode, prompt: prompt || prompts.text('resume', session?.provider), plugin: lastPluginRun(sessionId, mode) })
+  return spawnRun(sessionId, 'resume', { mode, prompt: prompt || prompts.text('resume', session?.provider, sessionContext(session, mode)), plugin: lastPluginRun(sessionId, mode) })
 }
 
 const terminate = (sessionId, intent, { delegated = false } = {}) => require('./delegation').withDeliveryLock(sessionId, () => {

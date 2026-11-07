@@ -112,10 +112,11 @@ const stateFor = (context) => {
 const targetFor = (parent, state, args) => {
   if (Object.hasOwn(args, 'provider')) fail('Choose a model; the provider is selected automatically')
   if (args.model !== undefined && (typeof args.model !== 'string' || !args.model.trim())) fail('model must be a nonempty model ID or inherit')
-  const model = args.model === undefined || args.model === 'inherit' ? parent.model : args.model
+  const parentModel = require('../prompt/context').sessionModel(parent)
+  const model = args.model === undefined || args.model === 'inherit' ? parentModel : args.model
   // Inheritance keeps the provider/model pair together; only a different model needs routing.
   let provider = parent.provider
-  if (model !== parent.model) {
+  if (model !== parentModel) {
     const models = readJson(path.join(__dirname, '..', 'agents', 'models.json'), {})
     const candidates = require('../agents/driver').listProviders().filter(id => models[id]?.some(item => item.id === model))
     if (!candidates.length) fail(`Unknown model: ${model}`)
@@ -135,7 +136,7 @@ const targetFor = (parent, state, args) => {
     fail('This parent has Claude approval restrictions; use inherit or a model available through Claude')
   }
   return { provider, model, mode,
-    ...(provider === 'codex' && parent.provider === 'codex' ? { codex: { ...parent.codex, ...(model !== parent.model ? { reasoningEffort: null } : {}) } } : {}),
+    ...(provider === 'codex' && parent.provider === 'codex' ? { codex: { ...parent.codex, ...(model !== parentModel ? { reasoningEffort: null } : {}) } } : {}),
     ...(provider === 'claude' && parent.provider === 'claude' ? { claude: parent.claude } : {}),
     ...(provider === 'grok' && parent.provider === 'grok' ? { grok: parent.grok } : {}),
   }
@@ -514,15 +515,16 @@ const assertChildRun = (session, mode, { userFollowup = false } = {}) => {
   if (!Object.hasOwn(rank, mode) || rank[mode] < rank[baseMode]) fail('Child permissions cannot be broadened')
 }
 
-const guidance = (provider, child = false, { session, canDelegate: enabled } = {}) => {
+const guidance = (provider, child = false, { session, canDelegate: enabled, model, mode } = {}) => {
   const maxDepth = getUiSettings(config.writeDir).maxSubagentDepth
   const allowed = enabled ?? (session ? canSpawn(session) : !child && maxDepth > 0)
   const prompts = require('../prompts')
+  const context = { model: model || require('../prompt/context').sessionModel(session), mode: mode ?? session?.mode }
   const depth = session ? `This session is at depth ${session.depth}. ` : ''
   const limit = `${depth}The current maximum subagent depth is ${maxDepth}; root sessions are depth 0. Each child is one level deeper. The harness checks the current limit at every spawn.`
-  if (!allowed) return `${prompts.text('delegationChild', provider)}\n${limit}\nDelegation is unavailable for this turn. Finish the assigned work yourself.`
+  if (!allowed) return `${prompts.text('delegationChild', provider, context)}\n${limit}\nDelegation is unavailable for this turn. Finish the assigned work yourself.`
   const scope = child ? 'You are a harness child. Stay within your assigned question, context, scope, expected output, and stopping point. You may delegate bounded parts of that task through harness_agents within the depth limit. Return your result to your parent after your child work is complete; do not expand into adjacent work.' : ''
-  return [scope, prompts.text('delegationParent', provider), limit].filter(Boolean).join('\n\n')
+  return [scope, prompts.text('delegationParent', provider, context), limit].filter(Boolean).join('\n\n')
 }
 
 const withDeliveryLock = (sessionId, fn) => withLock(sessionId, 'delivery', fn)

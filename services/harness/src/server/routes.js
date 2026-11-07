@@ -190,18 +190,43 @@ router.get('/prompt-triggers', (_req, res) => {
   })
 })
 
-router.get('/prompts', (req, res) => {
+const promptQuery = (req) => {
+  const selected = {}
+  for (const name of ['provider', 'model', 'mode', 'workspaceId']) {
+    const value = req.query[name]
+    if (value === undefined) continue
+    if (typeof value !== 'string' || !value.trim()) {
+      throw Object.assign(new Error(`${name} must be a non-empty string`), { status: 400 })
+    }
+    selected[name] = value
+  }
+  return selected
+}
+
+router.get('/prompts', async (req, res) => {
   try {
-    res.json({ prompts: prompts.list(providerQuery(req)) })
+    const { provider, model, mode, workspaceId } = promptQuery(req)
+    const entries = prompts.list(provider, { model, mode })
+    const workspace = workspaceId ? await Harness.getWorkspace(workspaceId) : null
+    if (workspaceId && !workspace) return res.status(404).json({ error: 'workspace not found' })
+    const modes = new Map(registry.resolve(workspace).modes.map(({ id, label }) => [id, { id, label }]))
+    for (const id of prompts.savedModes()) if (!modes.has(id)) modes.set(id, { id, label: id })
+    res.json({
+      prompts: entries,
+      models: prompts.modelScopes(await readJsonAsync(MODELS_FILE, {})),
+      modes: [...modes.values()],
+    })
   } catch (err) {
     sendError(res, err)
   }
 })
 
-// The optional provider query selects a version. Null resets only that scope.
+// Model versions replace text across providers; provider selects the preview
+// fallback. An optional mode narrows a model edit. Null resets only that scope.
 router.put('/prompts/:id', (req, res) => {
   try {
-    res.json({ prompt: prompts.setOverride(req.params.id, (req.body || {}).template ?? null, providerQuery(req)) })
+    const { provider, model, mode } = promptQuery(req)
+    res.json({ prompt: prompts.setOverride(req.params.id, (req.body || {}).template ?? null, provider, { model, mode }) })
   } catch (err) {
     sendError(res, err)
   }

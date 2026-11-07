@@ -2,6 +2,7 @@ const config = require('../config')
 const store = require('../store/sessionStore')
 const registry = require('../registry')
 const eventLog = require('../store/eventLog')
+const { sessionModel } = require('../prompt/context')
 
 // Workflow steps are ordinary sessions. The controller owns their prompts and
 // sequencing; their daemons own the same turn lifecycle as ask, plan and execute.
@@ -14,7 +15,7 @@ const runWorkflowTurn = async ({ parent, parentRunId, mode, prompt, name, workfl
   const created = store.createSession({
     workspaceId: parent.workspaceId,
     provider: parent.provider,
-    model: parent.model,
+    model: sessionModel(parent),
     codex: parent.codex,
     grok: parent.grok,
     claude: parent.claude,

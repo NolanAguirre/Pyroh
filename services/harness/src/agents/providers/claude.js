@@ -460,7 +460,7 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     }
   }
 
-  const send = async (prompt, { mode = 'agent', onEvent, outputSchema, terse = false, instructions } = {}) => {
+  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, outputSchema, terse = false, instructions } = {}) => {
     if (!sessionId) throw new Error('Claude session not created')
     if (active && !active.done) throw new Error('Claude turn already running')
     const { query } = await loadSdk()
@@ -494,7 +494,7 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     input = createInput()
     // Claude Code has no ask mode. Ask uses the default permission mode, blocks
     // edit tools, and denies every approval request, plus an instruction.
-    const content = composePrompt(prompt, { mode, terse, instructions, provider: 'claude' })
+    const content = composePrompt(prompt, { mode, logicalMode, model: settings.model, terse, instructions, provider: 'claude' })
     input.push({ type: 'user', message: { role: 'user', content }, parent_tool_use_id: null })
     const source = query({ prompt: input.iterable, options: {
       ...baseOptions(),

@@ -52,6 +52,7 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
   let client = null
   let sessionId = null
   let currentMode = null
+  let selectedModel = null
   let active = null
 
   const emit = (event) => active?.emit({ ...event, runId: active.id })
@@ -179,12 +180,13 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
     if (settings.model && response?.models?.currentModelId !== settings.model) {
       await client.setConfigOption(sessionId, 'model', settings.model)
     }
+    selectedModel = settings.model || response?.models?.currentModelId || model
     if (id && options.reasoningEffort) await client.setConfigOption(sessionId, 'reasoning_effort', options.reasoningEffort)
     currentMode = null
     await applyMode(settings.mode)
   }
 
-  const send = async (prompt, { mode = 'agent', onEvent, terse = false, instructions } = {}) => {
+  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, terse = false, instructions } = {}) => {
     if (!sessionId) throw new Error('Grok session not created')
     if (active && !active.done) throw new Error('Grok turn already running')
     await applyMode(mode)
@@ -194,7 +196,7 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
     })
     const turn = active
     emit({ type: 'status', status: 'running' })
-    client.prompt(sessionId, composePrompt(prompt, { mode, terse, instructions, provider: 'grok' }), onUpdate).then((response) => {
+    client.prompt(sessionId, composePrompt(prompt, { mode, logicalMode, model: selectedModel, terse, instructions, provider: 'grok' }), onUpdate).then((response) => {
       if (turn !== active) return
       const usage = normalizeUsage(response?._meta?.usage)
       if (usage) {
@@ -228,6 +230,7 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
   }
 
   return { create: (settings) => openSession(null, settings), resume: openSession, fork,
+    resolvedSettings: () => ({ model: selectedModel }),
     send, listModels, providerAgentId: () => sessionId, close }
 }
 

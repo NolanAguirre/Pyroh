@@ -2,6 +2,7 @@ const config = require('../../config')
 const paths = require('../../store/paths')
 const { writeJson, ensureDir } = require('../../store/jsonFile')
 const sessionStore = require('../../store/sessionStore')
+const { sessionContext } = require('../../prompt/context')
 const eventLog = require('../../store/eventLog')
 const { errorMessage, formatError } = require('../../store/formatError')
 const { failureStatus } = require('../../store/networkError')
@@ -163,8 +164,9 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
       totalPhases: totalPhases || '',
       planBody: phase ? sessionStore.readPhasePlan(sessionId, phase, writeDir) || '' : '',
     }
-    const prompt = promptFor(step, vars, session.provider)
     const mode = step.agentMode || 'agent'
+    const parent = sessionStore.loadSession(sessionId, writeDir) || session
+    const prompt = promptFor(step, vars, parent.provider, sessionContext(parent, mode))
 
     const record = sessionStore.writeStepRun(
       sessionId,
@@ -221,7 +223,7 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
     let result
     try {
       result = await runWorkflowTurn({
-        parent: sessionStore.loadSession(sessionId, writeDir) || session,
+        parent,
         parentRunId: workflowRun.id,
         mode,
         prompt: sendPrompt,

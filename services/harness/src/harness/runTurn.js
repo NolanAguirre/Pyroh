@@ -8,6 +8,7 @@ const workspaceStore = require('../store/workspaceStore')
 const paths = require('../store/paths')
 const sessionStore = require('../store/sessionStore')
 const { rewritePrompt } = require('../prompt/rewrite')
+const { sessionModel } = require('../prompt/context')
 const { findTriggers } = require('../prompt/triggers')
 const { firedActions, triggerMcpServers, prependNotes } = require('../prompt/actions')
 
@@ -78,6 +79,7 @@ const runOneTurn = async ({
   instructions,
   delegationEligible,
 }) => {
+  const logicalMode = mode ?? session.mode ?? 'agent'
   const entry = registry.turnMode(mode ?? session.mode, plugin)
   mode = entry?.base || mode || session.mode
   const primitive = AGENT_MODES.includes(mode)
@@ -102,7 +104,7 @@ const runOneTurn = async ({
   const canManageChildren = eligible && delegation.canDelegate(delegationSession) && delegation.hasPendingChildren(session.id)
   const inheritedConfiguration = nativeFork ? session.fork.sourceConfiguration : null
   if (tools === undefined && inheritedConfiguration?.settings.tools !== undefined) tools = inheritedConfiguration.settings.tools
-  const settings = { model: model || session.model || inheritedConfiguration?.settings.model, cwd: workspaceStore.resolveSessionCwd(session, writeDir), mode, tools,
+  const settings = { model: model || sessionModel(session) || inheritedConfiguration?.settings.model, cwd: workspaceStore.resolveSessionCwd(session, writeDir), mode, logicalMode, tools,
     ...(nativeFork ? { requireExisting: true, reasoningEffort: inheritedConfiguration?.settings.reasoningEffort } : {}) }
   // Each daemon owns one session. Set its cwd before loading SDKs so shell
   // initialization and provider subprocesses inherit the workspace directory.
@@ -179,6 +181,7 @@ const runOneTurn = async ({
     let providerAgentId = driver.providerAgentId()
     if (nativeFork && providerAgentId !== session.providerAgentId) throw new Error('Native fork resume returned a different provider thread')
     configuration.settings = { ...configuration.settings, ...driver.resolvedSettings?.() }
+    const promptContext = () => ({ model: driver.resolvedSettings?.().model || configuration.settings.model || settings.model, mode: logicalMode })
     sessionStore.updateSession(session.id, { providerConfiguration: configuration }, writeDir)
     if (typeof onCreated === 'function') onCreated(providerAgentId)
 
@@ -239,11 +242,11 @@ const runOneTurn = async ({
     const managedInstructions = managed
       ? [
         instructions,
-        delegation.guidance(session.provider, child, { session: delegationSession, canDelegate: canDelegate && !textOnly }),
+        delegation.guidance(session.provider, child, { session: delegationSession, canDelegate: canDelegate && !textOnly, ...promptContext() }),
         canManageChildren && !canDelegate && !textOnly && 'Existing children may still finish. Use harness_agents status/wait/stop to manage them; spawning is unavailable. If their results are needed, end this turn with a brief pending-work update. Their results will resume you automatically unless spawned with dontReturn: true. Do not poll or wait in a loop.',
       ].filter(Boolean).join('\n\n')
       : instructions
-    const sendOptions = { mode, onEvent: handleEvent, outputSchema, instructions: managedInstructions }
+    const sendOptions = { mode, logicalMode, onEvent: handleEvent, outputSchema, instructions: managedInstructions }
     const firstSendOptions = { ...sendOptions }
     if (terse) firstSendOptions.terse = true
     // Codex and Grok drop their transport when a cancel overruns its grace
@@ -266,9 +269,9 @@ const runOneTurn = async ({
       }
     }
 
-    let text = await rewritePrompt(prompt, { cwd: settings.cwd, first, provider: session.provider })
+    let text = await rewritePrompt(prompt, { cwd: settings.cwd, first, provider: session.provider, ...promptContext() })
     if (text !== prompt) onPromptRewrite?.(text)
-    text = await prependNotes(fired, session, text)
+    text = await prependNotes(fired, { ...session, ...promptContext() }, text)
     let firstSend = true
     let result
     while (true) {
@@ -322,11 +325,11 @@ const runOneTurn = async ({
         sendOptions.instructions = [
           instructions,
           'The user has taken over this conversation. Follow their requests as an independent agent. Your replies are not returned to the original parent.',
-          delegation.guidance(session.provider, false, { session: currentSession, canDelegate: canDelegate && !textOnly }),
+          delegation.guidance(session.provider, false, { session: currentSession, canDelegate: canDelegate && !textOnly, ...promptContext() }),
         ].filter(Boolean).join('\n\n')
       }
       const steerText = steers.map((steer) => steer.text).join('\n\n')
-      text = await rewritePrompt(steerText, { cwd: settings.cwd, first: false, provider: session.provider })
+      text = await rewritePrompt(steerText, { cwd: settings.cwd, first: false, provider: session.provider, ...promptContext() })
       onEvent?.({ type: 'user', steer: true, text, itemId: `steer:${steers[0].id}` })
       if (signal?.aborted) break
     }

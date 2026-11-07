@@ -151,6 +151,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
   let agent = null
   let sdk = null
   let selectedModel = null
+  let selectedLogicalMode = 'agent'
   let resumed = false
 
   const ensureSdk = () => {
@@ -163,7 +164,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
     if (typeof tools.askUser !== 'function') return undefined
     return {
       ask_user: {
-        description: prompts.text('askUserCursor', 'cursor'),
+        description: prompts.text('askUserCursor', 'cursor', { model: selectedModel, mode: selectedLogicalMode }),
         parameters: {
           type: 'object',
           properties: {
@@ -213,19 +214,20 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
   // generalPurpose, etc.): the built-in wins and ignores our model.
   const subagents = () => ({
     generalPurpose: {
-      description: prompts.text('subagentGeneralPurposeDescription', 'cursor'),
-      prompt: prompts.text('subagentGeneralPurpose', 'cursor'),
+      description: prompts.text('subagentGeneralPurposeDescription', 'cursor', { model: selectedModel, mode: selectedLogicalMode }),
+      prompt: prompts.text('subagentGeneralPurpose', 'cursor', { model: selectedModel, mode: selectedLogicalMode }),
       model: { id: selectedModel },
     },
     harnessExplore: {
-      description: prompts.text('subagentExploreDescription', 'cursor'),
-      prompt: prompts.text('subagentExplore', 'cursor'),
+      description: prompts.text('subagentExploreDescription', 'cursor', { model: selectedModel, mode: selectedLogicalMode }),
+      prompt: prompts.text('subagentExplore', 'cursor', { model: 'grok-4.7', mode: selectedLogicalMode }),
       model: { id: 'grok-4.7' },
     },
   })
 
-  const create = async ({ model, cwd, mode, tools, name } = {}) => {
+  const create = async ({ model, cwd, mode, logicalMode = mode || 'agent', tools, name } = {}) => {
     selectedModel = resolveModel(model)
+    selectedLogicalMode = logicalMode
     const { Agent } = ensureSdk()
     const includeCustom = !(Array.isArray(tools) && tools.length === 0)
     const local = { cwd: cwd || process.cwd(), ...localOptions({ includeCustom }) }
@@ -243,9 +245,10 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
     return agent
   }
 
-  const resume = async (providerAgentId, { model, cwd, mode, tools } = {}) => {
+  const resume = async (providerAgentId, { model, cwd, mode, logicalMode = mode || 'agent', tools } = {}) => {
     resumed = true
     selectedModel = resolveModel(model)
+    selectedLogicalMode = logicalMode
     const { Agent } = ensureSdk()
     const includeCustom = !(Array.isArray(tools) && tools.length === 0)
     const opts = { local: { ...localOptions({ includeCustom }), ...(cwd ? { cwd } : {}) }, mode: sdkMode(mode), ...nativeOptions(mode), ...harnessMcp }
@@ -255,14 +258,14 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
     return agent
   }
 
-  const send = async (prompt, { mode, onEvent, terse = false, instructions } = {}) => {
+  const send = async (prompt, { mode, logicalMode = mode || selectedLogicalMode, onEvent, terse = false, instructions } = {}) => {
     if (!agent) throw new Error('cursor driver: agent not created')
     const emit = typeof onEvent === 'function' ? onEvent : () => {}
     // The caller holds the session lock. Any persisted active run belongs to a
     // dead prior daemon; force expires it without discarding its checkpoint.
     const options = { ...(mode ? { mode: sdkMode(mode) } : {}), ...(selectedModel ? { model: { id: selectedModel } } : {}),
       ...(resumed ? { local: { force: true } } : {}) }
-    const text = composePrompt(prompt, { mode, terse, instructions, provider: 'cursor' })
+    const text = composePrompt(prompt, { mode, logicalMode, model: selectedModel, terse, instructions, provider: 'cursor' })
     let streamError = null
     const notify = (event) => {
       try { emit(event) } catch (err) { streamError = streamError || errorMessage(err) }
@@ -344,7 +347,8 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
     throw Object.assign(new Error('Cursor native conversation fork is not supported by this driver'), { code: 'PROVIDER_FORK_UNSUPPORTED' })
   }
 
-  return { create, resume, fork, send, listModels, providerAgentId, close }
+  return { create, resume, fork, send, listModels, providerAgentId, close,
+    resolvedSettings: () => ({ model: selectedModel }) }
 }
 
 module.exports = { createDriver }
