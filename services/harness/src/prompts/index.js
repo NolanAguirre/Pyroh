@@ -115,6 +115,25 @@ const text = (id, provider, context = {}) =>
   selectedEdit(id, provider, context) ?? defaultText(id, provider, context)
 const render = (id, vars = {}, provider, context = {}) =>
   text(id, provider, context).replace(PLACEHOLDER, (_, key) => (vars[key] == null ? '' : String(vars[key])))
+const renderWithProvenance = (id, vars = {}, provider, context = {}, metadata = {}) => {
+  const provenance = require('../prompt/provenance')
+  const template = text(id, provider, context)
+  const parts = []
+  let last = 0
+  for (const match of template.matchAll(PLACEHOLDER)) {
+    parts.push(provenance.section('system', `${id} instructions`, template.slice(last, match.index)))
+    const value = vars[match[1]]
+    if (value && Array.isArray(value.sections) && typeof value.text === 'string') {
+      parts.push(...provenance.supplied(value.text, value).sections)
+    } else parts.push(provenance.section('context', match[1], value))
+    last = match.index + match[0].length
+  }
+  parts.push(provenance.section('system', `${id} instructions`, template.slice(last)))
+  return provenance.assemble(parts.filter(part => part.text), metadata)
+}
+const focusWithProvenance = (focus, provider, context = {}, metadata) => focus
+  ? renderWithProvenance('operatorFocus', { focus: require('../prompt/provenance').supplied(focus, metadata) }, provider, context)
+  : ''
 const focusBlock = (focus, provider, context = {}) => (focus ? render('operatorFocus', { focus }, provider, context) : '')
 const directoryLines = (directories) => directories.map((dir) => `- ${JSON.stringify(dir)}`).join('\n')
 
@@ -197,4 +216,4 @@ const modelScopes = (catalog = {}) => {
 }
 const savedModes = () => [...new Set(Object.values(loadOverrides().$models).flatMap((entry) => Object.keys(entry.modes)))]
 
-module.exports = { get, text, render, focusBlock, directoryLines, list, setOverride, registerProvider, modelScopes, savedModes }
+module.exports = { get, text, render, renderWithProvenance, focusWithProvenance, focusBlock, directoryLines, list, setOverride, registerProvider, modelScopes, savedModes }

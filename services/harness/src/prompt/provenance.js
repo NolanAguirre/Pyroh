@@ -48,9 +48,18 @@ const slice = (prompt, start, end) => {
 
 const capture = (prompt, fields = {}) => {
   const snapshot = supplied(prompt.text, prompt)
-  const event = { ...fields, ...snapshot, type: 'provider_prompt', captureId: crypto.randomUUID(), capturedAt: Date.now() }
+  // Options can be mutated by an SDK after send. Persist a detached JSON value,
+  // matching the event log format, without retaining callbacks or live objects.
+  const event = { ...JSON.parse(JSON.stringify(fields)), ...snapshot, type: 'provider_prompt', captureId: crypto.randomUUID(), capturedAt: Date.now() }
   event.sections = Object.freeze(event.sections.map(part => Object.freeze(part)))
-  return Object.freeze(event)
+  const freeze = value => {
+    if (value && typeof value === 'object') {
+      for (const child of Object.values(value)) freeze(child)
+      Object.freeze(value)
+    }
+    return value
+  }
+  return freeze(event)
 }
 
 module.exports = { section, assemble, supplied, userPrompt, prepend, slice, capture }

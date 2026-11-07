@@ -235,6 +235,7 @@ const spawn = (context, args) => withLock(context.sessionId, context.runId, (fil
     assertSpawnDepth(store.loadSession(parent.id, config.writeDir))
     require('./Harness').spawnRun(session.id, target.mode === 'plan' ? 'plan' : 'run', {
       mode: target.mode, prompt: args.task, autoName: true,
+      promptProvenance: { sections: [{ kind: 'context', label: 'Task from parent agent', text: args.task }] },
       onPrepared: (run) => { child.runId = run.id; writeJson(file, state) },
     })
   } catch (err) {

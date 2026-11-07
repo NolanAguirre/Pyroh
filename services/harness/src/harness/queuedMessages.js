@@ -38,12 +38,12 @@ const resolve = (session, requested) => {
   return { mode, entry, inPlace, harness }
 }
 
-const enqueue = (sessionId, { prompt, mode } = {}) => {
+const enqueue = (sessionId, { prompt, mode, promptProvenance } = {}) => {
   if (typeof prompt !== 'string' || !prompt.trim()) fail('prompt is required')
   loadSession(sessionId)
   return withDeliveryLock(sessionId, () => {
     const selected = resolve(loadSession(sessionId), mode)
-    return queue.enqueue(sessionId, prompt, selected.mode)
+    return queue.enqueue(sessionId, prompt, selected.mode, config.writeDir, promptProvenance)
   })
 }
 
@@ -78,7 +78,8 @@ const prepare = async (session, message) => {
       plugin = registry.turnDescriptor(entry, instructions)
     }
   }
-  return { mode: message.mode, prompt, plugin }
+  return { mode: message.mode, prompt, plugin,
+    promptProvenance: require('../prompt/provenance').supplied(prompt, message.promptProvenance) }
 }
 
 const withIdle = (sessionId, fn) => withDeliveryLock(sessionId, () => {
@@ -149,7 +150,7 @@ const send = async (sessionId, messageId) => {
     })
     if (started) return started
     resolve(loadSession(sessionId), message.mode)
-    const steer = require('./Harness').steer(sessionId, prepared.prompt, { queuedMessageId: messageId })
+    const steer = require('./Harness').steer(sessionId, prepared.prompt, { queuedMessageId: messageId, promptProvenance: prepared.promptProvenance })
     state.messages = state.messages.filter(item => item.id !== messageId)
     queue.save(sessionId, state)
     return { steer }

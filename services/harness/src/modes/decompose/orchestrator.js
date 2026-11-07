@@ -12,7 +12,7 @@ const analytics = require('../../analytics/client')
 const {
   onceSteps,
   eachPhaseSteps,
-  promptFor,
+  promptForWithProvenance,
   parseStepOutput,
   nextProgress,
   shouldSkip,
@@ -25,7 +25,8 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
   const logLine = (msg) => process.stdout.write(`[${new Date().toISOString()}] ${msg}\n`)
 
   ensureDir(paths.sessionDir(sessionId, writeDir))
-  const workflowRun = sessionStore.createRun(sessionId, { mode: 'decompose', prompt: sessionStore.readSourcePlan(sessionId, writeDir) || '' }, writeDir)
+  const workflowRun = sessionStore.createRun(sessionId, { mode: 'decompose', prompt: sessionStore.readSourcePlan(sessionId, writeDir) || '',
+    promptProvenance: sessionStore.loadSession(sessionId, writeDir)?.sourcePlanProvenance }, writeDir)
   sessionStore.updateRun(sessionId, workflowRun.id, { pid: process.pid, workflow: true }, writeDir)
   writeJson(paths.daemonPid(sessionId, writeDir), {
     pid: process.pid,
@@ -166,7 +167,8 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
     }
     const mode = step.agentMode || 'agent'
     const parent = sessionStore.loadSession(sessionId, writeDir) || session
-    const prompt = promptFor(step, vars, parent.provider, sessionContext(parent, mode))
+    const assembled = promptForWithProvenance(step, vars, parent.provider, sessionContext(parent, mode), parent.sourcePlanProvenance)
+    const prompt = assembled.text
 
     const record = sessionStore.writeStepRun(
       sessionId,
@@ -227,6 +229,7 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
         parentRunId: workflowRun.id,
         mode,
         prompt: sendPrompt,
+        promptProvenance: assembled,
         name: phase ? `Phase ${phase}: ${step.id === 'execute' ? 'Execute' : 'Plan'}` : 'Count phases',
         workflow: { kind: 'decompose', phase, step: step.id },
         outputSchema: step.outputSchema,

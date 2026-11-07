@@ -6,7 +6,7 @@ const { sessionModel } = require('../prompt/context')
 
 // Workflow steps are ordinary sessions. The controller owns their prompts and
 // sequencing; their daemons own the same turn lifecycle as ask, plan and execute.
-const runWorkflowTurn = async ({ parent, parentRunId, mode, prompt, name, workflow, outputSchema, signal, onPrepared }) => {
+const runWorkflowTurn = async ({ parent, parentRunId, mode, prompt, promptProvenance, name, workflow, outputSchema, signal, onPrepared }) => {
   const writeDir = config.writeDir
   const delegation = require('./delegation')
   const Harness = require('./Harness')
@@ -32,6 +32,7 @@ const runWorkflowTurn = async ({ parent, parentRunId, mode, prompt, name, workfl
   try {
     launched = Harness.spawnRun(session.id, mode === 'plan' ? 'plan' : 'run', {
       mode, prompt,
+      promptProvenance: promptProvenance || { sections: [{ kind: 'context', label: 'Workflow prompt', text: prompt }] },
       onPrepared: (run) => {
         if (outputSchema) store.updateRun(session.id, run.id, { outputSchema }, writeDir)
         onPrepared?.(session, run)

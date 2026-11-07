@@ -33,6 +33,10 @@ const onceSteps = () => STEPS.filter((step) => step.when === 'once')
 const eachPhaseSteps = () => STEPS.filter((step) => step.when === 'eachPhase')
 
 const promptFor = (step, vars, provider, context = {}) => prompts.render(step.promptKey, vars, provider, context)
+const promptForWithProvenance = (step, vars, provider, context = {}, metadata) =>
+  prompts.renderWithProvenance(step.promptKey, { ...vars,
+    sourcePlan: require('../../prompt/provenance').supplied(vars.sourcePlan, metadata),
+  }, provider, context, metadata)
 
 const parsePhaseCount = (text) => {
   let raw = String(text || '').trim()
@@ -104,6 +108,7 @@ module.exports = {
   onceSteps,
   eachPhaseSteps,
   promptFor,
+  promptForWithProvenance,
   parsePhaseCount,
   parseStepOutput,
   nextProgress,

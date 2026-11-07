@@ -30,9 +30,10 @@ const save = (sessionId, state, writeDir = config.writeDir) => {
   if (!state.messages.length) fs.rmSync(marker, { force: true })
 }
 
-const enqueue = (sessionId, text, mode, writeDir = config.writeDir) => {
+const enqueue = (sessionId, text, mode, writeDir = config.writeDir, promptProvenance) => {
   const state = read(sessionId, writeDir)
-  const message = { id: `q_${crypto.randomUUID()}`, text, mode, createdAt: Date.now() }
+  const message = { id: `q_${crypto.randomUUID()}`, text, mode, createdAt: Date.now(),
+    ...(promptProvenance ? { promptProvenance: require('../prompt/provenance').supplied(text, promptProvenance) } : {}) }
   state.messages.push(message)
   save(sessionId, state, writeDir)
   return publicMessage(message)

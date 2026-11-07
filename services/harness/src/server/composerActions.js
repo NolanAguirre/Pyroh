@@ -5,6 +5,7 @@ const registry = require('../registry')
 const { INPUT_COMMANDS, parseInputCommand } = require('../prompt/triggers')
 const { executeInputCommand } = require('../harness/inputCommands')
 const { correctText } = require('../spellcheck')
+const { userPrompt } = require('../prompt/provenance')
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status })
 
@@ -31,8 +32,9 @@ const startRun = async (sessionId, requested, { prompt, provider, model, targetM
   const inPlace = Harness.repliesInPlace(session, entry)
   if (!prompt && (inPlace || !entry.promptOptional)) throw fail('prompt is required')
   try {
+    const corrected = await correctText(prompt)
     const run = await Harness.run(sessionId, {
-      prompt: await correctText(prompt), mode, provider, model, targetMode, runAfterSessionId, forkRetryKey,
+      prompt: corrected, promptProvenance: typeof prompt === 'string' ? userPrompt(corrected, prompt) : undefined, mode, provider, model, targetMode, runAfterSessionId, forkRetryKey,
     })
     if (run && run.queued) return { status: 202, body: { session: run.session } }
     if (entry.kind === 'decompose') return { status: 202, body: run }
@@ -55,11 +57,12 @@ const execute = async (sessionId, action, body = {}) => {
   if (typeof prompt !== 'string' || !prompt.trim()) throw fail('prompt is required')
   if (action === 'steer') {
     const corrected = await correctText(prompt, { first: false })
-    return { status: 202, body: { steer: await Harness.steer(sessionId, corrected) } }
+    return { status: 202, body: { steer: await Harness.steer(sessionId, corrected, { promptProvenance: userPrompt(corrected, prompt) }) } }
   }
   if (action === 'queue') {
     if (mode != null && typeof mode !== 'string') throw fail('mode must be a string')
-    const message = await Harness.queue(sessionId, { prompt: await correctText(prompt), mode })
+    const corrected = await correctText(prompt)
+    const message = await Harness.queue(sessionId, { prompt: corrected, promptProvenance: userPrompt(corrected, prompt), mode })
     return { status: 202, body: { message } }
   }
   throw fail('unknown submission action')

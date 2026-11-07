@@ -30,4 +30,10 @@ const buildPrompt = (sessionId, focus, writeDir, provider, context = {}) => prom
   focus: prompts.focusBlock(focus, provider, context),
 }, provider, context)
 
-module.exports = { MODE, NAME, buildPrompt }
+const buildPromptWithProvenance = (sessionId, focus, writeDir, provider, context = {}, metadata) => prompts.renderWithProvenance('memoryExtract', {
+  sessionId,
+  files: prompts.directoryLines(transcriptFiles(sessionId, writeDir)),
+  focus: prompts.focusWithProvenance(focus, provider, context, metadata),
+}, provider, context, metadata)
+
+module.exports = { MODE, NAME, buildPrompt, buildPromptWithProvenance }

@@ -19,6 +19,7 @@ const submissionStore = require('../store/submissionStore')
 const { rewritePrompt } = require('../prompt/rewrite')
 const { sessionContext } = require('../prompt/context')
 const { correctText } = require('../spellcheck')
+const { userPrompt } = require('../prompt/provenance')
 const questionStore = require('../store/questionStore')
 const workspaceStore = require('../store/workspaceStore')
 const checkpointStore = require('../store/checkpointStore')
@@ -458,7 +459,9 @@ router.post('/sessions/:id/decompose', sendComposerAction('decompose'))
 router.post('/sessions/:id/resume', async (req, res) => {
   if (handleInputCommand(req, res)) return
   const { prompt, mode } = req.body || {}
-  const result = Harness.resume(req.params.id, { prompt: await correctText(prompt), mode })
+  const corrected = await correctText(prompt)
+  const result = Harness.resume(req.params.id, { prompt: corrected, mode,
+    promptProvenance: typeof prompt === 'string' ? userPrompt(corrected, prompt) : undefined })
   if (result && result.mode === 'decompose') return res.status(202).json(result)
   res.status(202).json({ run: result })
 })
