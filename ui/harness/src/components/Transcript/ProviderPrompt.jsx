@@ -39,7 +39,7 @@ const ProviderPrompt = ({ prompt, devId }) => {
           return (
             <DevScope key={index} id="3utx2t3" state={{ index, kind }}>
               <div className={`tx__prompt-section tx__prompt-section--${kind}`}>
-                <Fold>
+                <Fold defaultOpen={kind === 'rewritten'}>
                   <FoldTrigger>{section.label || kinds[section.kind] || 'Source unavailable'}</FoldTrigger>
                   <FoldContent>
                     <div className="tx__user-body tx__prompt-text">{section.text}</div>
