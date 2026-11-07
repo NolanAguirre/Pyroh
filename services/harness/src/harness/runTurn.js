@@ -245,12 +245,16 @@ const runOneTurn = async ({
     const managedInstructions = managed
       ? [
         instructions,
-        delegation.guidance(session.provider, child, { session: delegationSession, canDelegate: canDelegate && !textOnly, ...promptContext() }),
         canManageChildren && !canDelegate && !textOnly && 'Existing children may still finish. Use harness_agents status/wait/stop to manage them; spawning is unavailable. If their results are needed, end this turn with a brief pending-work update. Their results will resume you automatically unless spawned with dontReturn: true. Do not poll or wait in a loop.',
       ].filter(Boolean).join('\n\n')
       : instructions
     const sendOptions = { mode, logicalMode, onEvent: handleEvent, outputSchema, instructions: managedInstructions }
     const firstSendOptions = { ...sendOptions }
+    // Conversation history retains guidance for later turns and steers.
+    if (first && managed) firstSendOptions.instructions = [
+      managedInstructions,
+      delegation.guidance(session.provider, child, { session: delegationSession, canDelegate: canDelegate && !textOnly, ...promptContext() }),
+    ].filter(Boolean).join('\n\n')
     if (terse) firstSendOptions.terse = true
     // Codex and Grok drop their transport when a cancel overruns its grace
     // period, so a follow-up send may need a fresh driver on the same agent.
@@ -334,7 +338,6 @@ const runOneTurn = async ({
         sendOptions.instructions = [
           instructions,
           'The user has taken over this conversation. Follow their requests as an independent agent. Your replies are not returned to the original parent.',
-          delegation.guidance(session.provider, false, { session: currentSession, canDelegate: canDelegate && !textOnly, ...promptContext() }),
         ].filter(Boolean).join('\n\n')
       }
       const sources = steers.map(steer => provenance.supplied(steer.text, steer.promptProvenance))

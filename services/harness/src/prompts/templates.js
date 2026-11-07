@@ -10,7 +10,7 @@ const transcriptVars = [
 const TEMPLATES = [
   {
     id: 'delegationParent',
-    activation: { kind: 'First message', condition: 'Every managed turn where delegation is available.' },
+    activation: { kind: 'First message', condition: 'First prompt of a new agent conversation where delegation is available.' },
     name: 'Subagent: parent guidance',
     group: 'subagents',
     description: 'Instructions for managed sessions below the global subagent depth limit.',
@@ -20,7 +20,7 @@ const TEMPLATES = [
   },
   {
     id: 'delegationChild',
-    activation: { kind: 'First message', condition: 'Every managed turn where delegation is unavailable.' },
+    activation: { kind: 'First message', condition: 'First prompt of a new agent conversation where delegation is unavailable.' },
     name: 'Subagent: child guidance',
     group: 'subagents',
     description: 'Instructions for managed sessions where delegation is unavailable.',
