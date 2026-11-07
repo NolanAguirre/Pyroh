@@ -2,8 +2,9 @@ import { Fragment } from 'react'
 import { Badge, DevScope } from 'component-library'
 import { errorText } from './errorText'
 import TextWithTables from './TextWithTables'
+import MessageFiles from './MessageFiles'
 
-const LogChunk = ({ event }) => {
+const LogChunk = ({ event, workspaceId, onOpenFile }) => {
   switch (event.type) {
     case 'question_message':
       return (
@@ -13,7 +14,12 @@ const LogChunk = ({ event }) => {
         </div>
       )
     case 'text':
-      return event.text ? <TextWithTables text={event.text} /> : null
+      return event.text ? (
+        <div>
+          {event.finalReply && onOpenFile && <MessageFiles text={event.text} workspaceId={workspaceId} onOpenFile={onOpenFile} />}
+          <TextWithTables text={event.text} />
+        </div>
+      ) : null
     case 'thinking':
       return event.text ? (
         <DevScope id="hr0b2y7">
@@ -64,11 +70,11 @@ const LogChunk = ({ event }) => {
   }
 }
 
-const LogRun = ({ events }) => (
+const LogRun = ({ events, workspaceId, onOpenFile }) => (
   <div className="transcript__log">
     {events.map((event, index) => (
       <Fragment key={index}>
-        <LogChunk event={event} />
+        <LogChunk event={event} workspaceId={workspaceId} onOpenFile={onOpenFile} />
       </Fragment>
     ))}
   </div>

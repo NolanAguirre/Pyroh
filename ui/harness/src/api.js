@@ -364,6 +364,15 @@ const api = {
     const target = fsTarget(workspace)
     return fetch(at(target.machine, `/api/editor/file?${target.query({ path })}`)).then(json)
   },
+  fsMessageFiles: (workspace, text, { signal } = {}) => {
+    const target = fsTarget(workspace)
+    return fetch(at(target.machine, '/api/editor/message-files'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(target.body({ text })),
+      signal,
+    }).then(json)
+  },
   fsRawUrl: (workspace, path) => {
     const target = fsTarget(workspace)
     return at(target.machine, `/api/editor/raw?${target.query({ path })}`)

@@ -38,6 +38,33 @@
   word-break: break-word;
 }
 
+.transcript__message-files {
+  margin: 6px 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.transcript__message-files > strong {
+  font-size: 0.9em;
+  color: var(--text-dim);
+}
+
+.transcript__message-file-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.transcript__message-file-links .button {
+  max-width: 100%;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .transcript__table {
   overflow-x: auto;
   margin: 4px 0;

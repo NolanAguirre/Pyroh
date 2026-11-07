@@ -251,6 +251,7 @@ const App = () => {
           devId="hr2f3k7"
           sessionId={activeId}
           initialSession={activeSession}
+          onOpenFile={openEditor}
           providers={providers}
           workspaces={workspaces}
           modes={registry.modes}

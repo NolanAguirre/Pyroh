@@ -1,5 +1,6 @@
 const express = require('express')
 const fileSystem = require('../store/fileSystem')
+const { messageFiles } = require('../store/messageFiles')
 
 const router = express.Router()
 
@@ -38,6 +39,12 @@ const route = (fn) => async (req, res) => {
 const bodyOf = (req) => (req.body && typeof req.body === 'object' ? req.body : {})
 
 const noStore = (res) => res.set('Cache-Control', 'no-store')
+
+router.post('/message-files', route(async (req, res) => {
+  const { workspace, text } = bodyOf(req)
+  noStore(res)
+  res.json(await messageFiles({ workspace, text }))
+}))
 
 router.get('/search', route(async (req, res) => {
   noStore(res)

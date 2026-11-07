@@ -50,7 +50,7 @@ const saveForkRetry = (sessionId, retry) => {
   }
 }
 
-const SessionView = ({ devId, sessionId, initialSession, providers = [], workspaces = [], sessions = [], modes: registryModes, onChanged, onCreated, transcriptFontSize }) => {
+const SessionView = ({ devId, sessionId, initialSession, providers = [], workspaces = [], sessions = [], modes: registryModes, onChanged, onCreated, onOpenFile, transcriptFontSize }) => {
   const { events, session: liveSession, runs, children, queuedMessages, submissions, questions, pendingQuestions, connected } = useSessionEvents(sessionId)
   const session = liveSession || initialSession
   const defaultMode = replyMode(session)
@@ -407,6 +407,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
               queued={queued ? (session.runAfter || QUEUED_RUN_AFTER) : null}
               workspaceId={session.workspaceId}
               viewerSessionId={sessionId}
+              onOpenFile={['delegation', 'workflow'].includes(session.childKind) ? undefined : onOpenFile}
             />
 
             {pendingQuestions.map((q) => (

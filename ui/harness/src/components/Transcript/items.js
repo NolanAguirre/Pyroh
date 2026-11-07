@@ -103,6 +103,21 @@ export const hideRecordedPlanText = (events) => {
   })
 }
 
+// File links belong to the final user-facing reply, after the run completes.
+export const markFinalReplies = (events, runs) => {
+  const completed = new Set(runs.filter((run) => run.status === 'completed').map((run) => run.id))
+  const lastReply = new Map()
+  for (const event of events) {
+    if (event.type === 'result' && event.status === 'completed') completed.add(event.runId)
+    if (event.type === 'text' && event.text?.trim()) lastReply.set(event.runId, event)
+    if (event.type === 'tool_call' || event.type === 'user') lastReply.delete(event.runId)
+  }
+  return events.map((event) => completed.has(event.runId) && lastReply.get(event.runId) === event
+    && (!event.recipient || ['all', 'user'].includes(event.recipient))
+    && (!event.channel || event.channel === 'final')
+    ? { ...event, finalReply: true } : event)
+}
+
 // Detect only the final reply after a run finishes, never partial streamed text.
 export const detectAutomaticPlans = (events, runs) => {
   const completed = new Set(runs.filter((run) => run.status === 'completed').map((run) => run.id))

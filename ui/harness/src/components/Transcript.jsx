@@ -1,11 +1,12 @@
 import { useMemo } from 'react'
 import { DevScope } from 'component-library'
 import { errorText } from './Transcript/errorText'
-import { detectAutomaticPlans, hideRecordedPlanText, logParts, questionEvents, transcriptItems, userEvents, withProviderPrompts } from './Transcript/items'
+import { detectAutomaticPlans, hideRecordedPlanText, logParts, markFinalReplies, questionEvents, transcriptItems, userEvents, withProviderPrompts } from './Transcript/items'
 import LogRun from './Transcript/LogRun'
 import StructuredBlock from './Transcript/StructuredBlock'
 import ToolCallBlock from './Transcript/ToolCallBlock'
 import UserMessage from './Transcript/UserMessage'
+import MessageFiles from './Transcript/MessageFiles'
 
 const markQueued = (items, queued, workspaceId, viewerSessionId) => {
   if (!queued) return items
@@ -24,15 +25,20 @@ const markQueued = (items, queued, workspaceId, viewerSessionId) => {
   return items.map((event, itemIndex) => (itemIndex === index ? { ...event, ...extra } : event))
 }
 
-const renderPart = (renderPlanActions, viewerSessionId) => (part, index) => {
-  if (part.kind === 'log') return <LogRun key={index} events={part.events} />
+const renderPart = (renderPlanActions, viewerSessionId, workspaceId, onOpenFile) => (part, index) => {
+  if (part.kind === 'log') return <LogRun key={index} events={part.events} workspaceId={workspaceId} onOpenFile={onOpenFile} />
   const { event } = part
   if (event.type === 'user') return <UserMessage key={index} event={event} sessionId={viewerSessionId} />
-  if (event.type === 'tool_call') return <ToolCallBlock key={index} event={event} renderPlanActions={renderPlanActions} />
+  if (event.type === 'tool_call') return (
+    <div key={index}>
+      {event.finalReply && onOpenFile && <MessageFiles text={event.text} workspaceId={workspaceId} onOpenFile={onOpenFile} />}
+      <ToolCallBlock event={event} renderPlanActions={renderPlanActions} />
+    </div>
+  )
   return <StructuredBlock key={index} event={event} />
 }
 
-const Transcript = ({ devId, events, runs = [], questions = [], renderPlanActions, fontSize, queued = null, workspaceId, viewerSessionId }) => {
+const Transcript = ({ devId, events, runs = [], questions = [], renderPlanActions, fontSize, queued = null, workspaceId, viewerSessionId, onOpenFile }) => {
   const visible = useMemo(() => {
     const missing = runs.flatMap((run) => {
       const message = errorText(run.error || run.transcriptError)
@@ -43,7 +49,7 @@ const Transcript = ({ devId, events, runs = [], questions = [], renderPlanAction
       return [{ type: 'result', runId: run.id, status: run.status, error: message, ts: run.endedAt || run.startedAt }]
     })
     const items = transcriptItems([...events, ...missing, ...userEvents(runs), ...questionEvents(questions)].sort((a, b) => (a.ts || 0) - (b.ts || 0)))
-    return logParts(markQueued(detectAutomaticPlans(hideRecordedPlanText(withProviderPrompts(items)), runs), queued, workspaceId, viewerSessionId))
+    return logParts(markQueued(detectAutomaticPlans(markFinalReplies(hideRecordedPlanText(withProviderPrompts(items)), runs), runs), queued, workspaceId, viewerSessionId))
   }, [events, runs, questions, queued, workspaceId, viewerSessionId])
 
   return (
@@ -59,7 +65,7 @@ const Transcript = ({ devId, events, runs = [], questions = [], renderPlanAction
             <p className="hint">Choose a mode below and submit a prompt to begin working.</p>
           </div>
         )}
-        {visible.map(renderPart(renderPlanActions, viewerSessionId))}
+        {visible.map(renderPart(renderPlanActions, viewerSessionId, workspaceId, onOpenFile))}
       </div>
     </DevScope>
   )
