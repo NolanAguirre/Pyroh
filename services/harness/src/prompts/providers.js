@@ -15,7 +15,6 @@ const PROVIDER_VERSIONS = {
   },
   grok: {
     delegationParent: noNativeSpawning,
-    delegationLeader: noNativeSpawning,
     delegationChild: noNativeSpawning,
   },
 }
