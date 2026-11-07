@@ -11,7 +11,7 @@ const STATUS_VARIANT = {
   finished: 'success',
   error: 'danger',
   queued: 'info',
-  subagent: 'info',
+  subagent: 'primary',
 }
 
 const JobRow = ({ job, workspaceName, active, onSelect }) => {
@@ -66,7 +66,7 @@ const RunningJobsNav = ({
   const [filterActiveOnly, setFilterActiveOnly] = useState(false)
   const nameById = Object.fromEntries(workspaces.map((item) => [item.id, item.name]))
 
-  const activeJobs = jobs.filter((j) => j.status === 'running' || j.status === 'awaiting_input')
+  const activeJobs = jobs.filter((j) => j.status === 'running' || j.status === 'awaiting_input' || j.status === 'subagent')
   const displayedJobs = filterActiveOnly ? activeJobs : jobs
 
   if (collapsed) {

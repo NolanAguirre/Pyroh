@@ -146,6 +146,11 @@
   border-color: #22d3ee;
 }
 
+.session-row__status-dot.badge--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 .session-row__status-dot.badge--warning {
   background: var(--warning);
   border-color: var(--warning);
@@ -162,7 +167,5 @@
 }
 
 .session-row__status-dot.session-row__status-dot--live {
-  background: var(--accent);
-  border-color: var(--accent);
   animation: pulse-dot 1.5s infinite;
 }

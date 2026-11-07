@@ -3,7 +3,7 @@ import api from './api'
 
 const JOB_LIST_LIMIT = 20
 
-export const ACTIVE_JOB = (session) => session.status === 'running' || session.status === 'awaiting_input'
+export const ACTIVE_JOB = (session) => session.status === 'running' || session.status === 'awaiting_input' || session.status === 'subagent'
 
 // Active jobs across all workspaces, filled up with recent chats.
 const useRunningJobs = () => {
