@@ -90,6 +90,19 @@ Where ids go:
 Read the target file and at most one sibling view for patterns. Do not spawn a subagent to explore dev id conventions.`,
   },
   {
+    id: 'makefileRules',
+    activation: { kind: 'Text trigger', condition: 'A request to set up, add, create, update, or fix a Makefile, make rule, or make target. Applies to matching first messages and follow-ups.' },
+    name: 'Makefile rules',
+    group: 'flags',
+    description: 'Prepended to matching messages with explicit forwarding and root Makefile requirements.',
+    usedBy: ['prompt/actions.js'],
+    vars: [],
+    template: `When working on Makefiles:
+- Use explicit targets for forwarding or broadcasting commands. Do not use % pattern rules to hide target names. Allow % only when $* is a program argument, such as kill-port.% invoking ./scripts/kill-port $*.
+- Expose each new lower-level Makefile target at the root as <dir>.<name>.<target>. Add an explicit forwarding target, a .PHONY entry, and a help line. For example, services.vpr.start forwards with $(MAKE) -C services/vpr start.
+- Root make start must launch required app processes and stop its child process groups on Ctrl+C. Start backend services without watching or automatic reload by default.`,
+  },
+  {
     id: 'devIdPaths',
     activation: { kind: 'Text trigger', condition: 'A ## token followed by seven lowercase letters or digits, when matching files exist. Already expanded tokens are skipped.' },
     name: 'Dev id paths',

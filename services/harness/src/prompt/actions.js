@@ -29,6 +29,9 @@ const prefetchDevIds = async (session) => {
 }
 
 const actions = {
+  makefileRules: {
+    prepend: (session) => prompts.render('makefileRules', {}, session.provider, sessionContext(session)),
+  },
   devIds: {
     // mcpdevid records who each id was issued to from the URL path.
     mcpServers: (session) => {

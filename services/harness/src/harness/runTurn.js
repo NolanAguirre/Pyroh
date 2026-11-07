@@ -118,8 +118,8 @@ const runOneTurn = async ({
     ? await require('../store/cursorStore').prepare(session, writeDir, { fresh })
     : undefined
   const textOnly = Array.isArray(tools) && tools.length === 0
-  // Trigger actions fire only on the first prompt to a new agent or subagent.
-  const fired = textOnly || !first ? [] : firedActions(findTriggers(prompt), session.provider,
+  // Each trigger declares whether it applies only to the first prompt or every message.
+  const fired = textOnly ? [] : firedActions(findTriggers(prompt, { first }), session.provider,
     { model: settings.model, mode: logicalMode, messageType })
   const previousTools = session.providerConfiguration?.tools
   const extraMcpServers = [...(previousTools?.mcpServers || []).filter(server => !['harness_agents', MEMORY_SERVER_NAME].includes(server.name))]
@@ -342,11 +342,14 @@ const runOneTurn = async ({
           'The user has taken over this conversation. Follow their requests as an independent agent. Your replies are not returned to the original parent.',
         ].filter(Boolean).join('\n\n')
       }
-      const sources = await Promise.all(steers.map(steer => {
+      const sources = await Promise.all(steers.map(async steer => {
         const source = provenance.supplied(steer.text, { ...steer.promptProvenance,
           messageType: steer.promptProvenance?.messageType ?? 'user' })
-        return rewritePromptWithProvenance(source,
-          { cwd: settings.cwd, first: false, provider: session.provider, ...promptContext(), messageType: source.messageType })
+        const context = { ...promptContext(), messageType: source.messageType }
+        const rewritten = await rewritePromptWithProvenance(source,
+          { cwd: settings.cwd, first: false, provider: session.provider, ...context })
+        const actions = textOnly ? [] : firedActions(findTriggers(steer.text, { first: false }), session.provider, context)
+        return prependNotesWithProvenance(actions, { ...session, ...context }, rewritten)
       }))
       messageType = sources.some(source => source.messageType === 'user') ? 'user' : 'agent'
       const sections = sources.flatMap((source, index) => source.sections.map((part, partIndex) => ({
