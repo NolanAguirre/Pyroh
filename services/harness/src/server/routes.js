@@ -16,10 +16,10 @@ const prompts = require('../prompts')
 const { TRIGGERS } = require('../prompt/triggers')
 const composerActions = require('./composerActions')
 const submissionStore = require('../store/submissionStore')
+const imageStore = require('../store/imageStore')
 const { rewritePrompt } = require('../prompt/rewrite')
 const { sessionContext } = require('../prompt/context')
 const { correctText } = require('../spellcheck')
-const { userPrompt } = require('../prompt/provenance')
 const questionStore = require('../store/questionStore')
 const workspaceStore = require('../store/workspaceStore')
 const checkpointStore = require('../store/checkpointStore')
@@ -385,18 +385,20 @@ router.get('/sessions/:id', async (req, res) => {
   res.json(status)
 })
 
-// Input commands are independent of model, mode, and spellcheck.
-// Return true even on command errors so invalid commands never reach an agent.
-const handleInputCommand = (req, res) => {
+router.post('/sessions/:id/images', (req, res) => {
   try {
-    const outcome = composerActions.inputCommand(req.params.id, req.body || {})
-    if (!outcome) return false
-    res.status(outcome.status).json(outcome.body)
-  } catch (err) {
-    res.status(err.status || 500).json({ error: err && err.message ? err.message : String(err) })
-  }
-  return true
-}
+    if (!req.is('application/json')) return res.status(415).json({ error: 'application/json is required' })
+    res.status(201).json({ image: imageStore.storeImage(req.params.id, req.body, config.writeDir) })
+  } catch (err) { sendError(res, err) }
+})
+
+router.get('/sessions/:id/images/:imageId', (req, res) => {
+  try {
+    const { image, bytes } = imageStore.readImage(req.params.id, req.params.imageId, config.writeDir)
+    res.set({ 'Content-Type': image.mimeType, 'Content-Length': String(image.size),
+      'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, no-store' }).send(bytes)
+  } catch (err) { sendError(res, err) }
+})
 
 const sendComposerAction = (action) => async (req, res) => {
   try {
@@ -431,10 +433,10 @@ router.post('/sessions/:id/submissions', (req, res) => {
   const writeDir = config.writeDir
   try {
     if (!sessionStore.loadSession(sessionId, writeDir)) return res.status(404).json({ error: 'session not found' })
-    const { submission, created } = submissionStore.receive(sessionId, req.body, writeDir)
+    const { submission, created, payload } = submissionStore.receive(sessionId, req.body, writeDir)
     if (created) {
       setImmediate(() => {
-        executeSubmission(sessionId, req.body, writeDir).catch(err => {
+        executeSubmission(sessionId, { id: submission.id, ...payload }, writeDir).catch(err => {
           process.stderr.write(`submission ${submission.id}: ${err.message || String(err)}\n`)
         })
       })
@@ -457,15 +459,7 @@ router.post('/sessions/:id/plan', sendComposerAction('plan'))
 router.post('/sessions/:id/run', sendComposerAction('run'))
 router.post('/sessions/:id/decompose', sendComposerAction('decompose'))
 
-router.post('/sessions/:id/resume', async (req, res) => {
-  if (handleInputCommand(req, res)) return
-  const { prompt, mode } = req.body || {}
-  const corrected = await correctText(prompt)
-  const result = Harness.resume(req.params.id, { prompt: corrected, mode,
-    promptProvenance: typeof prompt === 'string' ? userPrompt(corrected, prompt) : undefined })
-  if (result && Object.hasOwn(result, 'resume')) return res.status(202).json(result)
-  res.status(202).json({ run: result })
-})
+router.post('/sessions/:id/resume', sendComposerAction('resume'))
 
 router.post('/sessions/:id/pause', (req, res) => {
   res.json(Harness.pause(req.params.id))

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, DevScope, Popup, PromptInput, SplitPane, useSpeechRecognition } from 'component-library'
+import { Button, DevScope, ImageAttachments, Popup, PromptInput, SplitPane, useSpeechRecognition } from 'component-library'
 import { INPUT_COMMANDS, TRIGGERS, parseInputCommand } from 'prompt-triggers'
 import useSessionEvents from '../useSessionEvents'
 import api from '../api'
@@ -9,6 +9,8 @@ import QuestionCard from './QuestionCard'
 import { Icon, ICONS } from './Session/icons'
 import { readDrafts, replyMode, loadComposer, saveComposer } from './Session/composerDrafts'
 import usePromptSubmission, { loadPromptSubmission } from './Session/usePromptSubmission'
+import useSessionImages from './Session/useSessionImages'
+import SessionImagePreviews from './Session/SessionImagePreviews'
 import NewChatTarget from './Session/NewChatTarget'
 import ModeToggle from './Session/ModeToggle'
 import RunAfterControl, { eligibleRunAfterSessions } from './Session/RunAfterControl'
@@ -55,6 +57,10 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const [savedSubmission] = useState(() => loadPromptSubmission(sessionId))
   const [mode, setMode] = useState(() => savedSubmission?.context.mode || loadComposer(sessionId, defaultMode).mode)
   const [prompt, setPromptState] = useState(() => savedSubmission?.request.prompt ?? loadComposer(sessionId, defaultMode).prompt)
+  const [initialImages] = useState(() => savedSubmission ? {
+    attachments: (savedSubmission.request.images || []).map((image) => ({ key: image.id, name: image.name, image })),
+  } : loadComposer(sessionId, defaultMode))
+  const attachments = useSessionImages(sessionId, initialImages)
   const promptLocked = useRef(Boolean(savedSubmission))
   const acceptSpeech = useRef(true)
   const forkRetry = useRef({ sessionId, retry: loadForkRetry(sessionId) })
@@ -104,8 +110,8 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   }, [connected])
 
   useEffect(() => {
-    saveComposer(sessionId, mode, prompt, defaultMode)
-  }, [sessionId, mode, prompt, defaultMode])
+    saveComposer(sessionId, mode, prompt, defaultMode, attachments.draftItems, attachments.error)
+  }, [sessionId, mode, prompt, defaultMode, attachments.draftItems, attachments.error])
 
   useEffect(() => {
     if (forkRetry.current.sessionId !== sessionId) {
@@ -168,14 +174,22 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
     && ['turn', 'plugin'].includes(active?.kind)
   const inputCommand = parseInputCommand(prompt)
   const commandEntry = INPUT_COMMANDS.find((item) => item.type === inputCommand?.type)
-  const queueDisabled = Boolean(inputCommand) || !canQueue || queued || !prompt.trim()
+  const hasImages = attachments.items.length > 0
+  const hasContent = Boolean(prompt.trim()) || hasImages
+  const imageModeError = hasImages && (inputCommand
+    ? 'Commands cannot include images. Remove the images or change the prompt.'
+    : isDecompose || isNewChat || isFork || spawnsSession || session?.workflowPlugin || session?.childKind === 'workflow'
+      ? 'Images are not supported in this workflow. Use an ordinary session or remove the images.'
+      : '')
+  const imagesBlocked = attachments.blocked || Boolean(imageModeError)
+  const queueDisabled = imagesBlocked || Boolean(inputCommand) || !canQueue || queued || !hasContent
   const spawnEntry = providers.find((item) => item.id === spawnProvider)
   const spawnModelId = spawnModel || spawnEntry?.models?.[0]?.id || null
   const spawnBlocked = picksSpawnTarget && Boolean(spawnEntry) && (spawnEntry.implemented === false || spawnEntry.error)
   const runAfterBlocked = showRunAfter && runAfterOn && !dependencyId
-  const sendDisabled = !inputCommand && (queued || runAfterBlocked || nativeForkUnavailable || (isFork && !submitted) || (steering
-    ? !prompt.trim()
-    : (blocksWhileBusy && isBusy) || (promptRequired && !prompt.trim()) || spawnBlocked))
+  const sendDisabled = imagesBlocked || (!inputCommand && (queued || runAfterBlocked || nativeForkUnavailable || (isFork && !submitted) || (steering
+    ? !hasContent
+    : (blocksWhileBusy && isBusy) || (promptRequired && !hasContent) || spawnBlocked)))
 
   useEffect(() => {
     if (!eligible.length) {
@@ -213,6 +227,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
       const { mode: sentMode, defaultMode: sentDefault, isFork: sentFork, isNewChat: sentNewChat } = sent.context
       saveComposer(sessionId, sentFork ? sentDefault : sentMode, '', sentDefault)
       setPrompt('')
+      attachments.clear()
       if (result.checkpoint) {
         setCommandNotice(`Checkpoint “${result.checkpoint.name}” created at ${new Date(result.checkpoint.at).toLocaleString()}. Available in analytics.`)
       }
@@ -236,9 +251,9 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
     speech.stop()
     setActionError('')
     setCommandNotice('')
-    saveComposer(sessionId, mode, prompt, defaultMode)
+    saveComposer(sessionId, mode, prompt, defaultMode, attachments.draftItems, attachments.error)
     const action = inputCommand ? 'commands' : delivery === 'queue' ? 'queue' : steering ? 'steer' : 'run'
-    const request = { action, prompt, mode }
+    const request = { action, prompt, mode, ...(attachments.images.length ? { images: attachments.images } : {}) }
     if (action === 'run') {
       if (dependencyId) {
         request.provider = session.provider
@@ -425,6 +440,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                           <div className="composer__queue-message">
                             <span className="composer__queue-mode">{modes.find((item) => item.id === message.mode)?.label || message.mode}</span>
                             <span className="composer__queue-text">{message.text}</span>
+                            <SessionImagePreviews images={message.images} sessionId={sessionId} />
                           </div>
                           <Button
                             variant="secondary"
@@ -483,6 +499,18 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                 disabled={composerBusy}
               />
             )}
+            <ImageAttachments
+              className="composer__attachments"
+              items={attachments.items}
+              onFiles={attachments.add}
+              onRemove={attachments.remove}
+              onRetry={attachments.retry}
+              error={attachments.error}
+              onError={attachments.setError}
+              onDismissError={() => attachments.setError('')}
+              disabled={composerBusy}
+              hint="PNG, JPEG, GIF or WebP · up to 5 images · 10 MiB each · paste or drop here"
+            >
             <div className="composer__input-wrapper">
               <DevScope id="hr8r3c4">
                 <PromptInput
@@ -544,6 +572,9 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                 )}
               </div>
             </div>
+            </ImageAttachments>
+            {imageModeError && <p className="composer__error hint hint--error" role="alert">{imageModeError}</p>}
+            {attachments.items.some((item) => item.status !== 'ready') && <p className="hint" role="status">Finish uploading, retry, or remove failed images before sending.</p>}
             {submission.pending && (
               <p className="hint" role="status">
                 {submission.pending.received ? 'Received. Waiting for acceptance…' : 'Sending…'}

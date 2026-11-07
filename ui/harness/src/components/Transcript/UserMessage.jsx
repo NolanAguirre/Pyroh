@@ -3,6 +3,7 @@ import { DevScope } from 'component-library'
 import api from '../../api'
 import { urlWithSelection } from '../../appUrl'
 import ProviderPrompt from './ProviderPrompt'
+import SessionImagePreviews from '../Session/SessionImagePreviews'
 
 const CopyIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -30,7 +31,7 @@ const loadSessionHref = (event) => {
   return urlWithSelection(new URL(window.location.href), event.workspaceId, sessionId, null, null, null).href
 }
 
-const UserMessage = ({ event }) => {
+const UserMessage = ({ event, sessionId }) => {
   const [copied, setCopied] = useState(false)
   const dependency = event.runAfter
   const text = event.text || dependency?.prompt || ''
@@ -68,6 +69,7 @@ const UserMessage = ({ event }) => {
           </DevScope>
         </div>
         {captured ? <ProviderPrompt prompt={captured} devId="md9l4wi" /> : <div className="tx__user-body">{text}</div>}
+        <SessionImagePreviews images={event.images || dependency?.images} sessionId={sessionId || event.viewerSessionId} />
         {!captured && !dependency && (event.runPrompt || event.steer) && (
           <DevScope id="8yxr6ek" state={{ runPrompt: Boolean(event.runPrompt) }}>
             <p className="tx__prompt-note">Saved message. The full agent prompt has not been captured.</p>

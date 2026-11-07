@@ -117,8 +117,12 @@ const createGrokClient = ({ bin, model, reasoningEffort, env = process.env, onPe
     transport.request('session/set_config_option', { sessionId, configId, value })
 
   const assertImageSupport = (images = []) => {
-    if (images.length && init?.agentCapabilities?.promptCapabilities?.image !== true) {
-      throw Object.assign(new Error('Grok ACP does not advertise image input support (promptCapabilities.image must be true). No prompt was sent.'), {
+    // Grok Shell accepts ACP image blocks but currently omits the image flag.
+    // Its initialize metadata identifies that implementation; other ACP agents
+    // must explicitly advertise support. See xai-org/grok-build acp_agent.rs.
+    const supported = init?.agentCapabilities?.promptCapabilities?.image === true || init?._meta?.grokShell === true
+    if (images.length && !supported) {
+      throw Object.assign(new Error('This Grok ACP server does not support image input. No prompt was sent.'), {
         code: 'PROVIDER_IMAGES_UNSUPPORTED',
       })
     }

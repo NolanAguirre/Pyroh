@@ -5,9 +5,11 @@ const sessionIndex = require('../store/sessionIndex')
 const routes = require('./routes')
 const analyticsRoutes = require('./analyticsRoutes')
 const { startMaintenance } = require('./maintenance')
+const { UPLOAD_JSON_LIMIT } = require('../store/imageStore')
 
 const createApp = () => {
   const app = express()
+  app.post('/api/sessions/:id/images', express.json({ limit: UPLOAD_JSON_LIMIT, inflate: false }))
   app.use(express.json({ limit: '4mb' }))
   app.post('/api/provider-telemetry/codex/:captureId/v1/logs', require('../agents/providers/codexTelemetry').receive)
   app.use('/mcp/agents', require('./delegationMcp'))

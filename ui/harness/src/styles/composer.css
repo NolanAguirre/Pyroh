@@ -122,6 +122,11 @@
   min-height: 0;
 }
 
+.composer__attachments {
+  flex: 1;
+  min-height: 150px;
+}
+
 .composer__input {
   flex: 1;
   min-width: 0;

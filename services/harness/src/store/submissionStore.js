@@ -4,6 +4,7 @@ const crypto = require('crypto')
 const { spawnSync } = require('child_process')
 const config = require('../config')
 const paths = require('./paths')
+const imageStore = require('./imageStore')
 const { readJson, writeJson } = require('./jsonFile')
 const { identity, ownerAlive } = require('./sessionLock')
 
@@ -74,6 +75,7 @@ const receive = (sessionId, body, writeDir = config.writeDir) => {
   }
   const { id, ...payload } = body
   if (!actions.has(payload.action)) throw Object.assign(new Error('invalid submission action'), { status: 400 })
+  if (payload.images !== undefined) payload.images = imageStore.normalizeImages(sessionId, payload.images, writeDir)
   return withLock(sessionId, writeDir, () => {
     const state = recover(sessionId, read(sessionId, writeDir), writeDir)
     const existing = state.submissions.find(record => record.id === id)
@@ -81,13 +83,13 @@ const receive = (sessionId, body, writeDir = config.writeDir) => {
       if (canonical(existing.payload) !== canonical(payload)) {
         throw Object.assign(new Error('submission id already used with a different payload'), { status: 409 })
       }
-      return { submission: publicReceipt(existing), created: false }
+      return { submission: publicReceipt(existing), created: false, payload: existing.payload }
     }
     const record = { id, status: 'received', payload, owner }
     state.submissions.push(record)
     writeJson(fileFor(sessionId, writeDir), state)
     active.add(keyFor(sessionId, id, writeDir))
-    return { submission: publicReceipt(record), created: true }
+    return { submission: publicReceipt(record), created: true, payload }
   })
 }
 

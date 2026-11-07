@@ -33,8 +33,8 @@ export const transcriptItems = (events) => {
 const isBlock = (event) => event.type === 'tool_call' || event.type === 'plan' || event.type === 'diff' || event.type === 'user'
 
 export const userEvents = (runs) => runs.flatMap((run) => {
-  if (typeof run.prompt !== 'string' || run.prompt === '') return []
-  return [{ type: 'user', text: run.prompt, runPrompt: true, runId: run.id, ts: run.startedAt || 0, itemId: `user:${run.id}` }]
+  if (!run.images?.length && (typeof run.prompt !== 'string' || run.prompt === '')) return []
+  return [{ type: 'user', text: run.prompt || '', ...(run.images?.length ? { images: run.images } : {}), runPrompt: true, runId: run.id, ts: run.startedAt || 0, itemId: `user:${run.id}` }]
 })
 
 // Pair captured provider input with its source message after replayed items have

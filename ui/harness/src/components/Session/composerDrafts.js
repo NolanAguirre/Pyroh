@@ -37,14 +37,15 @@ export const replyMode = (session) =>
 export const loadComposer = (sessionId, fallbackMode) => {
   const entry = sessionId ? readDrafts()[sessionId] : null
   const mode = entry && isMode(entry.mode) ? entry.mode : fallbackMode
-  return { mode, prompt: sharedPrompt(entry, mode) }
+  const attachments = Array.isArray(entry?.attachments) ? entry.attachments : []
+  return { mode, prompt: sharedPrompt(entry, mode), attachments, imageError: entry?.imageError || '' }
 }
 
-export const saveComposer = (sessionId, mode, prompt, fallbackMode) => {
+export const saveComposer = (sessionId, mode, prompt, fallbackMode, attachments = [], imageError = '') => {
   if (!sessionId) return
   const drafts = readDrafts()
   const text = typeof prompt === 'string' ? prompt : ''
-  if (!text && mode === fallbackMode) delete drafts[sessionId]
-  else drafts[sessionId] = { mode, prompt: text }
+  if (!text && !attachments.length && !imageError && mode === fallbackMode) delete drafts[sessionId]
+  else drafts[sessionId] = { mode, prompt: text, attachments, imageError }
   writeDrafts(drafts)
 }

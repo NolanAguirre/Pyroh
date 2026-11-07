@@ -24,10 +24,10 @@ const markQueued = (items, queued, workspaceId, viewerSessionId) => {
   return items.map((event, itemIndex) => (itemIndex === index ? { ...event, ...extra } : event))
 }
 
-const renderPart = (renderPlanActions) => (part, index) => {
+const renderPart = (renderPlanActions, viewerSessionId) => (part, index) => {
   if (part.kind === 'log') return <LogRun key={index} events={part.events} />
   const { event } = part
-  if (event.type === 'user') return <UserMessage key={index} event={event} />
+  if (event.type === 'user') return <UserMessage key={index} event={event} sessionId={viewerSessionId} />
   if (event.type === 'tool_call') return <ToolCallBlock key={index} event={event} renderPlanActions={renderPlanActions} />
   return <StructuredBlock key={index} event={event} />
 }
@@ -59,7 +59,7 @@ const Transcript = ({ devId, events, runs = [], questions = [], renderPlanAction
             <p className="hint">Choose a mode below and submit a prompt to begin working.</p>
           </div>
         )}
-        {visible.map(renderPart(renderPlanActions))}
+        {visible.map(renderPart(renderPlanActions, viewerSessionId))}
       </div>
     </DevScope>
   )
