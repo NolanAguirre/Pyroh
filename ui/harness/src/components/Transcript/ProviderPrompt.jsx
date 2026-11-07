@@ -38,7 +38,7 @@ const ProviderPrompt = ({ prompt }) => {
           key={index}
           className={`tx__prompt-section tx__prompt-section--${kinds[section.kind] ? section.kind : 'unknown'}`}
         >
-          <Fold defaultOpen>
+          <Fold>
             <FoldTrigger>{section.label || kinds[section.kind] || 'Source unavailable'}</FoldTrigger>
             <FoldContent>
               <div className="tx__user-body tx__prompt-text">{section.text}</div>
