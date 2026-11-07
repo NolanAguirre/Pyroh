@@ -17,6 +17,7 @@ const { TRIGGERS } = require('../prompt/triggers')
 const composerActions = require('./composerActions')
 const submissionStore = require('../store/submissionStore')
 const { rewritePrompt } = require('../prompt/rewrite')
+const { sessionContext } = require('../prompt/context')
 const { correctText } = require('../spellcheck')
 const questionStore = require('../store/questionStore')
 const workspaceStore = require('../store/workspaceStore')
@@ -498,7 +499,13 @@ const correctAnswer = async (sessionId, qid, answer) => {
   if (!question || question.secret || question.allowFreeText === false || question.options.includes(answer)) return answer
   const corrected = await correctText(answer, { first: false })
   const session = sessionStore.loadSession(sessionId, config.writeDir)
-  return rewritePrompt(corrected, { cwd: workspaceStore.resolveSessionCwd(session, config.writeDir), first: false, provider: session?.provider })
+  const run = question.runId ? sessionStore.loadRun(sessionId, question.runId, config.writeDir) : null
+  return rewritePrompt(corrected, {
+    cwd: workspaceStore.resolveSessionCwd(session, config.writeDir),
+    first: false,
+    provider: session?.provider,
+    ...sessionContext(session, run?.mode ?? session?.mode),
+  })
 }
 
 router.post('/sessions/:id/questions/:qid/answer', async (req, res) => {
