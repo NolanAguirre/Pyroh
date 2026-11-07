@@ -511,8 +511,9 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
               onError={attachments.setError}
               onDismissError={() => attachments.setError('')}
               disabled={composerBusy}
-              hint="PNG, JPEG, GIF or WebP · up to 5 images · 10 MiB each · paste or drop here"
+              showToolbar={false}
             >
+            {({ open }) => (
             <div className="composer__input-wrapper">
               <DevScope id="hr8r3c4">
                 <PromptInput
@@ -530,6 +531,18 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                   onChange={(e) => { if (!promptLocked.current) setPrompt(e.target.value) }}
                   onSubmit={send}
                   rows={isDecompose ? 8 : 3}
+                  overlay={(
+                    <button
+                      type="button"
+                      className="composer__attach"
+                      onClick={open}
+                      disabled={composerBusy}
+                      title="PNG, JPEG, GIF or WebP · up to 5 images · 10 MiB each · paste or drop here"
+                      aria-label="Attach images"
+                    >
+                      <Icon d={ICONS.image} />
+                    </button>
+                  )}
                 />
               </DevScope>
               <div className="composer__actions">
@@ -574,6 +587,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                 )}
               </div>
             </div>
+            )}
             </ImageAttachments>
             {imageModeError && <p className="composer__error hint hint--error" role="alert">{imageModeError}</p>}
             {attachments.items.some((item) => item.status !== 'ready') && <p className="hint" role="status">Finish uploading, retry, or remove failed images before sending.</p>}

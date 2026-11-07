@@ -4,6 +4,7 @@ export const ICONS = {
   stop: 'M4.5 4.5h7v7h-7z',
   panel: 'M2.5 3h11v10h-11zM9.5 3v10',
   mic: 'M6 2.5h4v6.5h-4zM3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2M5.5 14h5',
+  image: 'M2.5 3.5h11v9h-11zM5.1 6.2a.7.7 0 1 0 1.4 0a.7.7 0 1 0-1.4 0M2.5 10.2l2.7-2.3 2 1.7 1.6-1.5 4.2 3.1',
 }
 
 export const Icon = ({ d }) => (

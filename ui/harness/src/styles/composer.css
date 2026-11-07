@@ -136,7 +136,7 @@
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 10px 36px 28px 12px;
   font-family: inherit;
   font-size: var(--transcript-font-size, 13px);
   outline: none;
@@ -221,6 +221,29 @@
   overflow-wrap: anywhere;
   max-height: 80px;
   overflow-y: auto;
+}
+
+.composer__attach {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg-elev-2) 72%, transparent);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.composer__attach:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.composer__attach:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .composer__mic {
