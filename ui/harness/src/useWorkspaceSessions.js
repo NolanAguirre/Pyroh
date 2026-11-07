@@ -7,25 +7,24 @@ const sameSessionRow = (a, b) => a.updatedAt === b.updatedAt
   && Boolean(a.pinned) === Boolean(b.pinned)
   && Boolean(a.archived) === Boolean(b.archived)
 
-// The server archives descendants with the parent; mirror that without a refetch.
-const withDescendantsArchived = (sessions, rootId) => {
+// These descendants are archived by the server; token-waste sources need separate requests.
+const descendantIds = (sessions, rootIds) => {
   const children = new Map()
   for (const item of sessions) {
-    if (!item.parentSessionId) continue
+    if (!item.parentSessionId || item.childKind === 'fork') continue
     if (!children.has(item.parentSessionId)) children.set(item.parentSessionId, [])
     children.get(item.parentSessionId).push(item.id)
   }
-  const ids = new Set()
-  const pending = [rootId]
+  const ids = new Set(rootIds)
+  const pending = [...ids]
   while (pending.length) {
     for (const childId of children.get(pending.pop()) || []) {
-      if (ids.has(childId) || childId === rootId) continue
+      if (ids.has(childId)) continue
       ids.add(childId)
       pending.push(childId)
     }
   }
-  if (!ids.size) return sessions
-  return sessions.map(item => ids.has(item.id) && !item.archived ? { ...item, archived: true } : item)
+  return ids
 }
 
 // Sessions for the active workspace plus rename, archive, and pin actions.
@@ -96,41 +95,54 @@ const useWorkspaceSessions = (activeWorkspaceId, activeId, leaveSession, searchi
     return session
   }
 
-  const archiveSession = async (id, archived) => {
-    if (archiveBusy) return
-    setArchiveBusy(true)
-    setArchiveError(null)
-    try {
-      const { session } = await api.setSessionArchived(id, archived)
-      setSessions(current => {
-        const next = current.map(item => item.id === id ? session : item)
-        return archived ? withDescendantsArchived(next, id) : next
-      })
-      if (archived && !showArchived && activeId === id) leaveSession()
-    } catch (error) { setArchiveError(error.message) }
-    finally { setArchiveBusy(false) }
-  }
-
-  const archiveOlderSessions = async (ids) => {
+  const archiveSessions = async (ids) => {
     if (archiveBusy || !ids.length) return
     setArchiveBusy(true)
     setArchiveError(null)
     try {
-      const results = await Promise.allSettled(ids.map(id => api.setSessionArchived(id, true)))
-      const archived = results.flatMap(result => result.status === 'fulfilled' ? [result.value.session] : [])
-      const failure = results.find(result => result.status === 'rejected')
-      if (archived.length) {
-        const byId = new Map(archived.map(session => [session.id, session]))
-        setSessions(current => current.map(item => byId.get(item.id) || item))
-        if (!showArchived && archived.some(session => session.id === activeId)) {
-          leaveSession()
+      const requested = new Set()
+      const archivedIds = new Set()
+      let pending = [...new Set(ids)]
+      let failure = null
+      while (pending.length) {
+        pending.forEach(id => requested.add(id))
+        const results = await Promise.allSettled(pending.map(id => api.setSessionArchived(id, true)))
+        const archived = results.flatMap(result => result.status === 'fulfilled' ? [result.value.session] : [])
+        failure ||= results.find(result => result.status === 'rejected')
+        const batchIds = descendantIds(sessions, archived.map(session => session.id))
+        batchIds.forEach(id => archivedIds.add(id))
+        if (archived.length) {
+          const byId = new Map(archived.map(session => [session.id, session]))
+          setSessions(current => {
+            const currentIds = descendantIds(current, archived.map(session => session.id))
+            return current.map(item => byId.get(item.id)
+              || (currentIds.has(item.id) ? { ...item, archived: true } : item))
+          })
         }
+        pending = sessions.filter(item => item.mode === 'token-waste'
+          && archivedIds.has(item.sourceSessionId)
+          && !archivedIds.has(item.id)
+          && !requested.has(item.id)).map(item => item.id)
       }
-      if (failure) setArchiveError(failure.reason && failure.reason.message ? failure.reason.message : 'Failed to archive sessions')
-    } finally {
-      setArchiveBusy(false)
-    }
+      if (!showArchived && archivedIds.has(activeId)) leaveSession()
+      if (failure) setArchiveError(failure.reason?.message || 'Failed to archive sessions')
+    } catch (error) { setArchiveError(error.message) }
+    finally { setArchiveBusy(false) }
   }
+
+  const archiveSession = async (id, archived) => {
+    if (archived) return archiveSessions([id])
+    if (archiveBusy) return
+    setArchiveBusy(true)
+    setArchiveError(null)
+    try {
+      const { session } = await api.setSessionArchived(id, false)
+      setSessions(current => current.map(item => item.id === id ? session : item))
+    } catch (error) { setArchiveError(error.message) }
+    finally { setArchiveBusy(false) }
+  }
+
+  const archiveOlderSessions = (ids) => archiveSessions(ids)
 
   const pinSession = async (id, pinned) => {
     if (pinBusy) return
