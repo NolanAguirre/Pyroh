@@ -151,6 +151,19 @@ const sessionPost = (sessionId, suffix, body) => {
   } : data)
 }
 
+const tagSubmission = (submission, machine) => {
+  if (!submission?.result) return submission
+  const { result } = submission
+  return {
+    ...submission,
+    result: {
+      ...result,
+      ...(result.session ? { session: tagSession(result.session, machine) } : {}),
+      ...(result.run ? { run: { ...result.run, sessionId: tagId(result.run.sessionId, machine) } } : {}),
+    },
+  }
+}
+
 const sortSessions = (sessions, { orderBy = 'createdAt', order = 'desc', limit } = {}) => {
   const sign = order === 'asc' ? 1 : -1
   const sorted = [...sessions].sort((a, b) => sign * ((a[orderBy] || 0) - (b[orderBy] || 0)))
@@ -175,6 +188,7 @@ const api = {
   machineOf: (id) => splitId(id).machine,
   // Tags a record streamed from `sessionId`'s machine (SSE payloads).
   adoptSession: (sessionId, session) => tagSession(session, splitId(sessionId).machine),
+  adoptSubmission: (sessionId, submission) => tagSubmission(submission, splitId(sessionId).machine),
   getProviders: () => fetch(at(null, '/api/providers')).then(json),
   getPromptTriggers: () => fetch(at(null, '/api/prompt-triggers')).then(json),
   getUiSettings: () => fetch(at(null, '/api/ui')).then(json),
@@ -260,6 +274,14 @@ const api = {
   },
   plan: (id, prompt) => sessionPost(id, '/plan', { prompt }),
   inputCommand: (id, prompt) => sessionPost(id, '/commands', { prompt }),
+  submitPrompt: (sessionId, request) => {
+    const { machine, url } = sessionUrl(sessionId, '/submissions')
+    const body = {
+      ...request,
+      ...(request.runAfterSessionId ? { runAfterSessionId: splitId(request.runAfterSessionId).id } : {}),
+    }
+    return post(url, body).then(({ submission }) => ({ submission: tagSubmission(submission, machine) }))
+  },
   run: (id, { prompt, mode, provider, model, runAfterSessionId }) => sessionPost(id, '/run', {
     prompt,
     mode,

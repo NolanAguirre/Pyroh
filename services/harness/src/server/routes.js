@@ -13,8 +13,9 @@ const { readJsonAsync } = require('../store/jsonFile')
 const { listProviders } = require('../agents/driver')
 const registry = require('../registry')
 const prompts = require('../prompts')
-const { TRIGGERS, INPUT_COMMANDS, parseInputCommand } = require('../prompt/triggers')
-const { executeInputCommand } = require('../harness/inputCommands')
+const { TRIGGERS } = require('../prompt/triggers')
+const composerActions = require('./composerActions')
+const submissionStore = require('../store/submissionStore')
 const { rewritePrompt } = require('../prompt/rewrite')
 const { correctText } = require('../spellcheck')
 const questionStore = require('../store/questionStore')
@@ -359,64 +360,74 @@ router.get('/sessions/:id', async (req, res) => {
 // Input commands are independent of model, mode, and spellcheck.
 // Return true even on command errors so invalid commands never reach an agent.
 const handleInputCommand = (req, res) => {
-  const command = parseInputCommand((req.body || {}).prompt)
-  if (!command) return false
-  const at = new Date().toISOString()
   try {
-    const session = sessionStore.loadSession(req.params.id, config.writeDir)
-    if (!session) {
-      res.status(404).json({ error: 'session not found' })
-      return true
-    }
-    res.json(executeInputCommand({ session, prompt: req.body.prompt, command, at }))
+    const outcome = composerActions.inputCommand(req.params.id, req.body || {})
+    if (!outcome) return false
+    res.status(outcome.status).json(outcome.body)
   } catch (err) {
     res.status(err.status || 500).json({ error: err && err.message ? err.message : String(err) })
   }
   return true
 }
 
-router.post('/sessions/:id/commands', (req, res) => {
-  if (handleInputCommand(req, res)) return
-  res.status(400).json({ error: `Expected command: ${INPUT_COMMANDS.map(command => command.usage).join(', ')}` })
-})
-
-// Validates the mode against the registry before running, so prompt rules and
-// deny decisions come from one place.
-const startRun = async (req, res, requested, { prompt, provider, model, targetMode, runAfterSessionId, forkRetryKey }) => {
-  if (handleInputCommand(req, res)) return
-  const session = sessionStore.loadSession(req.params.id, config.writeDir)
-  if (!session) return res.status(404).json({ error: 'session not found' })
-  const mode = requested || Harness.replyMode(session)
-  let entry
+const sendComposerAction = (action) => async (req, res) => {
   try {
-    entry = registry.requireMode(registry.sessionWorkspace(session), mode, { provider: session.provider })
+    const outcome = await composerActions.execute(req.params.id, action, req.body || {})
+    res.status(outcome.status).json(outcome.body)
   } catch (err) {
-    return sendError(res, err)
-  }
-  const inPlace = Harness.repliesInPlace(session, entry)
-  if (!prompt && (inPlace || !entry.promptOptional)) return res.status(400).json({ error: 'prompt is required' })
-  try {
-    const run = await Harness.run(req.params.id, {
-      prompt: await correctText(prompt), mode, provider, model, targetMode, runAfterSessionId, forkRetryKey,
-    })
-    if (run && run.queued) return res.status(202).json({ session: run.session })
-    if (entry.kind === 'decompose') return res.status(202).json(run)
-    res.status(202).json({ run, ...(entry.newSession && !inPlace
-      ? { session: sessionStore.loadSession(run.sessionId, config.writeDir) } : {}) })
-  } catch (err) {
-    const message = err && err.message ? err.message : String(err)
-    res.status(err.status || (message.includes('not found') ? 404 : 400)).json({ error: message })
+    sendError(res, err)
   }
 }
 
-router.post('/sessions/:id/plan', (req, res) => startRun(req, res, 'plan', req.body || {}))
+// Defer all action preparation until after the receipt has been durably saved
+// and the HTTP response has been sent. Disconnects never cancel accepted work.
+const executeSubmission = async (sessionId, { id, action, ...body }, writeDir) => {
+  let terminal
+  try {
+    const outcome = await composerActions.execute(sessionId, action, body)
+    terminal = { status: 'succeeded', result: outcome.body }
+  } catch (err) {
+    terminal = { status: 'failed', error: err && err.message ? err.message : String(err) }
+  }
+  try {
+    submissionStore.finish(sessionId, id, terminal, writeDir)
+  } finally {
+    // If persisting the outcome failed, the next receipt read recovers it as
+    // uncertain instead of leaving a live-process receipt locked indefinitely.
+    submissionStore.release(sessionId, id, writeDir)
+  }
+}
 
-router.post('/sessions/:id/run', (req, res) => {
-  const { mode, ...body } = req.body || {}
-  return startRun(req, res, mode, body)
+router.post('/sessions/:id/submissions', (req, res) => {
+  const sessionId = req.params.id
+  const writeDir = config.writeDir
+  try {
+    if (!sessionStore.loadSession(sessionId, writeDir)) return res.status(404).json({ error: 'session not found' })
+    const { submission, created } = submissionStore.receive(sessionId, req.body, writeDir)
+    if (created) {
+      setImmediate(() => {
+        executeSubmission(sessionId, req.body, writeDir).catch(err => {
+          process.stderr.write(`submission ${submission.id}: ${err.message || String(err)}\n`)
+        })
+      })
+    }
+    res.status(202).json({ submission })
+  } catch (err) { sendError(res, err) }
 })
 
-router.post('/sessions/:id/decompose', (req, res) => startRun(req, res, 'decompose', req.body || {}))
+router.get('/sessions/:id/submissions/:submissionId', (req, res) => {
+  try {
+    if (!sessionStore.loadSession(req.params.id, config.writeDir)) return res.status(404).json({ error: 'session not found' })
+    const submission = submissionStore.get(req.params.id, req.params.submissionId, config.writeDir)
+    if (!submission) return res.status(404).json({ error: 'submission not found' })
+    res.json({ submission })
+  } catch (err) { sendError(res, err) }
+})
+
+router.post('/sessions/:id/commands', sendComposerAction('commands'))
+router.post('/sessions/:id/plan', sendComposerAction('plan'))
+router.post('/sessions/:id/run', sendComposerAction('run'))
+router.post('/sessions/:id/decompose', sendComposerAction('decompose'))
 
 router.post('/sessions/:id/resume', async (req, res) => {
   if (handleInputCommand(req, res)) return
@@ -434,30 +445,8 @@ router.post('/sessions/:id/stop', (req, res) => {
   res.json(Harness.stop(req.params.id))
 })
 
-router.post('/sessions/:id/steer', async (req, res) => {
-  if (handleInputCommand(req, res)) return
-  const { prompt } = req.body || {}
-  if (typeof prompt !== 'string' || !prompt.trim()) return res.status(400).json({ error: 'prompt is required' })
-  const corrected = await correctText(prompt, { first: false })
-  try {
-    res.status(202).json({ steer: Harness.steer(req.params.id, corrected) })
-  } catch (err) {
-    res.status(err.status || 400).json({ error: err.message })
-  }
-})
-
-router.post('/sessions/:id/queue', async (req, res) => {
-  if (handleInputCommand(req, res)) return
-  const { prompt, mode } = req.body || {}
-  if (typeof prompt !== 'string' || !prompt.trim()) return res.status(400).json({ error: 'prompt is required' })
-  if (mode != null && typeof mode !== 'string') return res.status(400).json({ error: 'mode must be a string' })
-  try {
-    const message = Harness.queue(req.params.id, { prompt: await correctText(prompt), mode })
-    res.status(202).json({ message })
-  } catch (err) {
-    res.status(err.status || 400).json({ error: err.message })
-  }
-})
+router.post('/sessions/:id/steer', sendComposerAction('steer'))
+router.post('/sessions/:id/queue', sendComposerAction('queue'))
 
 router.post('/sessions/:id/queue/:messageId/send', async (req, res) => {
   try {

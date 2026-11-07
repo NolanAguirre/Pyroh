@@ -6,6 +6,7 @@ const eventLog = require('../store/eventLog')
 const sessionStore = require('../store/sessionStore')
 const questionStore = require('../store/questionStore')
 const queuedMessageStore = require('../store/queuedMessageStore')
+const submissionStore = require('../store/submissionStore')
 const { readForkHistory } = require('../harness/fork')
 
 const feeds = new Map()
@@ -26,6 +27,7 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
     questions: paths.questionsDir(sessionId, writeDir),
     children: path.join(dir, 'delegation'),
     queuedMessages: queuedMessageStore.fileFor(sessionId, writeDir),
+    submissions: submissionStore.fileFor(sessionId, writeDir),
     events: paths.eventsFile(sessionId, writeDir),
   }
   const listeners = new Set()
@@ -35,6 +37,7 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
   const dirty = new Set(Object.keys(locations))
   let session = initialSession
   let children = []
+  let submissions = []
   let events = { stamp: 'missing', size: 0 }
   let ready = false
   let disposed = false
@@ -58,6 +61,7 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
         if (type) dirty.add(type)
         else if (name === 'session.json') dirty.add('session')
         else if (name === 'queued-messages.json') dirty.add('queuedMessages')
+        else if (name === 'submissions.json') dirty.add('submissions')
         else if (name && !['events.jsonl', 'runs', 'questions', 'delegation'].includes(name)) return
         schedule()
       })
@@ -93,6 +97,8 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
         changed.has('runs') ? sessionStore.listRunsAsync(sessionId, writeDir).then(value => ['runs', [...(inherited?.runs || []), ...value]]) : null,
         changed.has('questions') ? questionStore.listQuestionsAsync(sessionId, writeDir).then(value => ['questions', [...(inherited?.questions || []), ...value]]) : null,
         changed.has('queuedMessages') ? queuedMessageStore.listAsync(sessionId, writeDir).then(value => ['queuedMessages', value]) : null,
+        changed.has('submissions') || submissions.some(submission => submission.status === 'received')
+          ? submissionStore.listAsync(sessionId, writeDir).then(value => ['submissions', value]) : null,
         changed.has('children') || changed.has('runs') || children.some(child => !child.done)
           ? require('../harness/delegation').childrenForAsync(sessionId).then(value => ['children', value]) : null,
       ])
@@ -106,6 +112,7 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
           session = value
         }
         if (type === 'children') children = value
+        if (type === 'submissions') submissions = value
         const frame = `event: ${type}\ndata: ${JSON.stringify(value)}\n\n`
         if (frames.get(type) !== frame) {
           frames.set(type, frame)

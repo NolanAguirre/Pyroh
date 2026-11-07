@@ -18,9 +18,9 @@ const optionLabel = (session) => {
   return detail ? `${name} · ${detail}` : name
 }
 
-const RunAfterControl = ({ sessions, checked, sessionId, onChecked, onSession }) => {
-  const disabled = sessions.length === 0
-  const on = checked && !disabled
+const RunAfterControl = ({ sessions, checked, sessionId, onChecked, onSession, disabled = false }) => {
+  const unavailable = sessions.length === 0
+  const on = checked && !unavailable
   const selected = sessions.some((session) => session.id === sessionId) ? sessionId : ''
 
   return (
@@ -31,13 +31,14 @@ const RunAfterControl = ({ sessions, checked, sessionId, onChecked, onSession })
           label="Run after"
           checked={on}
           toggle={() => onChecked(!on)}
-          disabled={disabled}
-          title={disabled ? 'No running session to wait for' : 'Run this prompt after another session'}
+          disabled={disabled || unavailable}
+          title={unavailable ? 'No running session to wait for' : 'Run this prompt after another session'}
         />
         {on && (
           <select
             className="composer__run-after-select"
             value={selected}
+            disabled={disabled}
             required
             aria-required="true"
             aria-label="Session to run after"

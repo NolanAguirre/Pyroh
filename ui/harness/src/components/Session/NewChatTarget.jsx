@@ -1,6 +1,6 @@
 import { DevScope, DropdownTypeahead, DropdownTypeaheadMenu, DropdownTypeaheadTrigger } from 'component-library'
 
-const NewChatTarget = ({ providers, provider, model, onProvider, onModel, modes, targetMode, onTargetMode }) => {
+const NewChatTarget = ({ providers, provider, model, onProvider, onModel, modes, targetMode, onTargetMode, disabled = false }) => {
   const current = providers.find((item) => item.id === provider)
   const providerOptions = providers.map((item) => ({
     value: item.id,
@@ -32,8 +32,8 @@ const NewChatTarget = ({ providers, provider, model, onProvider, onModel, modes,
                 options={modeOptions}
                 change={onTargetMode}
               >
-                <DropdownTypeaheadTrigger />
-                <DropdownTypeaheadMenu />
+                <DropdownTypeaheadTrigger disabled={disabled} />
+                {!disabled && <DropdownTypeaheadMenu />}
               </DropdownTypeahead>
             </div>
           </DevScope>
@@ -46,8 +46,8 @@ const NewChatTarget = ({ providers, provider, model, onProvider, onModel, modes,
               options={providerOptions}
               change={onProvider}
             >
-              <DropdownTypeaheadTrigger />
-              <DropdownTypeaheadMenu />
+              <DropdownTypeaheadTrigger disabled={disabled} />
+              {!disabled && <DropdownTypeaheadMenu />}
             </DropdownTypeahead>
           </div>
         </DevScope>
@@ -60,8 +60,8 @@ const NewChatTarget = ({ providers, provider, model, onProvider, onModel, modes,
               options={modelOptions}
               change={onModel}
             >
-              <DropdownTypeaheadTrigger />
-              <DropdownTypeaheadMenu />
+              <DropdownTypeaheadTrigger disabled={disabled} />
+              {!disabled && <DropdownTypeaheadMenu />}
             </DropdownTypeahead>
           </div>
         </DevScope>
