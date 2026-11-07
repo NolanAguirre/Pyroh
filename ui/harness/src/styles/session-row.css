@@ -215,6 +215,7 @@
   padding-left: 4px;
 }
 
-.sidebar__child-session--fork {
+.sidebar__child-session--fork,
+.sidebar__child-session--token-waste {
   border-left-color: #f97316;
 }

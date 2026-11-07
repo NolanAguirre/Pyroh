@@ -40,12 +40,19 @@ const useSidebarSessions = ({ sessions, searchQuery, showArchived, workspaceId }
       .filter(session => !session.pinned && !session.archived)
       .sort(byLatest)
     const byId = new Map(unpinned.map(session => [session.id, session]))
+    const parentIdOf = (session) => {
+      if (session.mode === 'token-waste' && session.sourceSessionId && byId.has(session.sourceSessionId)) return session.sourceSessionId
+      if (session.childKind !== 'fork' && session.parentSessionId && byId.has(session.parentSessionId)) return session.parentSessionId
+      return null
+    }
     const rootOf = (session) => {
       const seen = new Set()
       let current = session
-      while (current.childKind !== 'fork' && current.parentSessionId && byId.has(current.parentSessionId) && !seen.has(current.id)) {
+      while (!seen.has(current.id)) {
+        const parentId = parentIdOf(current)
+        if (!parentId || parentId === current.id) break
         seen.add(current.id)
-        current = byId.get(current.parentSessionId)
+        current = byId.get(parentId)
       }
       return current.id
     }

@@ -67,11 +67,23 @@ const SessionsSidebar = ({
 
   const groupedSessions = useMemo(() => {
     const ids = new Set(shownSessions.map(session => session.id))
+    const wasteParentId = (session) => (
+      session.mode === 'token-waste' && session.sourceSessionId && session.sourceSessionId !== session.id
+        ? session.sourceSessionId
+        : null
+    )
+    const parentId = (session) => {
+      const wasteParent = wasteParentId(session)
+      if (wasteParent && ids.has(wasteParent)) return wasteParent
+      if (session.childKind === 'fork' || !session.parentSessionId || !ids.has(session.parentSessionId)) return null
+      return session.parentSessionId
+    }
     const children = new Map()
     for (const session of shownSessions) {
-      if (session.childKind === 'fork' || !session.parentSessionId || !ids.has(session.parentSessionId)) continue
-      if (!children.has(session.parentSessionId)) children.set(session.parentSessionId, [])
-      children.get(session.parentSessionId).push(session)
+      const id = parentId(session)
+      if (!id) continue
+      if (!children.has(id)) children.set(id, [])
+      children.get(id).push(session)
     }
     const visited = new Set()
     const branch = (session) => {
@@ -79,32 +91,36 @@ const SessionsSidebar = ({
       visited.add(session.id)
       return { session, children: (children.get(session.id) || []).map(branch).filter(Boolean) }
     }
-    const roots = shownSessions.filter(session => session.childKind === 'fork' || !session.parentSessionId || !ids.has(session.parentSessionId))
+    const roots = shownSessions.filter(session => !parentId(session))
       .map(branch)
     // Keep rows visible even if a malformed parent chain contains a cycle.
     return [...roots, ...shownSessions.filter(session => !visited.has(session.id)).map(branch).filter(Boolean)]
   }, [shownSessions])
 
-  const renderSession = ({ session, children }) => (
-    <div
-      key={session.id}
-      className={session.parentSessionId && session.childKind !== 'fork'
-        ? `sidebar__child-session${session.childKind === 'fork' ? ' sidebar__child-session--fork' : ''}`
-        : undefined}
-    >
-      <SessionRow
-        session={session}
-        active={session.id === activeId}
-        onSelect={rowHandlers.onSelect}
-        onRename={rowHandlers.onRename}
-        onArchive={rowHandlers.onArchive}
-        archiveBusy={archiveBusy}
-        onPin={rowHandlers.onPin}
-        pinBusy={pinBusy}
-      />
-      {children.map(renderSession)}
-    </div>
-  )
+  const renderSession = ({ session, children }) => {
+    const waste = session.mode === 'token-waste' && session.sourceSessionId
+    const nested = waste || (session.parentSessionId && session.childKind !== 'fork')
+    return (
+      <div
+        key={session.id}
+        className={nested
+          ? `sidebar__child-session${waste ? ' sidebar__child-session--token-waste' : ''}`
+          : undefined}
+      >
+        <SessionRow
+          session={session}
+          active={session.id === activeId}
+          onSelect={rowHandlers.onSelect}
+          onRename={rowHandlers.onRename}
+          onArchive={rowHandlers.onArchive}
+          archiveBusy={archiveBusy}
+          onPin={rowHandlers.onPin}
+          pinBusy={pinBusy}
+        />
+        {children.map(renderSession)}
+      </div>
+    )
+  }
 
   const archiveOlder = () => {
     if (archiveBusy || !sessionsToArchive.length || !onArchiveOlder) return
