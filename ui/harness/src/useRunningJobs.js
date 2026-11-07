@@ -13,17 +13,18 @@ const useRunningJobs = () => {
   const loadRunningJobs = useCallback(() => {
     if (inFlight.current) return inFlight.current
     inFlight.current = api
-      .listSessions(null, false, { orderBy: 'createdAt', order: 'desc', active: true, limit: JOB_LIST_LIMIT })
+      .listSessions(null, false, { orderBy: 'updatedAt', order: 'desc', active: true, limit: JOB_LIST_LIMIT })
       .then(async ({ sessions: activeJobs }) => {
         if (activeJobs.length >= JOB_LIST_LIMIT) {
           setRunningJobs(activeJobs)
           return
         }
         const { sessions: recentChats } = await api.listSessions(null, false, {
-          orderBy: 'createdAt', order: 'desc', active: false, limit: JOB_LIST_LIMIT - activeJobs.length,
+          orderBy: 'updatedAt', order: 'desc', active: false, limit: JOB_LIST_LIMIT - activeJobs.length,
         })
         const activeIds = new Set(activeJobs.map(job => job.id))
-        const byRecent = (a, b) => (b.createdAt || 0) - (a.createdAt || 0) || a.id.localeCompare(b.id)
+        const lastInteraction = (job) => job.updatedAt || job.createdAt || 0
+        const byRecent = (a, b) => lastInteraction(b) - lastInteraction(a) || a.id.localeCompare(b.id)
         setRunningJobs([...activeJobs, ...recentChats.filter(job => !activeIds.has(job.id))].sort(byRecent))
       })
       .catch(() => {})
