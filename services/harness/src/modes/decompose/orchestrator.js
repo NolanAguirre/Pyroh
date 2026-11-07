@@ -167,7 +167,8 @@ const runDecomposeDaemon = async ({ sessionId, resume = false }) => {
     }
     const mode = step.agentMode || 'agent'
     const parent = sessionStore.loadSession(sessionId, writeDir) || session
-    const assembled = promptForWithProvenance(step, vars, parent.provider, sessionContext(parent, mode), parent.sourcePlanProvenance)
+    const assembled = promptForWithProvenance(step, vars, parent.provider,
+      { ...sessionContext(parent, mode), messageType: 'agent' }, { ...parent.sourcePlanProvenance, messageType: 'agent' })
     const prompt = assembled.text
 
     const record = sessionStore.writeStepRun(

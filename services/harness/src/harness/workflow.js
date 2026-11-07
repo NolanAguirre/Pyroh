@@ -32,7 +32,7 @@ const runWorkflowTurn = async ({ parent, parentRunId, mode, prompt, promptProven
   try {
     launched = Harness.spawnRun(session.id, mode === 'plan' ? 'plan' : 'run', {
       mode, prompt,
-      promptProvenance: promptProvenance || { sections: [{ kind: 'context', label: 'Workflow prompt', text: prompt }] },
+      promptProvenance: { ...(promptProvenance || { sections: [{ kind: 'context', label: 'Workflow prompt', text: prompt }] }), messageType: 'agent' },
       onPrepared: (run) => {
         if (outputSchema) store.updateRun(session.id, run.id, { outputSchema }, writeDir)
         onPrepared?.(session, run)
