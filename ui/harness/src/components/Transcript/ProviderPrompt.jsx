@@ -23,6 +23,7 @@ const ProviderPrompt = ({ prompt, devId }) => {
   const hasOriginal = typeof prompt.originalText === 'string'
   const hasRewrite = hasOriginal && typeof prompt.rewrittenText === 'string'
     && prompt.originalText !== prompt.rewrittenText
+  const hasRewrittenSection = sections.some((section) => section.kind === 'rewritten')
 
   return (
     <DevScope id={devId} state={{ provider: prompt.provider || '', sections: sections.length, rewrite: hasRewrite, compare }}>
@@ -39,7 +40,7 @@ const ProviderPrompt = ({ prompt, devId }) => {
           return (
             <DevScope key={index} id="3utx2t3" state={{ index, kind }}>
               <div className={`tx__prompt-section tx__prompt-section--${kind}`}>
-                <Fold defaultOpen={kind === 'rewritten'}>
+                <Fold defaultOpen={kind === 'rewritten' || (kind === 'user' && !hasRewrittenSection)}>
                   <FoldTrigger>{section.label || kinds[section.kind] || 'Source unavailable'}</FoldTrigger>
                   <FoldContent>
                     <div className="tx__user-body tx__prompt-text">{section.text}</div>
