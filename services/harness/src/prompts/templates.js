@@ -104,10 +104,11 @@ Read the target file and at most one sibling view for patterns. Do not spawn a s
   },
   {
     id: 'sessionIdPaths',
+    messageTypes: ['user'],
     activation: { kind: 'Text trigger', condition: 'A bare harness session ID, when the session exists. Already expanded IDs and IDs inside paths are skipped.' },
     name: 'Session id paths',
     group: 'rewrites',
-    description: 'Appends the session directory to each known session ID in a prompt. Unknown IDs are left alone.',
+    description: 'Appends the session directory to each known session ID. Defaults to user messages only; unknown IDs are left alone.',
     usedBy: ['prompt/rewrite.js'],
     vars: [
       { name: 'match', description: 'The session ID as typed.' },

@@ -18,7 +18,7 @@ const withAskPrompt = (prompt, provider, context = {}) => `${askPrompt(provider,
 const composePromptWithProvenance = (prompt, { mode = 'agent', logicalMode = mode, model, terse = false, instructions, provider, promptProvenance } = {}) => {
   const text = prompt == null ? '' : String(prompt)
   const parts = []
-  const context = { model, mode: logicalMode }
+  const context = { model, mode: logicalMode, messageType: promptProvenance?.messageType ?? 'user' }
   const terseText = tersePrompt(provider, context)
   if (terse && !text.startsWith(terseText)) parts.push(provenance.section('system', 'Terse instructions', terseText))
   const promptIds = provider ? providerMode(provider, mode).prompts : mode === 'ask' ? ['ask'] : []

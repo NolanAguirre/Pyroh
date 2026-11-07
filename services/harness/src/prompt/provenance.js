@@ -15,6 +15,7 @@ const supplied = (text, provenance) => {
   for (const key of ['originalText', 'rewrittenText', 'userItemId']) {
     if (typeof provenance?.[key] === 'string') metadata[key] = provenance[key]
   }
+  if (['user', 'agent'].includes(provenance?.messageType)) metadata.messageType = provenance.messageType
   const parts = provenance?.sections
   const valid = Array.isArray(parts) && parts.every(part => part &&
     ['system', 'user', 'rewritten', 'context'].includes(part.kind) &&
@@ -26,10 +27,14 @@ const supplied = (text, provenance) => {
 const userPrompt = (text, originalText) => assemble([
   section(typeof originalText === 'string' && text !== originalText ? 'rewritten' : 'user',
     typeof originalText === 'string' && text !== originalText ? 'Rewritten user text' : 'User text', text),
-], typeof originalText === 'string' ? {
+], { messageType: 'user', ...(typeof originalText === 'string' ? {
   originalText,
   ...(text !== originalText ? { rewrittenText: text } : {}),
-} : {})
+} : {}) })
+
+const agentPrompt = (text, label = 'Agent message') => assemble([
+  section('context', label, text),
+], { messageType: 'agent' })
 
 const prepend = (parts, prompt) => assemble([
   ...parts.map(part => ({ ...part, text: `${part.text}\n\n` })),
@@ -62,4 +67,4 @@ const capture = (prompt, fields = {}) => {
   return freeze(event)
 }
 
-module.exports = { section, assemble, supplied, userPrompt, prepend, slice, capture }
+module.exports = { section, assemble, supplied, userPrompt, agentPrompt, prepend, slice, capture }

@@ -5,10 +5,12 @@ import {
   Card,
   CardHeader,
   CardSection,
+  CheckboxDisplay,
   DevScope,
   FoldContent,
   FoldDisplay,
   FoldTrigger,
+  FormTextarea,
 } from 'component-library'
 import api from '../../api'
 
@@ -22,7 +24,7 @@ const Template = ({ template }) => (
 
 const versionStatus = (version) => {
   if (version.edited) return 'Saved edit'
-  if (version.model) return 'Inherited text'
+  if (version.model) return 'Inherited text and targets'
   if (version.provider == null) return 'Built-in default'
   return version.customized ? 'Built-in variant' : 'Inherits shared default'
 }
@@ -37,6 +39,11 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange 
   const selected = prompt
   const applicableProviders = prompt.applicableProviders || []
   const activation = prompt.activation
+  const messageTypes = selected.messageTypes ?? selected.defaultMessageTypes ?? []
+  const dirty = draft != null && (
+    draft.template !== selected.template ||
+    ['user', 'agent'].some((type) => draft.messageTypes.includes(type) !== messageTypes.includes(type))
+  )
 
   useEffect(() => {
     mounted.current = true
@@ -48,7 +55,7 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange 
 
   const edit = () => {
     onBusyChange(prompt.id, true)
-    setDraft(selected.template)
+    setDraft({ template: selected.template, messageTypes: [...messageTypes] })
   }
   const cancel = () => {
     setDraft(null)
@@ -56,13 +63,13 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange 
     onBusyChange(prompt.id, false)
   }
 
-  const save = (template) => {
+  const save = (template, targets) => {
     if (saving || disabled) return
     onBusyChange(prompt.id, true)
     setSaving(true)
     setError(null)
     api
-      .updatePrompt(prompt.id, template, { provider, model, mode })
+      .updatePrompt(prompt.id, template, { provider, model, mode }, targets)
       .then((data) => {
         if (!mounted.current) return
         onSaved(data.prompt)
@@ -89,6 +96,11 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange 
             <strong>Used by</strong>
             {applicableProviders.map((id) => <Badge key={id} size="small" autoColor>{id}</Badge>)}
           </div>
+          <div className="registry__prompt-applicability">
+            <strong>Incoming message targets</strong>
+            {messageTypes.map((type) => <Badge key={type} size="small">{type === 'user' ? 'User' : 'Agent'}</Badge>)}
+            {messageTypes.length === 0 && <Badge size="small">Neither (disabled)</Badge>}
+          </div>
           <div className="registry__prompt-activation">
             <div className="registry__chips">
               <strong>Shared activation</strong>
@@ -105,35 +117,59 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange 
 
           <div className="registry__prompt-editor">
             <FoldDisplay isOpen={open} toggle={() => setOpen((value) => !value)}>
-              <FoldTrigger>{scopeName} · {draft != null ? 'Unsaved edit' : versionStatus(selected)}</FoldTrigger>
+              <FoldTrigger>{scopeName} · {draft != null ? dirty ? 'Unsaved edit' : 'Editing' : versionStatus(selected)}</FoldTrigger>
               <FoldContent>
                 {open && <>
                   <p className="hint">
                     {model
-                      ? `Saving replaces this prompt for ${model}${mode ? ` in ${mode} mode` : ' in all modes'}, across every provider. Reset removes only this override and restores inherited text${provider ? `, previewed for ${provider}` : ''}.`
+                      ? `Saving replaces this prompt's text and targets for ${model}${mode ? ` in ${mode} mode` : ' in all modes'}, across every provider. Reset removes only this override and restores inherited text and targets${provider ? `, previewed for ${provider}` : ''}.`
                       : provider == null
-                      ? 'Editing the shared default updates inherited versions and built-in variants that adapt the shared text. Saved provider edits keep their own text.'
+                      ? 'Editing the shared default updates inherited text and targets, including built-in variants that adapt the shared text. Saved overrides keep their own values.'
                       : selected.edited
-                        ? `This saved edit replaces the text for ${provider} only.`
+                        ? `This saved edit replaces the text and targets for ${provider} only.`
                         : selected.customized
-                          ? `This is the built-in ${provider} variant. Saving an edit replaces it for this provider only.`
-                          : `This version inherits the shared default. Saving different text creates a ${provider} override.`}
+                          ? `This is the built-in ${provider} variant. Saving an edit replaces its text and targets for this provider only.`
+                          : `This version inherits the shared default. Saving text or targets creates a ${provider} override.`}
                     {provider && !applicableProviders.includes(provider) && ' This provider does not currently use this prompt.'}
                   </p>
+                  <p className="hint">Reset restores both text and targets for this scope.</p>
                   {prompt.vars?.length > 0 && <ul className="registry__list registry__vars">
                     {prompt.vars.map((item) => <li key={item.name}><code>{`{{${item.name}}}`}</code> {item.description}</li>)}
                   </ul>}
                   <DevScope id="dx7104n" state={{ editing: draft != null }}>
-                    {draft == null ? <Template template={selected.template} /> : (
-                      <textarea
+                    {draft == null ? <Template template={selected.template} /> : <>
+                      <div className="registry__prompt-applicability" role="group" aria-label={`${prompt.name}: ${scopeName} incoming message targets`}>
+                        <strong>Incoming message targets</strong>
+                        {['user', 'agent'].map((type) => (
+                          <CheckboxDisplay
+                            key={type}
+                            label={type === 'user' ? 'User' : 'Agent'}
+                            checked={draft.messageTypes.includes(type)}
+                            toggle={() => setDraft((current) => ({
+                              ...current,
+                              messageTypes: current.messageTypes.includes(type)
+                                ? current.messageTypes.filter((item) => item !== type)
+                                : [...current.messageTypes, type],
+                            }))}
+                            disabled={saving || disabled}
+                          />
+                        ))}
+                        {draft.messageTypes.length === 0 && <span className="hint">Neither: disabled for both sources.</span>}
+                      </div>
+                      <FormTextarea
                         className="form__textarea registry__prompt-edit"
-                        rows={Math.min(24, Math.max(4, draft.split('\n').length + 1))}
+                        rows={Math.min(24, Math.max(4, draft.template.split('\n').length + 1))}
                         aria-label={`${prompt.name}: ${scopeName} template`}
-                        value={draft}
-                        onChange={(event) => setDraft(event.target.value)}
-                        disabled={saving}
+                        field={{
+                          value: draft.template,
+                          onChange: (event) => {
+                            const template = event.target.value
+                            setDraft((current) => ({ ...current, template }))
+                          },
+                        }}
+                        disabled={saving || disabled}
                       />
-                    )}
+                    </>}
                   </DevScope>
                   {error && <p className="registry__error" role="alert">{error}</p>}
                   <div className="registry__prompt-actions">
@@ -142,10 +178,10 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange 
                         {model ? 'Edit model replacement' : provider ? `Edit ${provider} version` : 'Edit shared default'}
                       </Button>
                       {selected.edited && <Button devId="r9z2k6u" variant="secondary" size="sm" onClick={() => save(null)} disabled={saving || disabled}>
-                        {saving ? 'Resetting…' : model ? 'Reset to inherited text' : provider ? selected.builtIn ? 'Reset to built-in variant' : 'Reset to shared default' : 'Reset to built-in default'}
+                        {saving ? 'Resetting…' : model ? 'Reset to inherited text and targets' : provider ? selected.builtIn ? 'Reset to built-in variant' : 'Reset to shared default' : 'Reset to built-in default'}
                       </Button>}
                     </> : <>
-                      <Button devId="r5c1v8y" size="sm" onClick={() => save(draft)} disabled={saving || disabled || (selected.edited && draft === selected.template)}>
+                      <Button devId="r5c1v8y" size="sm" onClick={() => save(draft.template, draft.messageTypes)} disabled={saving || disabled || (selected.edited && !dirty)}>
                         {saving ? 'Saving…' : model ? 'Save model replacement' : provider ? 'Save provider version' : 'Save shared default'}
                       </Button>
                       <Button devId="r2n9b4x" variant="secondary" size="sm" onClick={cancel} disabled={saving}>Cancel</Button>

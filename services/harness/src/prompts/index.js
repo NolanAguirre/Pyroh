@@ -27,8 +27,8 @@ const get = (id) => {
   return entry
 }
 
-// Every provider registers every prompt. Versions change text only; trigger
-// matching, scope, and actions stay shared.
+// Every provider registers every prompt. Trigger patterns stay shared;
+// text and message targeting can be overridden at each registry scope.
 const providers = new Map()
 const registerProvider = (provider, versions = {}) => {
   if (providers.has(provider)) throw new Error(`prompts: duplicate provider ${provider}`)
@@ -55,8 +55,13 @@ const validateScope = ({ model, mode } = {}) => {
   if (mode != null && model == null) throw badRequest('mode requires a model')
 }
 const own = (entries, key) => entries && Object.hasOwn(entries, key) ? entries[key] : undefined
+const validMessageTypes = (value) => Array.isArray(value)
+  && value.every(type => type === 'user' || type === 'agent')
 const validEdits = (entries) => Object.fromEntries(Object.entries(isRecord(entries) ? entries : {})
-  .filter(([id, template]) => byId.has(id) && typeof template === 'string'))
+  .filter(([id, edit]) => byId.has(id) && (typeof edit === 'string'
+    || (isRecord(edit) && (edit.template == null || typeof edit.template === 'string')
+      && validMessageTypes(edit.messageTypes)))))
+const editText = (edit) => typeof edit === 'string' ? edit : edit?.template
 
 // Keep existing flat shared edits and $providers. Model edits are keyed by
 // model id across providers, with optional overrides for each logical mode.
@@ -89,13 +94,13 @@ const providerDefaultText = (id, provider) => {
   const entry = get(id)
   const version = providerEntries(provider)?.get(id)
   if (provider == null) return entry.template
-  const shared = loadOverrides()[id] ?? entry.template
+  const shared = editText(loadOverrides()[id]) ?? entry.template
   return typeof version === 'function' ? version(shared) : version ?? shared
 }
 const providerText = (id, provider) => {
   const fallback = providerDefaultText(id, provider)
   const edits = loadOverrides()
-  return (provider == null ? edits[id] : edits.$providers[provider]?.[id]) ?? fallback
+  return editText(provider == null ? edits[id] : edits.$providers[provider]?.[id]) ?? fallback
 }
 const modelEdits = (model) => own(loadOverrides().$models, model)
 const selectedEdit = (id, provider, { model, mode } = {}) => {
@@ -109,10 +114,22 @@ const selectedEdit = (id, provider, { model, mode } = {}) => {
 const defaultText = (id, provider, { model, mode } = {}) => {
   if (model == null) return providerDefaultText(id, provider)
   const inherited = providerText(id, provider)
-  return mode == null ? inherited : modelEdits(model)?.prompts?.[id] ?? inherited
+  return mode == null ? inherited : editText(modelEdits(model)?.prompts?.[id]) ?? inherited
 }
-const text = (id, provider, context = {}) =>
-  selectedEdit(id, provider, context) ?? defaultText(id, provider, context)
+const defaultMessageTypes = (id, provider, { model, mode } = {}) => {
+  let types = get(id).messageTypes ?? ['user', 'agent']
+  if (provider != null || model != null) types = loadOverrides()[id]?.messageTypes ?? types
+  if (model != null && provider != null) types = loadOverrides().$providers[provider]?.[id]?.messageTypes ?? types
+  if (model != null && mode != null) types = modelEdits(model)?.prompts?.[id]?.messageTypes ?? types
+  return types
+}
+const messageTypes = (id, provider, context = {}) =>
+  selectedEdit(id, provider, context)?.messageTypes ?? defaultMessageTypes(id, provider, context)
+const appliesTo = (id, provider, context = {}) =>
+  messageTypes(id, provider, context).includes(context.messageType ?? 'user')
+const resolvedText = (id, provider, context = {}) =>
+  editText(selectedEdit(id, provider, context)) ?? defaultText(id, provider, context)
+const text = (id, provider, context = {}) => appliesTo(id, provider, context) ? resolvedText(id, provider, context) : ''
 const render = (id, vars = {}, provider, context = {}) =>
   text(id, provider, context).replace(PLACEHOLDER, (_, key) => (vars[key] == null ? '' : String(vars[key])))
 const renderWithProvenance = (id, vars = {}, provider, context = {}, metadata = {}) => {
@@ -150,7 +167,8 @@ const describe = ({ id, name, group, description, usedBy, vars, activation, appl
       ...activation, scope: trigger.scope,
       patterns: trigger.patterns.map((pattern) => pattern.toString()),
     } : activation,
-    template: text(id, provider, context), defaultTemplate: defaultText(id, provider, context),
+    template: resolvedText(id, provider, context), defaultTemplate: defaultText(id, provider, context),
+    messageTypes: messageTypes(id, provider, context), defaultMessageTypes: defaultMessageTypes(id, provider, context),
     edited, builtIn: model == null && version != null,
     customized: model != null ? edited || inheritedModelEdit : provider != null && (version != null || edited),
   }
@@ -163,10 +181,11 @@ const list = (provider, context = {}) => {
 
 // Null resets only the selected scope. A model edit replaces inherited text;
 // saving the inherited text still pins it across providers and later edits.
-const setOverride = (id, template, provider, context = {}) => {
+const setOverride = (id, template, provider, context = {}, types) => {
   if (!byId.has(id)) throw Object.assign(new Error(`prompts: unknown prompt ${id}`), { status: 404 })
   providerEntries(provider)
   validateScope(context)
+  if (types !== undefined && !validMessageTypes(types)) throw badRequest('messageTypes must contain only user or agent')
   const { model, mode } = context
   const stored = loadOverrides()
   const next = { ...stored, $providers: { ...stored.$providers }, $models: { ...stored.$models } }
@@ -179,15 +198,20 @@ const setOverride = (id, template, provider, context = {}) => {
     if (mode != null) entry.modes[mode] = { ...own(entry.modes, mode) }
     target = mode == null ? entry.prompts : entry.modes[mode]
   }
-  if (template == null) {
+  if (template === null) {
     delete target[id]
   } else {
-    if (typeof template !== 'string') throw badRequest('template must be a string')
+    if (template !== undefined && typeof template !== 'string') throw badRequest('template must be a string')
+    if (template === undefined && types === undefined) throw badRequest('template or messageTypes is required')
     const declared = new Set(get(id).vars.map((item) => item.name))
-    const undeclared = placeholders(template).filter((name) => !declared.has(name))
+    const undeclared = placeholders(template ?? '').filter((name) => !declared.has(name))
     if (undeclared.length) throw badRequest(`unknown vars ${undeclared.map((name) => `{{${name}}}`).join(', ')}`)
-    if (model == null && template === defaultText(id, provider)) delete target[id]
-    else target[id] = template
+    const nextTemplate = template === undefined ? editText(target[id])
+      : model == null && template === defaultText(id, provider) ? undefined : template
+    const nextTypes = types === undefined ? target[id]?.messageTypes : ['user', 'agent'].filter(type => types.includes(type))
+    if (nextTypes !== undefined) target[id] = { ...(nextTemplate === undefined ? {} : { template: nextTemplate }), messageTypes: nextTypes }
+    else if (nextTemplate !== undefined) target[id] = nextTemplate
+    else delete target[id]
   }
   if (model != null) {
     const entry = next.$models[model]
@@ -216,4 +240,4 @@ const modelScopes = (catalog = {}) => {
 }
 const savedModes = () => [...new Set(Object.values(loadOverrides().$models).flatMap((entry) => Object.keys(entry.modes)))]
 
-module.exports = { get, text, render, renderWithProvenance, focusWithProvenance, focusBlock, directoryLines, list, setOverride, registerProvider, modelScopes, savedModes }
+module.exports = { get, text, render, renderWithProvenance, focusWithProvenance, focusBlock, directoryLines, list, setOverride, registerProvider, modelScopes, savedModes, appliesTo }

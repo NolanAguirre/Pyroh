@@ -43,7 +43,8 @@ const actions = {
 }
 
 // Each fired trigger id once, in match order, with its action.
-const firedActions = (matches) => [...new Set(matches.map((match) => match.id))]
+const firedActions = (matches, provider, context = {}) => [...new Set(matches.map((match) => match.id))]
+  .filter(id => prompts.appliesTo(id, provider, context))
   .map((id) => actions[id])
   .filter(Boolean)
 

@@ -20,14 +20,14 @@ const findLocations = (needle, cwd) => new Promise((resolve) => {
   )
 })
 
-const devIdPaths = async ([match, id], { cwd, provider, model, mode }) => {
+const devIdPaths = async ([match, id], { cwd, provider, model, mode, messageType }) => {
   const locations = await findLocations(id, cwd)
-  return locations.length ? prompts.render('devIdPaths', { match, files: locations.join(' ') }, provider, { model, mode }) : match
+  return locations.length ? prompts.render('devIdPaths', { match, files: locations.join(' ') }, provider, { model, mode, messageType }) : match
 }
 
-const sessionIdPaths = ([match], { provider, model, mode }) => {
+const sessionIdPaths = ([match], { provider, model, mode, messageType }) => {
   const location = paths.locateSession(match)
-  return location ? prompts.render('sessionIdPaths', { match, path: path.resolve(location.dir) }, provider, { model, mode }) : match
+  return location ? prompts.render('sessionIdPaths', { match, path: path.resolve(location.dir) }, provider, { model, mode, messageType }) : match
 }
 
 const trigger = (id) => TRIGGERS.find((item) => item.id === id)
@@ -39,6 +39,8 @@ const rules = [
   { name: 'devId', trigger: trigger('devIdPaths'), rewrite: devIdPaths },
   { name: 'sessionId', trigger: trigger('sessionIdPaths'), rewrite: sessionIdPaths },
 ]
+const applicableRules = (context) => rules.filter(rule => inScope(rule.trigger, context)
+  && prompts.appliesTo(rule.trigger.id, context.provider, context))
 
 const replaceAsync = async (text, pattern, rewrite, context) => {
   const matches = [...text.matchAll(pattern)]
@@ -53,11 +55,11 @@ const replaceAsync = async (text, pattern, rewrite, context) => {
   return out + text.slice(last)
 }
 
-// context: { cwd, first, provider, model, mode }. `first: false` skips first-prompt-only rules.
+// messageType is the incoming message's source, independent of execution mode.
 const rewritePrompt = async (text, context = {}) => {
   if (typeof text !== 'string' || !text) return text
   let out = text
-  for (const { trigger: { patterns }, rewrite } of rules.filter((rule) => inScope(rule.trigger, context))) {
+  for (const { trigger: { patterns }, rewrite } of applicableRules(context)) {
     out = await replaceAsync(out, patterns[0], rewrite, context)
   }
   return out
@@ -67,7 +69,8 @@ const rewritePrompt = async (text, context = {}) => {
 // boundaries describe sources; they must never change regex matching behavior.
 const rewritePromptWithProvenance = async (prompt, context = {}) => {
   let out = prompt
-  for (const { trigger: { patterns }, rewrite } of rules.filter(rule => inScope(rule.trigger, context))) {
+  context = { messageType: prompt.messageType, ...context }
+  for (const { trigger: { patterns }, rewrite } of applicableRules(context)) {
     const matches = [...out.text.matchAll(patterns[0])]
     const replacements = await Promise.all(matches.map(match => rewrite(match, context)))
     const parts = []

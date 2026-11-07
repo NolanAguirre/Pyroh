@@ -82,6 +82,7 @@ const runOneTurn = async ({
   delegationEligible,
 }) => {
   const logicalMode = mode ?? session.mode ?? 'agent'
+  let messageType = promptProvenance?.messageType ?? 'user'
   const entry = registry.turnMode(mode ?? session.mode, plugin)
   mode = entry?.base || mode || session.mode
   const primitive = AGENT_MODES.includes(mode)
@@ -118,7 +119,8 @@ const runOneTurn = async ({
     : undefined
   const textOnly = Array.isArray(tools) && tools.length === 0
   // Trigger actions fire only on the first prompt to a new agent or subagent.
-  const fired = textOnly || !first ? [] : firedActions(findTriggers(prompt))
+  const fired = textOnly || !first ? [] : firedActions(findTriggers(prompt), session.provider,
+    { model: settings.model, mode: logicalMode, messageType })
   const previousTools = session.providerConfiguration?.tools
   const extraMcpServers = [...(previousTools?.mcpServers || []).filter(server => !['harness_agents', MEMORY_SERVER_NAME].includes(server.name))]
   for (const server of triggerMcpServers(fired, session)) {
@@ -184,7 +186,7 @@ const runOneTurn = async ({
     let providerAgentId = driver.providerAgentId()
     if (nativeFork && providerAgentId !== session.providerAgentId) throw new Error('Native fork resume returned a different provider thread')
     configuration.settings = { ...configuration.settings, ...driver.resolvedSettings?.() }
-    const promptContext = () => ({ model: driver.resolvedSettings?.().model || configuration.settings.model || settings.model, mode: logicalMode })
+    const promptContext = () => ({ model: driver.resolvedSettings?.().model || configuration.settings.model || settings.model, mode: logicalMode, messageType })
     sessionStore.updateSession(session.id, { providerConfiguration: configuration }, writeDir)
     if (typeof onCreated === 'function') onCreated(providerAgentId)
 
@@ -276,7 +278,7 @@ const runOneTurn = async ({
       }
     }
 
-    let assembled = await rewritePromptWithProvenance(provenance.supplied(prompt, promptProvenance),
+    let assembled = await rewritePromptWithProvenance(provenance.supplied(prompt, { ...promptProvenance, messageType }),
       { cwd: settings.cwd, first, provider: session.provider, ...promptContext() })
     if (runId) assembled.userItemId = `user:${runId}`
     if (assembled.text !== prompt) onPromptRewrite?.(assembled.text, assembled)
@@ -340,16 +342,24 @@ const runOneTurn = async ({
           'The user has taken over this conversation. Follow their requests as an independent agent. Your replies are not returned to the original parent.',
         ].filter(Boolean).join('\n\n')
       }
-      const sources = steers.map(steer => provenance.supplied(steer.text, steer.promptProvenance))
+      const sources = await Promise.all(steers.map(steer => {
+        const source = provenance.supplied(steer.text, { ...steer.promptProvenance,
+          messageType: steer.promptProvenance?.messageType ?? 'user' })
+        return rewritePromptWithProvenance(source,
+          { cwd: settings.cwd, first: false, provider: session.provider, ...promptContext(), messageType: source.messageType })
+      }))
+      messageType = sources.some(source => source.messageType === 'user') ? 'user' : 'agent'
       const sections = sources.flatMap((source, index) => source.sections.map((part, partIndex) => ({
         ...part, text: part.text + (index < sources.length - 1 && partIndex === source.sections.length - 1 ? '\n\n' : ''),
       })))
-      const metadata = { userItemId: `steer:${steers[0].id}` }
+      const metadata = { userItemId: `steer:${steers[0].id}`, messageType }
       if (sources.every(source => typeof source.originalText === 'string')) {
         metadata.originalText = sources.map(source => source.originalText).join('\n\n')
       }
-      assembled = await rewritePromptWithProvenance(provenance.assemble(sections, metadata),
-        { cwd: settings.cwd, first: false, provider: session.provider, ...promptContext() })
+      if (sources.some(source => typeof source.rewrittenText === 'string')) {
+        metadata.rewrittenText = sources.map(source => source.rewrittenText ?? source.originalText ?? source.text).join('\n\n')
+      }
+      assembled = provenance.assemble(sections, metadata)
       onEvent?.({ type: 'user', steer: true, text: assembled.text, itemId: assembled.userItemId })
       if (signal?.aborted) break
     }

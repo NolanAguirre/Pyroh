@@ -233,14 +233,16 @@ const api = {
     const query = params.size ? `?${params}` : ''
     return fetch(at(null, `/api/prompts${query}`), { signal }).then(json)
   },
-  // Saves or resets the selected shared, provider, model, or model+mode template.
-  updatePrompt: (id, template, { provider, model, mode } = {}) => {
+  // Saves or resets the selected scope's template and incoming-message targets.
+  updatePrompt: (id, template, { provider, model, mode } = {}, messageTypes) => {
     const params = new URLSearchParams()
     if (provider) params.set('provider', provider)
     if (model) params.set('model', model)
     if (model && mode) params.set('mode', mode)
     const query = params.size ? `?${params}` : ''
-    return send('PUT', at(null, `/api/prompts/${encodeURIComponent(id)}${query}`), { template }).then(json)
+    const payload = { template }
+    if (template !== null && messageTypes !== undefined) payload.messageTypes = messageTypes
+    return send('PUT', at(null, `/api/prompts/${encodeURIComponent(id)}${query}`), payload).then(json)
   },
 
   // Every registry entry with its decision; global scope when there is no workspace.

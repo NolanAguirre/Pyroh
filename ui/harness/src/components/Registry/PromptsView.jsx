@@ -35,7 +35,7 @@ const PromptsView = ({ providers = [] }) => {
       <div className="registry__prompts-intro">
         <div>
           <strong>Prompt templates</strong>
-          <p className="hint">Edit the existing text for a shared, provider, model, or model + mode scope. Saved overrides replace the whole template. Changes apply across workspaces.</p>
+          <p className="hint">Edit template text and message targets for a shared, provider, model, or model + mode scope. Targets describe the source of the incoming message: user or agent, not the model role or mode. Select both, either, or neither. Neither disables the prompt for both sources. Changes apply across workspaces.</p>
         </div>
         <Button variant="secondary" size="sm" onClick={refresh} disabled={loading || busy}>
           {loading ? 'Loading…' : 'Refresh prompts'}
@@ -54,11 +54,11 @@ const PromptsView = ({ providers = [] }) => {
       </div>
       <p className="hint">
         {model
-          ? `Editing ${scopeName} across all providers. The provider choice only sets the inherited preview. Fallback: shared → provider → model → model + mode.`
+          ? `Editing ${scopeName} across all providers. The provider choice only sets the inherited preview. Text and targets inherit through shared → provider → model → model + mode.`
           : 'All models edits the shared default or the selected provider version. Choose a model to edit a replacement across providers, then optionally choose a mode.'}
       </p>
       {busy && <p className="hint">Save or cancel open edits before changing scope or refreshing.</p>}
-      {error && <DevScope id="9kbs589"><p className="registry__error" role="alert">{prompts ? 'Could not refresh prompts. Displayed text may be out of date. ' : ''}{error}</p></DevScope>}
+      {error && <DevScope id="9kbs589"><p className="registry__error" role="alert">{prompts ? 'Could not refresh prompts. Displayed text and targets may be out of date. ' : ''}{error}</p></DevScope>}
       {!prompts && loading && <DevScope id="62o4caw"><p className="hint">Loading selected prompt scope…</p></DevScope>}
       {prompts && <p className="hint">{prompts.length} logical prompts · {providers.length} registered providers. “Used by” shows which providers consume each prompt.</p>}
       {groups.map((group) => (

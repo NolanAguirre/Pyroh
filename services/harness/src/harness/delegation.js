@@ -516,11 +516,11 @@ const assertChildRun = (session, mode, { userFollowup = false } = {}) => {
   if (!Object.hasOwn(rank, mode) || rank[mode] < rank[baseMode]) fail('Child permissions cannot be broadened')
 }
 
-const guidance = (provider, child = false, { session, canDelegate: enabled, model, mode } = {}) => {
+const guidance = (provider, child = false, { session, canDelegate: enabled, model, mode, messageType } = {}) => {
   const maxDepth = getUiSettings(config.writeDir).maxSubagentDepth
   const allowed = enabled ?? (session ? canSpawn(session) : !child && maxDepth > 0)
   const prompts = require('../prompts')
-  const context = { model: model || require('../prompt/context').sessionModel(session), mode: mode ?? session?.mode }
+  const context = { model: model || require('../prompt/context').sessionModel(session), mode: mode ?? session?.mode, messageType }
   if (!allowed) return prompts.text('delegationChild', provider, context)
   const scope = child ? 'Stay within your assigned task. Return findings to your parent after any child work finishes, then stop.' : ''
   return [scope, prompts.text('delegationParent', provider, context)].filter(Boolean).join('\n\n')

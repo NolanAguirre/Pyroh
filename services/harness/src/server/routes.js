@@ -228,7 +228,8 @@ router.get('/prompts', async (req, res) => {
 router.put('/prompts/:id', (req, res) => {
   try {
     const { provider, model, mode } = promptQuery(req)
-    res.json({ prompt: prompts.setOverride(req.params.id, (req.body || {}).template ?? null, provider, { model, mode }) })
+    const { template, messageTypes } = req.body || {}
+    res.json({ prompt: prompts.setOverride(req.params.id, template, provider, { model, mode }, messageTypes) })
   } catch (err) {
     sendError(res, err)
   }

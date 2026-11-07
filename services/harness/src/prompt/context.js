@@ -9,6 +9,7 @@ const sessionModel = (session) => {
     || session?.model
 }
 
-const sessionContext = (session, mode = session?.mode) => ({ model: sessionModel(session), mode })
+const sessionContext = (session, mode = session?.mode) => ({ model: sessionModel(session), mode,
+  ...(session?.messageType ? { messageType: session.messageType } : {}) })
 
 module.exports = { sessionModel, sessionContext }
