@@ -101,6 +101,9 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
   const entry = registry.turnMode(mode, plugin)
   const driverMode = entry?.base || mode
   const workspace = registry.sessionWorkspace(session)
+  if (plugin?.manifest) {
+    registry.assertCompatiblePlugin(plugin, registry.requireMode(workspace, plugin.id, { provider: session.provider }))
+  }
   const harnessTools = registry.toolsFor(workspace, { mode: plugin ? plugin.id : mode, provider: session.provider })
 
   const startedAt = Date.now()
@@ -331,6 +334,7 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
       const harness = workspace && registry.makeHarnessApi(workspace, session)
       const def = workspace && registry.findMode(workspace, id, { harness })
       if (!def) throw new Error(`plugin mode ${id} is unavailable`)
+      registry.assertCompatiblePlugin(plugin, def)
       if (def.onComplete) {
         const sourceSession = session.sourceSessionId
           ? harness.sessions.inspect(session.sourceSessionId) : session

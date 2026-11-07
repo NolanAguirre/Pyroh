@@ -79,6 +79,16 @@ export const turnDescriptor = (entry: ModeEntry, instructions?: string | null): 
     ...(Object.hasOwn(entry.turnOverrides || {}, 'instructions') ? { instructions: instructions == null ? null : String(instructions) } : {}),
   })
 }
+// Saved code-dependent work must not silently switch to a different plugin.
+// Manifestless descriptors retain the legacy compatibility path.
+export const assertCompatiblePlugin = (saved: SavedModeDescriptor | null | undefined, entry: ModeEntry): void => {
+  if (!saved?.manifest) return
+  const { manifest } = validateSavedDescriptor(saved)
+  if (!manifest) return
+  if (!entry.manifest || manifest?.id !== entry.manifest.id || manifest.version !== entry.manifest.version || manifest.sdkVersion !== entry.manifest.sdkVersion) {
+    throw Object.assign(new Error(`mode ${saved.id} requires plugin ${manifest?.id}@${manifest?.version}`), { status: 409 })
+  }
+}
 export const resolve = (workspace: Workspace | null, { harness }: ResolveOptions = {}): ResolvedRegistry => {
   const api = harness || (workspace ? makeHarnessApi(workspace) : undefined)
   const sources: SourceDescription[] = [{ scope: 'builtin', name: 'builtin', file: null, error: null, modes: BUILTIN_MODES.map(mode => mode.id) }]

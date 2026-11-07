@@ -1,17 +1,13 @@
-import { definePlugin, type PluginDefinition } from '../../sdk'
+import { definePlugin, type PluginDefinition } from 'harness/sdk'
 
 export default definePlugin({
   manifest: { id: 'new-chat', version: '1.0.0', sdkVersion: 1 },
   getModes: () => [{
     id: 'new-chat',
+    interaction: 'continuation',
     label: 'New chat',
     hint: 'Summarizes this chat into a handoff prompt and continues it in a new session with the provider and model you choose.',
     base: 'plan',
-    terse: false,
-    delegationEligible: false,
-    autoName: false,
-    snapshot: false,
-    savePlan: false,
     promptOptional: true,
     sendLabel: 'Continue in new chat',
     placeholder: 'Optional focus for the handoff summary…',

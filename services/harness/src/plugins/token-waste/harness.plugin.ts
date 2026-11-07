@@ -1,4 +1,4 @@
-import { definePlugin, type PluginDefinition } from '../../sdk'
+import { definePlugin, type PluginDefinition } from 'harness/sdk'
 
 export default definePlugin({
   manifest: { id: 'token-waste', version: '1.0.0', sdkVersion: 1 },
@@ -7,11 +7,6 @@ export default definePlugin({
     label: 'Token waste',
     hint: 'Explains token usage and records patterns for harness investigation over time.',
     base: 'ask',
-    terse: false,
-    delegationEligible: false,
-    autoName: false,
-    snapshot: false,
-    savePlan: false,
     promptOptional: true,
     newSession: true,
     sessionName: 'Token waste',

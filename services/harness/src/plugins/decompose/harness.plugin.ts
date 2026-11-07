@@ -1,4 +1,4 @@
-import { definePlugin, type PluginDefinition } from '../../sdk'
+import { definePlugin, type PluginDefinition } from 'harness/sdk'
 
 const parsePhaseCount = (text: string): { count: number } => {
   let raw = String(text || '').trim()
@@ -29,17 +29,13 @@ export default definePlugin({
     label: 'Decompose',
     hint: 'Recursively decomposes high-level goals into phased steps.',
     base: 'plan',
-    terse: false,
-    delegationEligible: false,
-    autoName: false,
-    snapshot: false,
-    savePlan: false,
     steerable: false,
     sendLabel: 'Decompose',
     placeholder: 'Paste a high-level plan to decompose into sub-phases…',
     pipeline: {
       once: [{
         id: 'count',
+        label: 'Count phases',
         agentMode: 'ask',
         promptKey: 'countPhases',
         outputSchema: {
@@ -53,11 +49,14 @@ export default definePlugin({
       }],
       eachPhase: [{
         id: 'plan',
+        label: 'Plan',
         agentMode: 'plan',
         promptKey: 'planPhase',
         write: 'plan.md',
       }, {
         id: 'execute',
+        label: 'Execute',
+        requiresPlan: true,
         agentMode: 'agent',
         promptKey: 'executePhase',
       }],

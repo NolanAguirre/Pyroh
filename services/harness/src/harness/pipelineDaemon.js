@@ -273,7 +273,7 @@ const runPipelineDaemon = async ({ sessionId, mode, resume = false }) => {
         mode: agentMode,
         prompt: sendPrompt,
         promptProvenance: assembled,
-        name: phase ? `Phase ${phase}: ${step.id}` : step.id,
+        name: phase ? `Phase ${phase}: ${step.label || step.id}` : step.label || step.id,
         workflow: { kind: mode, phase, step: step.id },
         outputSchema: step.outputSchema,
         signal: abortController.signal,
@@ -362,6 +362,7 @@ const runPipelineDaemon = async ({ sessionId, mode, resume = false }) => {
     const workspace = registry.sessionWorkspace(session)
     const harness = workspace ? registry.makeHarnessApi(workspace, session) : undefined
     const entry = registry.requireMode(workspace, mode, { harness, provider: session.provider })
+    if (resume) registry.assertCompatiblePlugin(session.workflowPlugin, entry)
     pipeline = entry.pipeline
     if (!pipeline || !Array.isArray(pipeline.once) || !Array.isArray(pipeline.eachPhase)
       || !pipeline.once.length && !pipeline.eachPhase.length) {

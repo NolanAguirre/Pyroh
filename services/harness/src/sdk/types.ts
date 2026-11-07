@@ -83,11 +83,13 @@ export interface PluginContext {
 }
 export interface PipelineStep {
   id: string
+  label?: string
   agentMode: CoreMode
   promptKey: string
   outputSchema?: Record<string, JsonValue>
   parse?: (text: string) => { count: number }
   write?: string
+  requiresPlan?: boolean
 }
 export interface PhasePipeline { once: PipelineStep[]; eachPhase: PipelineStep[] }
 export interface ModeBehavior {
@@ -104,6 +106,7 @@ export interface ModeBehavior {
 }
 export interface PluginMode extends ModeBehavior {
   id: string
+  interaction?: 'turn' | 'continuation' | 'fork'
   base?: CoreMode
   label?: string
   hint?: string
@@ -168,7 +171,7 @@ export interface HarnessApi {
     terse: string
     ask: string
     render(id: string, vars: Record<string, unknown>, session: Session, mode?: string, metadata?: PromptProvenance | null): PromptDocument
-    focus(text: string, session: Session, mode?: string, metadata?: PromptProvenance | null): PromptDocument
+    focus(text: string, session: Session, mode?: string, metadata?: PromptProvenance | null): PromptDocument | string
     context(session: Session, mode?: string): Record<string, unknown>
   }
   transcripts: { describe(sessionId: string, format: 'directories' | 'files'): string }

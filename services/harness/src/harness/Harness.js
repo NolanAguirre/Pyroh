@@ -9,7 +9,7 @@ const steerStore = require('../store/steerStore')
 const proc = require('./process')
 const { listProviders } = require('../agents/driver')
 const sessionLock = require('../store/sessionLock')
-const { normalizeRunOptions } = require('../sdk')
+const { normalizeRunOptions, validatePromptDocument, validateSavedDescriptor } = require('../sdk')
 const registry = require('../registry')
 const { requestChatName } = require('../categorizer')
 const prompts = require('../prompts')
@@ -75,6 +75,7 @@ const resolveNewChatTarget = (source, target = {}) => {
 }
 
 const spawnRun = (sessionId, action, { mode, prompt, promptProvenance, autoName = false, handoff, plugin, onPrepared, allowQueued = false, delegationDelivery, queuedMessage, forkStart = false }) => {
+  if (plugin) validateSavedDescriptor(plugin)
   const owned = !sessionLock.holds(sessionId, config.writeDir)
   const lock = sessionLock.acquire(sessionId, config.writeDir)
   const stopped = () => Object.assign(new Error('stopped'), { code: 'stopped' })
@@ -120,6 +121,7 @@ const spawnWorkflow = (sessionId, { mode, resume = false, prompt, promptProvenan
     mode ||= session.mode
     const entry = registry.requireMode(registry.sessionWorkspace(session), mode, { provider: session.provider })
     if (!entry.pipeline) throw Object.assign(new Error(`${mode} is not a workflow`), { status: 400 })
+    if (resume) registry.assertCompatiblePlugin(session.workflowPlugin, entry)
     if (!resume && !prompt?.trim()) throw Object.assign(new Error('prompt is required'), { status: 400 })
     if (prompt) {
       sessionStore.writeSourcePlan(sessionId, prompt, config.writeDir)
@@ -188,6 +190,7 @@ const preparePluginSession = (sessionId, mode, options = {}) => {
   const source = sessionStore.loadSession(sessionId, config.writeDir)
   if (!source) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
   const workspace = registry.sessionWorkspace(source)
+  if (!workspace) throw Object.assign(new Error(`${mode}: plugin modes need a workspace`), { status: 400 })
   const harness = registry.makeHarnessApi(workspace, source)
   return preparePluginTurn(source, registry.requireMode(workspace, mode, { harness, provider: source.provider }), harness, options)
 }
@@ -255,6 +258,7 @@ const pluginContext = (source, session, harness, options, runId = null) => ({
 })
 
 const preparePluginTurn = async (source, plugin, harness, options = {}) => {
+  options = normalizeRunOptions(options)
   let session = source
   if (plugin.newSession) {
     const created = harness.sessions.create({ provider: options.provider, model: options.model })
@@ -265,6 +269,7 @@ const preparePluginTurn = async (source, plugin, harness, options = {}) => {
   }
   const ctx = pluginContext(source, session, harness, options)
   const built = await plugin.buildPrompt(ctx, harness)
+  if (typeof built !== 'string') validatePromptDocument(built)
   const text = typeof built === 'string' ? built : built?.text
   if (typeof text !== 'string' || !text.trim()) {
     throw Object.assign(new Error(`${plugin.id}: buildPrompt returned no prompt`), { status: 400 })
@@ -298,7 +303,7 @@ const resumeInput = (session, mode, prompt, promptProvenance) => {
 // Every mode is looked up in the registry, which also enforces deny rules.
 const run = async (sessionId, input = {}) => {
   const options = normalizeRunOptions(input)
-  const { prompt, provider, runAfterSessionId, promptProvenance } = options
+  const { prompt, runAfterSessionId, promptProvenance } = options
   const source = sessionStore.loadSession(sessionId, config.writeDir)
   if (!source) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
   if (source.status === 'queued') throw Object.assign(new Error('session is queued'), { status: 409 })
@@ -406,7 +411,7 @@ const steer = (sessionId, text, options) => {
   const session = sessionStore.loadSession(sessionId, config.writeDir)
   if (!session) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
   if (session.status === 'queued') throw Object.assign(new Error('session is queued'), { status: 409 })
-  if (registry.builtinMode(session.mode)?.steerable === false) {
+  if (registry.findMode(registry.sessionWorkspace(session), session.mode)?.steerable === false) {
     throw Object.assign(new Error(`${session.mode} sessions cannot be steered`), { status: 409 })
   }
   if (!daemonPidOf(sessionId) || !['running', 'awaiting_input'].includes(session.status)) {

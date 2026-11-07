@@ -206,6 +206,7 @@ const handleWorkflow = async (sessionId, flags) => {
   const entry = registry.requireMode(registry.sessionWorkspace(session), mode, { provider: session.provider })
   if (!entry.pipeline) return fail(`${mode}: mode is not a workflow`)
   const resume = Boolean(flags.resume)
+  if (resume) registry.assertCompatiblePlugin(session.workflowPlugin, entry)
   let prompt = flags.prompt
   if (flags['plan-file']) {
     try {

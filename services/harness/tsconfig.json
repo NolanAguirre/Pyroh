@@ -6,10 +6,17 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "rootDir": "src",
     "outDir": "dist/types",
     "declaration": true
   },
-  "include": ["src/sdk/**/*.ts", "src/registry/**/*.ts", "src/plugins/**/*.ts"]
+  "include": [
+    "src/sdk/**/*.ts",
+    "src/registry/**/*.ts",
+    "src/plugins/**/*.ts",
+    "src/config.ts"
+  ]
 }

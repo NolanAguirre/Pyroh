@@ -36,10 +36,13 @@ export const validatePromptProvenance = (value: unknown): PromptProvenance => {
 export const validatePromptDocument = (value: unknown): PromptDocument => {
   const result = validatePromptProvenance(value)
   string(result.text, 'prompt document text')
+  if (result.sections.map(section => section.text).join('') !== result.text) throw validationError('prompt document sections must match its text')
   return result as PromptDocument
 }
 export const normalizeRunOptions = (value: unknown = {}): RunOptions => {
   const input = record(value, 'run options')
+  const allowed = ['mode', 'prompt', 'provider', 'model', 'targetMode', 'runAfterSessionId', 'forkRetryKey', 'promptProvenance']
+  for (const key of Object.keys(input)) if (!allowed.includes(key)) throw validationError(`unknown run option: ${key}`)
   const output: RunOptions = {}
   for (const key of ['mode', 'prompt', 'provider', 'model', 'targetMode', 'runAfterSessionId', 'forkRetryKey'] as const) {
     if (input[key] !== undefined) output[key] = input[key] === null ? null : string(input[key], `run options.${key}`)
@@ -62,11 +65,13 @@ export const validatePipeline = (value: unknown): PhasePipeline => {
     if (!Array.isArray(steps)) throw validationError(`pipeline.${key} must be an array`)
     for (const value of steps) {
       const step = record(value, 'pipeline step')
-      const stepId = string(step.id, 'pipeline step.id', true)
+      const stepId = id(step.id, 'pipeline step.id')
       if (seen.has(stepId)) throw validationError(`duplicate pipeline step: ${stepId}`)
       seen.add(stepId)
       if (!CORE_MODES.includes(step.agentMode as CoreMode)) throw validationError(`${stepId}: invalid agentMode`)
       string(step.promptKey, `${stepId}.promptKey`, true)
+      if (step.label !== undefined) string(step.label, `${stepId}.label`, true)
+      if (step.requiresPlan !== undefined && typeof step.requiresPlan !== 'boolean') throw validationError(`${stepId}.requiresPlan must be a boolean`)
       if (step.write !== undefined) string(step.write, `${stepId}.write`, true)
       if (step.parse !== undefined && typeof step.parse !== 'function') throw validationError(`${stepId}.parse must be a function`)
       if (step.outputSchema !== undefined) validateJson(record(step.outputSchema, `${stepId}.outputSchema`), `${stepId}.outputSchema`)
@@ -92,6 +97,7 @@ export const validateMode = (value: unknown): PluginMode => {
   id(input.id, 'mode.id')
   if (input.base !== undefined && !CORE_MODES.includes(input.base as CoreMode)) throw validationError(`${input.id}: base must be one of ${CORE_MODES.join(', ')}`)
   validateBehavior(input)
+  if (input.interaction !== undefined && !['turn', 'continuation', 'fork'].includes(String(input.interaction))) throw validationError(`${input.id}: invalid interaction`)
   for (const key of ['label', 'hint', 'sessionName', 'sendLabel', 'placeholder']) {
     if (input[key] != null) string(input[key], `${input.id}.${key}`)
   }

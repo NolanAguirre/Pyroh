@@ -1,4 +1,4 @@
-import { definePlugin, type PluginDefinition } from '../../sdk'
+import { definePlugin, type PluginDefinition } from 'harness/sdk'
 
 export default definePlugin({
   manifest: { id: 'memory-extract', version: '1.0.0', sdkVersion: 1 },
@@ -7,11 +7,6 @@ export default definePlugin({
     label: 'Memories',
     hint: 'Reads the transcript and records proposed memories through the memory MCP.',
     base: 'ask',
-    terse: false,
-    delegationEligible: false,
-    autoName: false,
-    snapshot: false,
-    savePlan: false,
     promptOptional: true,
     newSession: true,
     tools: ['create_memory'],
