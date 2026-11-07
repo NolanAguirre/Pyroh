@@ -1,6 +1,8 @@
 const { execFile } = require('child_process')
+const path = require('path')
 const { TRIGGERS, inScope } = require('./triggers')
 const prompts = require('../prompts')
+const paths = require('../store/paths')
 
 // --null puts a NUL after the path so paths containing ':' still parse.
 const findLocations = (needle, cwd) => new Promise((resolve) => {
@@ -20,6 +22,11 @@ const findLocations = (needle, cwd) => new Promise((resolve) => {
 const devIdPaths = async ([match, id], { cwd, provider }) => {
   const locations = await findLocations(id, cwd)
   return locations.length ? prompts.render('devIdPaths', { match, files: locations.join(' ') }, provider) : match
+}
+
+const sessionIdPaths = ([match], { provider }) => {
+  const location = paths.locateSession(match)
+  return location ? prompts.render('sessionIdPaths', { match, path: path.resolve(location.dir) }, provider) : match
 }
 
 const trigger = (id) => TRIGGERS.find((item) => item.id === id)
