@@ -115,7 +115,8 @@ const spawnRun = (sessionId, action, { mode, prompt, images, promptProvenance, a
   } finally { if (owned) lock.release() }
 }
 
-const spawnWorkflow = (sessionId, { mode, resume = false, prompt, promptProvenance } = {}) => {
+const spawnWorkflow = (sessionId, { mode, resume = false, prompt, promptProvenance, images } = {}) => {
+  if (images?.length) throw Object.assign(new Error('Image attachments are not supported in workflow mode'), { status: 400 })
   const lock = sessionLock.acquire(sessionId, config.writeDir)
   try {
     sessionStore.recoverSession(sessionId, config.writeDir)

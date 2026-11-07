@@ -13,7 +13,7 @@ import {
 import NewSessionForm from './NewSessionForm'
 import NewWorkspaceForm from './NewWorkspaceForm'
 
-const MODE_ICONS = { agent: '▶', ask: '?', plan: '◇', decompose: '⑂', 'token-waste': '⚙', 'memory-extract': '✎', 'new-chat': '↪' }
+const MODE_ICONS = { agent: '▶', leader: '⚑', ask: '?', plan: '◇', decompose: '⑂', 'token-waste': '⚙', 'memory-extract': '✎', 'new-chat': '↪' }
 
 const AppPlaceholder = ({ workspace, workspaces = [], sessions = [], providers = [], modes = [], onCreated, onWorkspaceCreated, onOpenEditor }) => (
   <DevScope id="hr3n8w4" state={{ workspace: workspace?.id, sessionCount: sessions.length }}>

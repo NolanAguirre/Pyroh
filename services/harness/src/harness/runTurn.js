@@ -287,6 +287,7 @@ const runOneTurn = async ({
     assembled = await prependNotesWithProvenance(fired, { ...session, ...promptContext() }, assembled)
     let firstSend = true
     let segmentImages = require('../store/imageStore').resolveImages(session.id, images, writeDir)
+    const pendingSteers = []
     let result
     while (true) {
       const segmentStart = Date.now()
@@ -337,7 +338,15 @@ const runOneTurn = async ({
       result = { ...segment, usage, durationMs, modelRequests: publishRequestMetrics(segment) }
 
       if (!steering || signal?.aborted) break
-      const steers = steering.take()
+      pendingSteers.push(...steering.take())
+      const steers = []
+      let imageCount = 0
+      while (pendingSteers.length) {
+        const count = pendingSteers[0].images?.length || 0
+        if (steers.length && imageCount + count > 5) break
+        imageCount += count
+        steers.push(pendingSteers.shift())
+      }
       if (!steers.length) break
       segmentImages = steers.flatMap(steer => require('../store/imageStore').resolveImages(session.id, steer.images, writeDir))
       const currentSession = sessionStore.loadSession(session.id, writeDir)

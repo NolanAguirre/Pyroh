@@ -2,7 +2,7 @@ import { Button, DevScope } from 'component-library'
 
 // Modes come from the registry. These DevScope ids belong to built-in mode
 // buttons; plugin modes share pm6t3qz.
-const MODE_SCOPES = { agent: 'hr0m6j9', ask: 'k3w9a5t', plan: 'hr4n8d2', decompose: 'hr5k1w7' }
+const MODE_SCOPES = { agent: 'hr0m6j9', leader: 'ld7m2q9', ask: 'k3w9a5t', plan: 'hr4n8d2', decompose: 'hr5k1w7' }
 const MODE_DEV_IDS = { 'token-waste': 'q7m2z9k', 'new-chat': 'n4c8x2e', fork: 'fk3p8w2' }
 
 const ModeToggle = ({ modes, mode, onChange, disabled }) => (
