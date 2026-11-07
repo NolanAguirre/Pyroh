@@ -100,7 +100,6 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
   const plugin = sourceRun?.plugin || null
   const entry = registry.turnMode(mode, plugin)
   const driverMode = entry?.base || mode
-  const handingOff = entry?.kind === 'new-chat'
   const workspace = registry.sessionWorkspace(session)
   const harnessTools = registry.toolsFor(workspace, { mode: plugin ? plugin.id : mode, provider: session.provider })
 
@@ -324,30 +323,32 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
   }
 
   let handoff = {}
-  if (handingOff) {
-    const continuation = String(result.result || '').trim()
-    try {
-      if (!continuation) throw new Error('new chat: agent returned no continuation prompt')
-      const sourceRun = sessionStore.loadRun(sessionId, runId, writeDir)
-      const next = require('./Harness').continueInNewChat(sessionId, continuation, sourceRun && sourceRun.handoff)
-      logLine(`continuing in new session ${next.session.id} (run ${next.run.id})`)
-      onEvent({ type: 'handoff', session: next.session, handoffRunId: next.run.id })
-      handoff = { handoffSessionId: next.session.id, handoffRunId: next.run.id }
-    } catch (err) {
-      failAfterRun(err, 'handoff failed')
-      return
-    }
-  }
-
-  // Reload the plugin so onComplete sees the latest file.
-  if (plugin) {
+  // Legacy bundled runs have no descriptor. Resolve them through the same
+  // completion hook as new runs; old handoff targets become ordinary options.
+  if (plugin || entry?.kind === 'plugin') {
+    const id = plugin?.id || entry.id
     try {
       const harness = workspace && registry.makeHarnessApi(workspace, session)
-      const def = workspace && registry.findMode(workspace, plugin.id, { harness })
-      if (!def) logLine(`plugin mode ${plugin.id} not found; skipping onComplete`)
-      else if (def.onComplete) await def.onComplete({ workspace, session, runId, prompt }, result, harness)
+      const def = workspace && registry.findMode(workspace, id, { harness })
+      if (!def) throw new Error(`plugin mode ${id} is unavailable`)
+      if (def.onComplete) {
+        const sourceSession = session.sourceSessionId
+          ? harness.sessions.inspect(session.sourceSessionId) : session
+        const options = plugin?.options || (sourceRun?.handoff ? {
+          provider: sourceRun.handoff.provider, model: sourceRun.handoff.model, targetMode: sourceRun.handoff.mode,
+        } : {})
+        const completion = await def.onComplete({
+          workspace, session, sourceSession, runId, prompt,
+          promptProvenance: sourceRun?.promptProvenance, options,
+        }, result, harness)
+        if (completion?.continuation) {
+          const next = completion.continuation
+          onEvent({ type: 'handoff', session: next.session, handoffRunId: next.run.id })
+          handoff = { handoffSessionId: next.session.id, handoffRunId: next.run.id }
+        }
+      }
     } catch (err) {
-      failAfterRun(err, `${plugin.id} onComplete failed`)
+      failAfterRun(err, `${id} onComplete failed`)
       return
     }
   }

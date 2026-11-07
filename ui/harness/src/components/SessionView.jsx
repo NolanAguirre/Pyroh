@@ -29,8 +29,6 @@ const FALLBACK_MODES = [{
   placeholder: 'Ask the agent to do something (⌘↵ to send)…',
 }]
 
-// Sibling analysis modes that may run on a different provider and model than the source.
-const SPAWN_TARGET_KINDS = ['token-waste', 'memory']
 const QUEUED_RUN_AFTER = { prompt: '' }
 const forkRetryStorageKey = (sessionId) => `harness.forkRetry.${sessionId}`
 const loadForkRetry = (sessionId) => {
@@ -122,7 +120,8 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const modes = registryModes?.length ? registryModes : FALLBACK_MODES
   const registryActive = modes.find((item) => item.id === mode) || null
   // Sending a sibling mode to a session already in it replies here instead of spawning.
-  const replyInPlace = Boolean(registryActive?.newSession) && registryActive.kind !== 'fork' && session?.mode === registryActive.id
+  const replyInPlace = Boolean(registryActive?.newSession) && registryActive.kind !== 'fork'
+    && registryActive.interaction !== 'fork' && session?.mode === registryActive.id
   const active = replyInPlace
     ? {
         ...registryActive,
@@ -133,14 +132,14 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
         placeholder: 'Reply to the agent (⌘↵ to send)…',
       }
     : registryActive
-  const isDecompose = active?.kind === 'decompose'
-  const isNewChat = active?.kind === 'new-chat'
-  const isFork = active?.kind === 'fork'
+  const isDecompose = ['workflow', 'decompose'].includes(active?.kind)
+  const isNewChat = active?.interaction === 'continuation' || active?.kind === 'new-chat'
+  const isFork = active?.interaction === 'fork' || active?.kind === 'fork'
   const nativeForkUnavailable = isFork && ['cursor', 'grok'].includes(session?.provider)
   const modeHint = nativeForkUnavailable
     ? `Native forks are unavailable for ${session.provider === 'cursor' ? 'Cursor' : 'Grok'}. Existing fork sessions still accept replies.`
     : isFork ? `${active?.hint || ''} Cache reuse is measured by the provider and is not guaranteed.` : active?.hint
-  const picksSpawnTarget = isNewChat || (Boolean(active?.newSession) && SPAWN_TARGET_KINDS.includes(active?.kind))
+  const picksSpawnTarget = isNewChat || (Boolean(active?.newSession) && !isFork)
 
   // A saved mode that this workspace no longer has falls back to the session's mode, then agent.
   useEffect(() => {
@@ -165,7 +164,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const spawnsSession = Boolean(active?.newSession)
   const blocksWhileBusy = isFork || !spawnsSession
   const steering = isBusy && active?.steerable !== false && !spawnsSession
-  const canQueue = submitted && session?.childKind !== 'workflow' && !spawnsSession
+  const canQueue = submitted && session?.childKind !== 'workflow' && !spawnsSession && !isNewChat && !isFork
     && ['turn', 'plugin'].includes(active?.kind)
   const inputCommand = parseInputCommand(prompt)
   const commandEntry = INPUT_COMMANDS.find((item) => item.type === inputCommand?.type)
@@ -238,7 +237,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
     setActionError('')
     setCommandNotice('')
     saveComposer(sessionId, mode, prompt, defaultMode)
-    const action = inputCommand ? 'commands' : delivery === 'queue' ? 'queue' : steering ? 'steer' : isDecompose ? 'decompose' : 'run'
+    const action = inputCommand ? 'commands' : delivery === 'queue' ? 'queue' : steering ? 'steer' : 'run'
     const request = { action, prompt, mode }
     if (action === 'run') {
       if (dependencyId) {

@@ -463,7 +463,7 @@ router.post('/sessions/:id/resume', async (req, res) => {
   const corrected = await correctText(prompt)
   const result = Harness.resume(req.params.id, { prompt: corrected, mode,
     promptProvenance: typeof prompt === 'string' ? userPrompt(corrected, prompt) : undefined })
-  if (result && result.mode === 'decompose') return res.status(202).json(result)
+  if (result && Object.hasOwn(result, 'resume')) return res.status(202).json(result)
   res.status(202).json({ run: result })
 })
 

@@ -23,3 +23,11 @@ tool-stats: ## Tool-call analytics (ARGS="...")
 
 index.rebuild: ## Rebuild the SQLite session index from session.json files
 	./scripts/run-with-env-dir ./env-dir node bin/harness reindex
+
+.PHONY: typecheck sdk.build
+
+typecheck: ## Check the TypeScript SDK, registry, and plugins
+	npm run typecheck
+
+sdk.build: ## Emit SDK, registry, and plugin TypeScript declarations
+	npm run build:sdk

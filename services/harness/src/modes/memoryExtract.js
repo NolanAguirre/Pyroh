@@ -36,4 +36,4 @@ const buildPromptWithProvenance = (sessionId, focus, writeDir, provider, context
   focus: prompts.focusWithProvenance(focus, provider, context, metadata),
 }, provider, context, metadata)
 
-module.exports = { MODE, NAME, buildPrompt, buildPromptWithProvenance }
+module.exports = { MODE, NAME, buildPrompt, buildPromptWithProvenance, transcriptFiles }

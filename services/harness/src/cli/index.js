@@ -6,21 +6,10 @@ const { createDriver, listProviders } = require('../agents/driver')
 const { resolveWorkDir } = require('../store/workDir')
 const { snapshotIfGitRepo } = require('../store/gitSnapshot')
 const workspaceStore = require('../store/workspaceStore')
-const tokenWaste = require('../modes/tokenWaste')
-const memoryExtract = require('../modes/memoryExtract')
-const newChat = require('../modes/newChat')
 const registry = require('../registry')
 const prompts = require('../prompts')
 const { sessionContext } = require('../prompt/context')
 
-// Kinds this command runs in the foreground; others go through Harness.run.
-const FOREGROUND_KINDS = ['turn', 'token-waste', 'memory', 'new-chat']
-
-// Modes that run in a new sibling session built from the source session.
-const SIBLING_MODES = {
-  [tokenWaste.MODE]: (sessionId, flags) => Harness.createTokenWasteSession(sessionId, { prompt: flags.prompt, provider: flags.provider, model: flags.model }),
-  [memoryExtract.MODE]: (sessionId, flags) => Harness.createMemorySession(sessionId, { prompt: flags.prompt, provider: flags.provider, model: flags.model }),
-}
 const USAGE = `harness <command> [options]
 
 Commands:
@@ -34,7 +23,7 @@ Commands:
   ask <sid> --prompt <text> [--detach]                    Ask a question without changing code
   run <sid> --prompt <text> [--mode agent|plan|ask|token-waste|memory-extract|new-chat|<plugin-id>] [--detach]
                                                           Run a turn (prompt optional for token-waste/memory-extract/new-chat)
-                                                          Plugin modes always run detached
+                                                          External plugin modes run detached
   token-waste <sid> [--prompt <focus>] [--provider p] [--model m] [--detach]
                                                           Spawn a new session to explain token usage and patterns
   memory <sid> [--prompt <focus>] [--provider p] [--model m] [--detach]
@@ -122,34 +111,28 @@ const handleTurn = async (action, sessionId, flags) => {
   const current = flags['run-id'] ? null : sessionStore.loadSession(sessionId, config.writeDir)
   if (current?.status === 'queued') return fail(`${action}: session is queued`)
   if (current && action !== 'plan' && !flags.mode) flags = { ...flags, mode: Harness.replyMode(current) }
-  if (action === 'run' && flags.mode && !flags['run-id'] && !FOREGROUND_KINDS.includes(registry.builtinMode(flags.mode)?.kind)) {
-    try {
+  let entry
+  let prepared
+  if (!flags['run-id'] && current) {
+    const mode = action === 'plan' ? 'plan' : flags.mode || 'agent'
+    const workspace = registry.sessionWorkspace(current)
+    const harness = workspace ? registry.makeHarnessApi(workspace, current) : null
+    entry = registry.requireMode(workspace, mode, { harness, provider: current.provider })
+    if (action !== 'resume' && (entry.pipeline || entry.launch ||
+        (entry.kind === 'plugin' && entry.scope !== 'bundled'))) {
       return print(await Harness.run(sessionId, {
-        mode: flags.mode, prompt: flags.prompt, provider: flags.provider, model: flags.model, targetMode: flags['target-mode'],
+        mode, prompt: flags.prompt, provider: flags.provider, model: flags.model, targetMode: flags['target-mode'],
       }))
-    } catch (err) {
-      return fail(`${action}: ${err && err.message}`)
     }
-  }
-  if (!flags['run-id']) {
-    const source = sessionStore.loadSession(sessionId, config.writeDir)
-    try {
-      if (source) registry.requireMode(registry.sessionWorkspace(source), action === 'plan' ? 'plan' : flags.mode || 'agent', { provider: source.provider })
-    } catch (err) {
-      return fail(`${action}: ${err && err.message}`)
+    if (action !== 'resume' && entry.kind === 'plugin' && !Harness.repliesInPlace(current, entry)) {
+      if (!harness) return fail(`${mode}: plugin modes need a workspace`)
+      prepared = await Harness.preparePluginTurn(current, entry, harness, {
+        mode, prompt: flags.prompt, provider: flags.provider, model: flags.model, targetMode: flags['target-mode'],
+      })
+      sessionId = prepared.session.id
+      flags = { ...flags, prompt: prepared.prompt }
+      if (sessionId !== current.id) print({ sessionId, sourceSessionId: current.id })
     }
-  }
-  const createSibling = SIBLING_MODES[flags.mode]
-  if (createSibling && current && !Harness.repliesInPlace(current, registry.builtinMode(flags.mode))) {
-    let sibling
-    try {
-      sibling = createSibling(sessionId, flags)
-    } catch (err) {
-      return fail(`${action}: ${err && err.message}`)
-    }
-    sessionId = sibling.session.id
-    flags = { ...flags, prompt: sibling.prompt }
-    print({ sessionId, sourceSessionId: sibling.session.sourceSessionId })
   }
   const lock = require('../store/sessionLock').acquire(sessionId, config.writeDir)
   sessionStore.recoverSession(sessionId, config.writeDir, { excludeRunId: flags['run-id'] })
@@ -163,22 +146,11 @@ const handleTurn = async (action, sessionId, flags) => {
   } else {
     const mode = action === 'plan' ? 'plan' : flags.mode || 'agent'
     let prompt = flags.prompt
-    let handoff
-    if (mode === newChat.MODE) {
-      prompt = newChat.buildPrompt(prompt, session.provider, sessionContext(session, mode))
-      try {
-        handoff = Harness.resolveNewChatTarget(session, {
-          provider: flags.provider,
-          model: flags.model,
-          mode: flags['target-mode'],
-        })
-      } catch (err) {
-        return fail(`${action}: ${err && err.message}`)
-      }
-    }
     if (action === 'resume' && !prompt) prompt = prompts.text('resume', session.provider, sessionContext(session, mode))
     if (!prompt) return fail(`${action}: --prompt is required`)
-    run = sessionStore.createRun(sessionId, { mode, prompt, handoff })
+    const saved = sessionStore.listRuns(sessionId, config.writeDir).findLast(item => item.mode === mode && item.plugin)?.plugin
+    const plugin = prepared?.plugin || (entry?.kind === 'plugin' ? saved || registry.turnDescriptor(entry) : undefined)
+    run = sessionStore.createRun(sessionId, { mode, prompt, plugin, promptProvenance: prepared?.promptProvenance })
     if (!session.mode && registry.builtinMode(mode)?.kind === 'turn') sessionStore.updateSession(sessionId, { mode }, config.writeDir)
   }
 
@@ -221,26 +193,29 @@ const handleTurn = async (action, sessionId, flags) => {
   })
 }
 
-const handleDecompose = async (sessionId, flags) => {
-  if (!sessionId) return fail('decompose: missing <sid>')
+const handleWorkflow = async (sessionId, flags) => {
+  const mode = flags.mode || 'decompose'
+  if (!sessionId) return fail(`${mode}: missing <sid>`)
   const existing = sessionStore.loadSession(sessionId, config.writeDir)
-  if (existing?.status === 'queued') return fail('decompose: session is queued')
+  if (existing?.status === 'queued') return fail(`${mode}: session is queued`)
   const lock = require('../store/sessionLock').acquire(sessionId, config.writeDir)
   sessionStore.recoverSession(sessionId, config.writeDir)
   const session = sessionStore.loadSession(sessionId, config.writeDir)
-  if (!session) return fail(`decompose: session not found: ${sessionId}`)
+  if (!session) return fail(`${mode}: session not found: ${sessionId}`)
 
+  const entry = registry.requireMode(registry.sessionWorkspace(session), mode, { provider: session.provider })
+  if (!entry.pipeline) return fail(`${mode}: mode is not a workflow`)
   const resume = Boolean(flags.resume)
   let prompt = flags.prompt
   if (flags['plan-file']) {
     try {
       prompt = fs.readFileSync(flags['plan-file'], 'utf8')
     } catch (err) {
-      return fail(`decompose: could not read --plan-file: ${err && err.message}`)
+      return fail(`${mode}: could not read --plan-file: ${err && err.message}`)
     }
   }
   if (!resume && !prompt) prompt = sessionStore.readSourcePlan(sessionId, config.writeDir)
-  if (!resume && !prompt) return fail('decompose: --prompt or --plan-file is required')
+  if (!resume && !prompt) return fail(`${mode}: --prompt or --plan-file is required`)
 
   if (!resume) {
     if (flags.prompt || flags['plan-file']) {
@@ -248,28 +223,28 @@ const handleDecompose = async (sessionId, flags) => {
     }
     sessionStore.updateSession(
       sessionId,
-      { mode: 'decompose', currentPhase: null, currentStep: null, totalPhases: null },
+      { mode, workflowPlugin: registry.turnDescriptor(entry), currentPhase: null, currentStep: null, totalPhases: null },
       config.writeDir,
     )
   }
 
   if (flags.detach) {
     const proc = require('../harness/process')
-    const args = ['decompose', sessionId]
+    const args = ['workflow', sessionId, '--mode', mode]
     if (resume) args.push('--resume')
     proc.spawnHarness(args, lock.spawnOptions())
-    print({ sessionId, mode: 'decompose', resume })
+    print({ sessionId, mode, resume })
     process.exit(0)
   }
 
   try {
-    const { runDecomposeDaemon } = require('../modes/decompose/orchestrator')
-    await runDecomposeDaemon({ sessionId, resume })
+    const { runPipelineDaemon } = require('../harness/pipelineDaemon')
+    await runPipelineDaemon({ sessionId, mode, resume })
   } catch (err) {
     const { errorMessage, formatError } = require('../store/formatError')
     const eventLog = require('../store/eventLog')
     const message = errorMessage(err)
-    process.stderr.write(`decompose: ${formatError(err)}\n`)
+    process.stderr.write(`${mode}: ${formatError(err)}\n`)
     try {
       eventLog.append(sessionId, { type: 'error', message }, config.writeDir)
       sessionStore.updateSession(
@@ -373,28 +348,25 @@ const main = async (argv) => {
     case 'ask':
       return handleTurn('run', positionals[0], { ...flags, mode: 'ask' })
     case 'token-waste':
-      return handleTurn('run', positionals[0], { ...flags, mode: tokenWaste.MODE })
+      return handleTurn('run', positionals[0], { ...flags, mode: 'token-waste' })
     case 'memory':
-      return handleTurn('run', positionals[0], { ...flags, mode: memoryExtract.MODE })
+      return handleTurn('run', positionals[0], { ...flags, mode: 'memory-extract' })
     case 'token-waste-runs':
-      return print(require('../store/runIndexStore').listRuns(config.writeDir, { mode: tokenWaste.MODE }))
+      return print(require('../store/runIndexStore').listRuns(config.writeDir, { mode: 'token-waste' }))
     case 'runs':
       return print(require('../store/runIndexStore').listRuns(config.writeDir, { mode: flags.mode }))
     case 'new-chat':
-      return handleTurn('run', positionals[0], { ...flags, mode: newChat.MODE })
+      return handleTurn('run', positionals[0], { ...flags, mode: 'new-chat' })
     case 'decompose':
-      return handleDecompose(positionals[0], flags)
+      return handleWorkflow(positionals[0], { ...flags, mode: 'decompose' })
+    case 'workflow':
+      return handleWorkflow(positionals[0], flags)
     case 'resume': {
       const sid = positionals[0]
       if (!sid) return fail('resume: missing <sid>')
       const session = sessionStore.loadSession(sid, config.writeDir)
-      if (
-        session &&
-        session.mode === 'decompose' &&
-        session.currentStep &&
-        session.currentStep !== 'done'
-      ) {
-        return handleDecompose(sid, { ...flags, resume: true })
+      if (Harness.isWorkflowResume(session)) {
+        return handleWorkflow(sid, { ...flags, mode: session.mode, resume: true })
       }
       return handleTurn('resume', sid, flags)
     }

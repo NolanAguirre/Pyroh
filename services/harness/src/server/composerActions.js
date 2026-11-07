@@ -37,7 +37,7 @@ const startRun = async (sessionId, requested, { prompt, provider, model, targetM
       prompt: corrected, promptProvenance: typeof prompt === 'string' ? userPrompt(corrected, prompt) : undefined, mode, provider, model, targetMode, runAfterSessionId, forkRetryKey,
     })
     if (run && run.queued) return { status: 202, body: { session: run.session } }
-    if (entry.kind === 'decompose') return { status: 202, body: run }
+    if (entry.pipeline) return { status: 202, body: run }
     return { status: 202, body: { run, ...(entry.newSession && !inPlace
       ? { session: sessionStore.loadSession(run.sessionId, config.writeDir) } : {}) } }
   } catch (err) {

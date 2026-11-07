@@ -34,7 +34,7 @@ const SourcesCard = ({ sources }) => (
             : <Badge size="small" variant="success">loaded</Badge>
         }}
       />
-      {sources.length === 1 && <p className="hint">No global or workspace plugins found.</p>}
+      {!sources.some(source => ['global', 'workspace'].includes(source.scope)) && <p className="hint">No global or workspace plugins found.</p>}
     </CardSection>
   </Card>
 )

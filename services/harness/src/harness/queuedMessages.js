@@ -21,17 +21,18 @@ const resolve = (session, requested) => {
   if (session.status === 'queued') fail('session is waiting for its first prompt', 409)
   const runs = store.listRuns(session.id, config.writeDir)
   if (!runs.length) fail('send the first message before queueing a follow-up', 409)
-  if (registry.builtinMode(session.mode)?.steerable === false) fail('this workflow does not support queued follow-ups', 409)
+  const workspace = registry.sessionWorkspace(session)
+  if (registry.findMode(workspace, session.mode)?.steerable === false) fail('this workflow does not support queued follow-ups', 409)
   const latest = runs.at(-1)
+  const active = registry.findMode(workspace, latest.mode)
   if (['running', 'awaiting_input'].includes(session.status) &&
-      ['new-chat', 'decompose'].includes(latest.mode)) fail('this workflow does not support queued follow-ups', 409)
+      (active?.pipeline || active?.onComplete)) fail('this workflow does not support queued follow-ups', 409)
   const mode = requested || Harness.replyMode(session)
   if (typeof mode !== 'string') fail('mode must be a string')
-  const workspace = registry.sessionWorkspace(session)
   const harness = workspace ? registry.makeHarnessApi(workspace, session) : undefined
   const entry = registry.requireMode(workspace, mode, { harness, provider: session.provider })
   const inPlace = Harness.repliesInPlace(session, entry)
-  if (!inPlace && (entry.newSession || !['turn', 'plugin'].includes(entry.kind))) {
+  if (!inPlace && (entry.newSession || entry.launch || entry.pipeline || !['turn', 'plugin'].includes(entry.kind))) {
     fail(`mode ${mode} cannot be queued as a follow-up`)
   }
   if (entry.kind === 'plugin' && !harness) fail('plugin modes need a workspace')
@@ -65,21 +66,22 @@ const cancel = (sessionId, messageId) => {
 const prepare = async (session, message) => {
   const { entry, inPlace, harness } = resolve(session, message.mode)
   let prompt = message.text
+  let promptProvenance = message.promptProvenance
   let plugin
   if (entry.kind === 'plugin') {
     if (inPlace) {
       plugin = store.listRuns(session.id, config.writeDir).findLast(run => run.mode === entry.id && run.plugin)?.plugin
     } else {
-      const ctx = { workspace: harness.workspace, session, runId: null, prompt }
-      prompt = await entry.buildPrompt(ctx, harness)
-      if (typeof prompt !== 'string' || !prompt.trim()) fail(`${entry.id}: buildPrompt returned no prompt`)
-      const instructions = typeof entry.instructions === 'function'
-        ? await entry.instructions(ctx, harness) : entry.instructions
-      plugin = registry.turnDescriptor(entry, instructions)
+      const prepared = await require('./Harness').preparePluginTurn(session, entry, harness, {
+        mode: message.mode, prompt, promptProvenance,
+      })
+      prompt = prepared.prompt
+      promptProvenance = prepared.promptProvenance
+      plugin = prepared.plugin
     }
   }
   return { mode: message.mode, prompt, plugin,
-    promptProvenance: require('../prompt/provenance').supplied(prompt, message.promptProvenance) }
+    promptProvenance: require('../prompt/provenance').supplied(prompt, promptProvenance) }
 }
 
 const withIdle = (sessionId, fn) => withDeliveryLock(sessionId, () => {

@@ -9,25 +9,24 @@ const steerStore = require('../store/steerStore')
 const proc = require('./process')
 const { listProviders } = require('../agents/driver')
 const sessionLock = require('../store/sessionLock')
-const tokenWaste = require('../modes/tokenWaste')
-const memoryExtract = require('../modes/memoryExtract')
-const newChat = require('../modes/newChat')
+const { normalizeRunOptions } = require('../sdk')
 const registry = require('../registry')
 const { requestChatName } = require('../categorizer')
 const prompts = require('../prompts')
 const { sessionModel, sessionContext } = require('../prompt/context')
 const { isDelegatedChild, detachDelegation } = require('../store/delegationBoundary')
 
-const isDecomposeResume = (session) =>
-  session &&
-  session.mode === 'decompose' &&
-  session.currentStep &&
-  session.currentStep !== 'done'
+const workflowMode = (session) => {
+  if (!session?.mode) return null
+  const entry = registry.findMode(registry.sessionWorkspace(session), session.mode)
+  return entry?.pipeline ? entry : null
+}
 
-// session.mode is the mode the session was spawned in. Replies default to it,
-// except decompose, whose pipeline is not a reply.
-const replyMode = (session) =>
-  session?.mode && session.mode !== 'decompose' ? session.mode : 'agent'
+const isWorkflowResume = (session) => Boolean(session?.currentStep &&
+  session.currentStep !== 'done' && (session.workflowPlugin || workflowMode(session)))
+
+const replyMode = (session) => session?.mode && !session.workflowPlugin && !workflowMode(session)
+  ? session.mode : 'agent'
 
 // A mode that spawns a sibling session (memories, token waste, newSession
 // plugins) runs as a plain turn when sent to a session already in that mode.
@@ -111,21 +110,30 @@ const spawnRun = (sessionId, action, { mode, prompt, promptProvenance, autoName 
   } finally { if (owned) lock.release() }
 }
 
-const spawnDecompose = (sessionId, { resume = false, prompt, promptProvenance } = {}) => {
+const spawnWorkflow = (sessionId, { mode, resume = false, prompt, promptProvenance } = {}) => {
   const lock = sessionLock.acquire(sessionId, config.writeDir)
   try {
     sessionStore.recoverSession(sessionId, config.writeDir)
     const session = sessionStore.loadSession(sessionId, config.writeDir)
-    if (session?.status === 'queued') throw Object.assign(new Error('session is queued'), { status: 409 })
+    if (!session) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
+    if (session.status === 'queued') throw Object.assign(new Error('session is queued'), { status: 409 })
+    mode ||= session.mode
+    const entry = registry.requireMode(registry.sessionWorkspace(session), mode, { provider: session.provider })
+    if (!entry.pipeline) throw Object.assign(new Error(`${mode} is not a workflow`), { status: 400 })
+    if (!resume && !prompt?.trim()) throw Object.assign(new Error('prompt is required'), { status: 400 })
     if (prompt) {
       sessionStore.writeSourcePlan(sessionId, prompt, config.writeDir)
       sessionStore.updateSession(sessionId, { sourcePlanProvenance: require('../prompt/provenance').supplied(prompt, promptProvenance) }, config.writeDir)
     }
-    const args = ['decompose', sessionId]
+    require('fs').rmSync(paths.controlFile(sessionId, config.writeDir), { force: true })
+    const args = ['workflow', sessionId, '--mode', mode]
     if (resume) args.push('--resume')
-    sessionStore.updateSession(sessionId, { status: 'running' }, config.writeDir)
+    sessionStore.updateSession(sessionId, {
+      mode, status: 'running', workflowPlugin: registry.turnDescriptor(entry),
+      ...(!resume ? { currentPhase: null, currentStep: null, totalPhases: null } : {}),
+    }, config.writeDir)
     const pid = proc.spawnHarness(args, lock.spawnOptions())
-    return { sessionId, mode: 'decompose', resume: Boolean(resume), daemonPid: pid }
+    return { sessionId, mode, resume: Boolean(resume), daemonPid: pid }
   } catch (err) {
     sessionStore.recoverSession(sessionId, config.writeDir)
     throw err
@@ -173,31 +181,15 @@ const createSession = ({ workspaceId, provider, model, codex, grok, claude }) =>
   sessionStore.createSession({ workspaceId, provider, model, codex, grok, claude }, config.writeDir)
 
 
-// A new session next to the source that reads the source's transcripts.
-const createSiblingSession = (modeId, buildPrompt, sourceSessionId, { focus, provider, model, promptProvenance } = {}) => {
-  const entry = registry.builtinMode(modeId)
-  const source = sessionStore.loadSession(sourceSessionId, config.writeDir)
-  if (!source) throw Object.assign(new Error(`session not found: ${sourceSessionId}`), { status: 404 })
-  const target = resolveSpawnTarget(source, { provider, model })
-  registry.requireMode(registry.sessionWorkspace(source), entry.id, { provider: target.provider })
-  const assembled = buildPrompt(sourceSessionId, focus, config.writeDir, target.provider, { model: target.model, mode: modeId }, promptProvenance)
-  const prompt = assembled.text
-  const workspaceId = source.workspaceId || workspaceStore.findWorkspaceByCwd(source.cwd, config.writeDir)?.id
-  const created = createSession({ workspaceId, ...spawnSessionFields(source, target) })
-  const session = sessionStore.updateSession(created.id, {
-    mode: entry.id, sourceSessionId, name: entry.sessionName,
-  }, config.writeDir)
-  return { session, prompt, promptProvenance: assembled }
-}
-
-const createTokenWasteSession = (sourceSessionId, { prompt: focus, provider, model, promptProvenance } = {}) =>
-  createSiblingSession(tokenWaste.MODE, tokenWaste.buildPromptWithProvenance, sourceSessionId, { focus, provider, model, promptProvenance })
-
-const createMemorySession = (sourceSessionId, { prompt: focus, provider, model, promptProvenance } = {}) => {
-  if (!config.memoryMcpUrl) {
-    throw Object.assign(new Error('memory extraction needs HARNESS_MEMORY_MCP_URL (the mcp-memory service)'), { status: 400 })
-  }
-  return createSiblingSession(memoryExtract.MODE, memoryExtract.buildPromptWithProvenance, sourceSessionId, { focus, provider, model, promptProvenance })
+// Compatibility helpers use the same plugin preparation as ordinary launches.
+const createTokenWasteSession = (sessionId, options) => preparePluginSession(sessionId, 'token-waste', options)
+const createMemorySession = (sessionId, options) => preparePluginSession(sessionId, 'memory-extract', options)
+const preparePluginSession = (sessionId, mode, options = {}) => {
+  const source = sessionStore.loadSession(sessionId, config.writeDir)
+  if (!source) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
+  const workspace = registry.sessionWorkspace(source)
+  const harness = registry.makeHarnessApi(workspace, source)
+  return preparePluginTurn(source, registry.requireMode(workspace, mode, { harness, provider: source.provider }), harness, options)
 }
 
 const continueInNewChat = (sourceSessionId, prompt, target) => {
@@ -256,36 +248,46 @@ const forkSession = async (sourceSessionId, prompt, forkRetryKey, promptProvenan
   } finally { lock.release() }
 }
 
-// Plugin modes come from the session's workspace or global plugins. A fresh
-// sibling session gets the run when the mode asks for one, as token-waste does.
-const runPlugin = async (source, plugin, harness, { prompt, provider, model, promptProvenance }) => {
+// Both bundled and external modes enter through this contract.
+const pluginContext = (source, session, harness, options, runId = null) => ({
+  workspace: harness.workspace, session, sourceSession: source, runId,
+  prompt: options.prompt || '', promptProvenance: options.promptProvenance, options,
+})
+
+const preparePluginTurn = async (source, plugin, harness, options = {}) => {
   let session = source
   if (plugin.newSession) {
-    const created = harness.createSession({ provider, model })
-    session = sessionStore.updateSession(created.id, { mode: plugin.id, sourceSessionId: source.id }, config.writeDir)
+    const created = harness.sessions.create({ provider: options.provider, model: options.model })
+    session = sessionStore.updateSession(created.id, {
+      mode: plugin.id, sourceSessionId: source.id,
+      ...(plugin.sessionName ? { name: plugin.sessionName } : {}),
+    }, config.writeDir)
   }
-  const ctx = { workspace: harness.workspace, session, runId: null, prompt: prompt || '' }
-  const text = await plugin.buildPrompt(ctx, harness)
+  const ctx = pluginContext(source, session, harness, options)
+  const built = await plugin.buildPrompt(ctx, harness)
+  const text = typeof built === 'string' ? built : built?.text
   if (typeof text !== 'string' || !text.trim()) {
     throw Object.assign(new Error(`${plugin.id}: buildPrompt returned no prompt`), { status: 400 })
   }
   const instructions = typeof plugin.instructions === 'function'
-    ? await plugin.instructions(ctx, harness)
-    : plugin.instructions
-  return spawnRun(session.id, 'run', {
-    mode: plugin.id,
-    prompt: text,
-    promptProvenance,
-    plugin: registry.turnDescriptor(plugin, instructions),
+    ? await plugin.instructions(ctx, harness) : plugin.instructions
+  return {
+    session, prompt: text,
+    promptProvenance: typeof built === 'string' ? options.promptProvenance : built,
+    plugin: { ...registry.turnDescriptor(plugin, instructions), options },
+  }
+}
+
+const runPlugin = async (source, plugin, harness, options) => {
+  if (plugin.launch) return plugin.launch(pluginContext(source, source, harness, options), harness)
+  const prepared = await preparePluginTurn(source, plugin, harness, options)
+  return spawnRun(prepared.session.id, 'run', {
+    mode: plugin.id, prompt: prepared.prompt, promptProvenance: prepared.promptProvenance,
+    plugin: prepared.plugin, autoName: plugin.autoName,
   })
 }
 
-const decompose = (sessionId, { prompt, promptProvenance }) => {
-  if (!prompt) throw new Error('prompt is required')
-  const session = sessionStore.loadSession(sessionId, config.writeDir)
-  if (!session) throw new Error(`session not found: ${sessionId}`)
-  return spawnDecompose(sessionId, { resume: false, prompt, promptProvenance })
-}
+const decompose = (sessionId, options) => spawnWorkflow(sessionId, { ...options, mode: 'decompose' })
 
 const resumeInput = (session, mode, prompt, promptProvenance) => {
   if (prompt) return { prompt, promptProvenance }
@@ -294,51 +296,37 @@ const resumeInput = (session, mode, prompt, promptProvenance) => {
 }
 
 // Every mode is looked up in the registry, which also enforces deny rules.
-const run = async (sessionId, { prompt, mode: requested, provider, model, targetMode, runAfterSessionId, forkRetryKey, promptProvenance } = {}) => {
+const run = async (sessionId, input = {}) => {
+  const options = normalizeRunOptions(input)
+  const { prompt, provider, runAfterSessionId, promptProvenance } = options
   const source = sessionStore.loadSession(sessionId, config.writeDir)
   if (!source) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
   if (source.status === 'queued') throw Object.assign(new Error('session is queued'), { status: 409 })
-  const mode = requested || replyMode(source)
-  if (mode === 'fork') {
-    registry.requireMode(registry.sessionWorkspace(source), mode, { provider: source.provider })
-    if (runAfterSessionId) throw Object.assign(new Error('Fork cannot be scheduled with run after'), { status: 400 })
-    return forkSession(sessionId, prompt, forkRetryKey, promptProvenance)
+  const mode = options.mode || replyMode(source)
+  const workspace = registry.sessionWorkspace(source)
+  const harness = workspace ? registry.makeHarnessApi(workspace, source) : undefined
+  const entry = registry.requireMode(workspace, mode, { harness, provider: source.provider })
+  if (entry.launch) {
+    if (!harness) throw Object.assign(new Error(`${mode}: plugin modes need a workspace`), { status: 400 })
+    if (runAfterSessionId) throw Object.assign(new Error(`${mode} cannot be scheduled with run after`), { status: 400 })
+    return runPlugin(source, entry, harness, { ...options, mode })
   }
   require('./delegation').assertChildRun(source, mode, { userFollowup: true })
   if (runAfterSessionId != null && runAfterSessionId !== '') {
     const outcome = require('./runAfter').enqueue(source, { prompt, mode, runAfterSessionId, promptProvenance })
     if (outcome) return outcome
   }
-  const workspace = registry.sessionWorkspace(source)
-  const harness = workspace ? registry.makeHarnessApi(workspace, source) : undefined
-  const entry = registry.requireMode(workspace, mode, { harness, provider: source.provider })
   if (repliesInPlace(source, entry)) {
-    const plugin = entry.kind === 'plugin' ? lastPluginRun(sessionId, entry.id) : undefined
+    const plugin = entry.kind === 'plugin' ? lastPluginRun(sessionId, mode) || registry.turnDescriptor(entry) : undefined
     return spawnRun(sessionId, 'run', { mode, ...resumeInput(source, mode, prompt, promptProvenance), plugin })
   }
-  if (entry.kind === 'turn' && !source.mode) sessionStore.updateSession(sessionId, { mode: entry.id }, config.writeDir)
-  switch (entry.kind) {
-    case 'plugin':
-      if (!harness) throw Object.assign(new Error(`${entry.id}: plugin modes need a workspace`), { status: 400 })
-      return runPlugin(source, entry, harness, { prompt, provider, model, promptProvenance })
-    case 'token-waste': {
-      const analysis = createTokenWasteSession(sessionId, { prompt, provider, model, promptProvenance })
-      return spawnRun(analysis.session.id, 'run', { mode, prompt: analysis.prompt, promptProvenance: analysis.promptProvenance })
-    }
-    case 'memory': {
-      const extraction = createMemorySession(sessionId, { prompt, provider, model, promptProvenance })
-      return spawnRun(extraction.session.id, 'run', { mode, prompt: extraction.prompt, promptProvenance: extraction.promptProvenance })
-    }
-    case 'new-chat': {
-      const handoff = resolveNewChatTarget(source, { provider, model, mode: targetMode })
-      const assembled = newChat.buildPromptWithProvenance(prompt, source.provider, sessionContext(source, mode), promptProvenance)
-      return spawnRun(sessionId, 'run', { mode, prompt: assembled.text, promptProvenance: assembled, handoff })
-    }
-    case 'decompose':
-      return decompose(sessionId, { prompt, promptProvenance })
-    default:
-      return spawnRun(sessionId, entry.id === 'plan' ? 'plan' : 'run', { mode, prompt, promptProvenance, autoName: entry.autoName })
+  if (entry.pipeline) return spawnWorkflow(sessionId, { mode, prompt, promptProvenance })
+  if (entry.kind === 'plugin') {
+    if (!harness) throw Object.assign(new Error(`${mode}: plugin modes need a workspace`), { status: 400 })
+    return runPlugin(source, entry, harness, { ...options, mode })
   }
+  if (!source.mode) sessionStore.updateSession(sessionId, { mode }, config.writeDir)
+  return spawnRun(sessionId, mode === 'plan' ? 'plan' : 'run', { mode, prompt, promptProvenance, autoName: entry.autoName })
 }
 
 const plan = (sessionId, { prompt }) => run(sessionId, { mode: 'plan', prompt })
@@ -356,7 +344,7 @@ const resume = (sessionId, { prompt, mode: requested, promptProvenance } = {}) =
   if (session?.status === 'queued') {
     throw Object.assign(new Error('queued session cannot be resumed'), { status: 409 })
   }
-  if (isDecomposeResume(session)) return spawnDecompose(sessionId, { resume: true })
+  if (isWorkflowResume(session)) return spawnWorkflow(sessionId, { mode: session.mode, resume: true })
   const retry = !prompt && undeliveredRun(sessionId, session)
   if (retry) return spawnRun(sessionId, 'resume', { mode: retry.mode, prompt: retry.prompt, promptProvenance: retry.promptProvenance, handoff: retry.handoff, plugin: retry.plugin })
   const mode = requested || replyMode(session)
@@ -469,6 +457,9 @@ module.exports = {
   getWorkspace,
   updateWorkspace,
   createSession,
+  preparePluginTurn,
+  spawnWorkflow,
+  isWorkflowResume,
   createTokenWasteSession,
   createMemorySession,
   resolveNewChatTarget,
