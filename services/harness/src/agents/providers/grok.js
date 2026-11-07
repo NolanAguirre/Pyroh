@@ -4,6 +4,7 @@ const { createGrokClient } = require('../grok')
 const { normalizeGrokOptions } = require('./grokOptions')
 const { composePromptWithProvenance } = require('../modes')
 const { capture } = require('../../prompt/provenance')
+const { imageMetadata } = require('../images')
 const { providerMode } = require('../providerModes')
 
 const CANCELLED = { outcome: { outcome: 'cancelled' } }
@@ -187,9 +188,10 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
     await applyMode(settings.mode)
   }
 
-  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, terse = false, instructions, promptProvenance } = {}) => {
+  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, terse = false, instructions, promptProvenance, images = [] } = {}) => {
     if (!sessionId) throw new Error('Grok session not created')
     if (active && !active.done) throw new Error('Grok turn already running')
+    client.assertImageSupport(images)
     await applyMode(mode)
     const wait = new Promise((resolve) => {
       active = { id: `grok_${crypto.randomBytes(8).toString('hex')}`, emit: onEvent || (() => {}), resolve, mode,
@@ -198,8 +200,8 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
     const turn = active
     emit({ type: 'status', status: 'running' })
     const composed = composePromptWithProvenance(prompt, { mode, logicalMode, model: selectedModel, terse, instructions, provider: 'grok', promptProvenance })
-    emit(capture(composed, { provider: 'grok', providerAgentId: sessionId }))
-    client.prompt(sessionId, composed.text, onUpdate).then((response) => {
+    emit(capture(composed, { provider: 'grok', providerAgentId: sessionId, images: imageMetadata(images) }))
+    client.prompt(sessionId, composed.text, onUpdate, { images }).then((response) => {
       if (turn !== active) return
       const usage = normalizeUsage(response?._meta?.usage)
       if (usage) {
@@ -234,7 +236,7 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
 
   return { create: (settings) => openSession(null, settings), resume: openSession, fork,
     resolvedSettings: () => ({ model: selectedModel }),
-    send, listModels, providerAgentId: () => sessionId, close }
+    send, steer: send, listModels, providerAgentId: () => sessionId, close }
 }
 
 module.exports = { createDriver }

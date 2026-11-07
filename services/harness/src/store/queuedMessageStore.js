@@ -10,7 +10,7 @@ const fileFor = (sessionId, writeDir = config.writeDir) =>
 const pendingDir = (writeDir = config.writeDir) => path.join(writeDir, 'queued-message-sessions')
 const markerFor = (sessionId, writeDir) => path.join(pendingDir(writeDir), `${sessionId}.json`)
 const read = (sessionId, writeDir = config.writeDir) => readJson(fileFor(sessionId, writeDir), { messages: [] })
-const publicMessage = ({ id, text, mode, createdAt }) => ({ id, text, mode, createdAt })
+const publicMessage = ({ id, text, mode, createdAt, images }) => ({ id, text, mode, createdAt, ...(images?.length ? { images } : {}) })
 const pending = (state) => state.messages.filter(message => !message.runId).map(publicMessage)
 const list = (sessionId, writeDir = config.writeDir) => pending(read(sessionId, writeDir))
 const listAsync = async (sessionId, writeDir = config.writeDir) =>
@@ -30,9 +30,10 @@ const save = (sessionId, state, writeDir = config.writeDir) => {
   if (!state.messages.length) fs.rmSync(marker, { force: true })
 }
 
-const enqueue = (sessionId, text, mode, writeDir = config.writeDir, promptProvenance) => {
+const enqueue = (sessionId, text, mode, writeDir = config.writeDir, promptProvenance, images) => {
   const state = read(sessionId, writeDir)
   const message = { id: `q_${crypto.randomUUID()}`, text, mode, createdAt: Date.now(),
+    ...(images?.length ? { images } : {}),
     ...(promptProvenance ? { promptProvenance: require('../prompt/provenance').supplied(text, promptProvenance) } : {}) }
   state.messages.push(message)
   save(sessionId, state, writeDir)

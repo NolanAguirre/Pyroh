@@ -16,9 +16,17 @@ export interface PromptProvenance {
   userItemId?: string
 }
 export interface PromptDocument extends PromptProvenance { text: string }
+export interface ImageAttachment {
+  id: string
+  sessionId: string
+  name?: string
+  mimeType?: string
+  size?: number
+}
 export interface RunOptions {
   mode?: string | null
   prompt?: string | null
+  images?: ImageAttachment[]
   provider?: string | null
   model?: string | null
   targetMode?: string | null
@@ -164,8 +172,8 @@ export interface HarnessApi {
     create(options?: SessionOptions): Session
     inspect(sessionId: string): Session
     resolveTarget(sourceSessionId: string, options?: SessionOptions): SessionTarget
-    continue(sourceSessionId: string, prompt: string, target?: SessionOptions): MaybePromise<SessionRun>
-    fork(sourceSessionId: string, options?: Pick<RunOptions, 'prompt' | 'forkRetryKey' | 'promptProvenance'>): MaybePromise<RunHandle>
+    continue(sourceSessionId: string, prompt: string, target?: SessionOptions, images?: ImageAttachment[]): MaybePromise<SessionRun>
+    fork(sourceSessionId: string, options?: Pick<RunOptions, 'prompt' | 'forkRetryKey' | 'promptProvenance' | 'images'>): MaybePromise<RunHandle>
   }
   prompts: {
     terse: string

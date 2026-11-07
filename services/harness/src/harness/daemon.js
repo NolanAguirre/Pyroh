@@ -234,6 +234,7 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
       action,
       mode: entry || driverMode,
       prompt,
+      images: sourceRun?.images,
       promptProvenance: sourceRun?.promptProvenance,
       outputSchema: sourceRun?.outputSchema,
       onEvent,

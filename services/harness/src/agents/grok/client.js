@@ -116,11 +116,23 @@ const createGrokClient = ({ bin, model, reasoningEffort, env = process.env, onPe
   const setConfigOption = (sessionId, configId, value) =>
     transport.request('session/set_config_option', { sessionId, configId, value })
 
-  const prompt = async (sessionId, text, onUpdate) => {
+  const assertImageSupport = (images = []) => {
+    if (images.length && init?.agentCapabilities?.promptCapabilities?.image !== true) {
+      throw Object.assign(new Error('Grok ACP does not advertise image input support (promptCapabilities.image must be true). No prompt was sent.'), {
+        code: 'PROVIDER_IMAGES_UNSUPPORTED',
+      })
+    }
+  }
+
+  const prompt = async (sessionId, text, onUpdate, { images = [] } = {}) => {
+    assertImageSupport(images)
     if (listeners.has(sessionId)) throw new Error('Grok prompt already running')
     listeners.set(sessionId, onUpdate || (() => {}))
     try {
-      return await transport.request('session/prompt', { sessionId, prompt: [{ type: 'text', text }] }, { timeoutMs: 0 })
+      return await transport.request('session/prompt', { sessionId, prompt: [
+        { type: 'text', text },
+        ...images.map(({ data, mimeType }) => ({ type: 'image', data, mimeType })),
+      ] }, { timeoutMs: 0 })
     } finally {
       listeners.delete(sessionId)
     }
@@ -140,7 +152,7 @@ const createGrokClient = ({ bin, model, reasoningEffort, env = process.env, onPe
 
   return {
     initialize, authenticate, models, newSession, resumeSession,
-    setMode, setConfigOption, prompt, cancel, close,
+    setMode, setConfigOption, assertImageSupport, prompt, cancel, close,
     agentInfo: () => init,
   }
 }

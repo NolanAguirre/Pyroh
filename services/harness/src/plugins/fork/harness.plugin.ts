@@ -18,6 +18,7 @@ export default definePlugin({
       }
       return api.sessions.fork(ctx.sourceSession.id, {
         prompt: ctx.prompt,
+        images: ctx.options.images,
         forkRetryKey: ctx.options.forkRetryKey,
         promptProvenance: ctx.promptProvenance,
       })

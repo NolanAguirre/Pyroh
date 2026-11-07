@@ -119,7 +119,7 @@ const failLaunch = (session, message) => {
 
 // Caller holds the session lock. File reads only; do not wait on the dependency.
 const launchLocked = (session) => {
-  const { prompt, mode, promptProvenance } = session.runAfter
+  const { prompt, mode, promptProvenance, images } = session.runAfter
   let entry
   try {
     entry = replyEntry(session, mode)
@@ -146,6 +146,7 @@ const launchLocked = (session) => {
       mode,
       prompt,
       promptProvenance,
+      images,
       autoName: Boolean(entry.autoName),
       allowQueued: true,
     })
@@ -198,7 +199,7 @@ const dispatchOne = (sessionId) => {
 }
 
 // Null means the dependency already ended and the caller should start the run now.
-const enqueue = (session, { prompt, mode, runAfterSessionId, promptProvenance }) => {
+const enqueue = (session, { prompt, mode, runAfterSessionId, promptProvenance, images }) => {
   if (typeof runAfterSessionId !== 'string') fail('runAfterSessionId must be a string', 400)
   const depId = localId(runAfterSessionId)
   if (!depId) fail('runAfterSessionId must be a session id', 400)
@@ -227,6 +228,7 @@ const enqueue = (session, { prompt, mode, runAfterSessionId, promptProvenance })
     sessionId: dep.id,
     runId: bound.id,
     prompt: prompt == null ? '' : String(prompt),
+    ...(images?.length ? { images } : {}),
     ...(promptProvenance ? { promptProvenance } : {}),
     mode,
   }

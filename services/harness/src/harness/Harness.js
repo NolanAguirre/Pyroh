@@ -6,6 +6,7 @@ const sessionIndex = require('../store/sessionIndex')
 const workspaceStore = require('../store/workspaceStore')
 const questionStore = require('../store/questionStore')
 const steerStore = require('../store/steerStore')
+const imageStore = require('../store/imageStore')
 const proc = require('./process')
 const { listProviders } = require('../agents/driver')
 const sessionLock = require('../store/sessionLock')
@@ -75,8 +76,10 @@ const resolveNewChatTarget = (source, target = {}) => {
   return { provider, model, mode }
 }
 
-const spawnRun = (sessionId, action, { mode, prompt, promptProvenance, autoName = false, handoff, plugin, onPrepared, allowQueued = false, delegationDelivery, queuedMessage, forkStart = false }) => {
+const spawnRun = (sessionId, action, { mode, prompt, images, promptProvenance, autoName = false, handoff, plugin, onPrepared, allowQueued = false, delegationDelivery, queuedMessage, forkStart = false }) => {
   if (plugin) validateSavedDescriptor(plugin)
+  images = imageStore.normalizeImages(sessionId, images, config.writeDir)
+  if (images.length && prompt == null) prompt = ''
   const owned = !sessionLock.holds(sessionId, config.writeDir)
   const lock = sessionLock.acquire(sessionId, config.writeDir)
   const stopped = () => Object.assign(new Error('stopped'), { code: 'stopped' })
@@ -99,7 +102,7 @@ const spawnRun = (sessionId, action, { mode, prompt, promptProvenance, autoName 
       sessionStore.listRuns(sessionId, config.writeDir).length === 0
     require('fs').rmSync(paths.controlFile(sessionId, config.writeDir), { force: true })
     if (allowQueued && runAfter.cancelled(sessionId)) throw stopped()
-    const run = sessionStore.createRun(sessionId, { mode, prompt, promptProvenance, handoff, plugin, delegationDelivery, queuedMessage }, config.writeDir)
+    const run = sessionStore.createRun(sessionId, { mode, prompt, images, promptProvenance, handoff, plugin, delegationDelivery, queuedMessage }, config.writeDir)
     onPrepared?.(run)
     sessionStore.updateSession(sessionId, { status: 'running' }, config.writeDir)
     if (allowQueued && runAfter.cancelled(sessionId)) throw stopped()
@@ -196,22 +199,24 @@ const preparePluginSession = (sessionId, mode, options = {}) => {
   return preparePluginTurn(source, registry.requireMode(workspace, mode, { harness, provider: source.provider }), harness, options)
 }
 
-const continueInNewChat = (sourceSessionId, prompt, target) => {
+const continueInNewChat = (sourceSessionId, prompt, target, images) => {
   const source = sessionStore.loadSession(sourceSessionId, config.writeDir)
   if (!source) throw Object.assign(new Error(`session not found: ${sourceSessionId}`), { status: 404 })
+  images = imageStore.normalizeImages(sourceSessionId, images, config.writeDir)
   const workspaceId = source.workspaceId || workspaceStore.findWorkspaceByCwd(source.cwd, config.writeDir)?.id
   const next = resolveNewChatTarget(source, target)
   const created = createSession({ workspaceId, ...spawnSessionFields(source, next) })
   const { mode } = next
   const { autoName } = registry.requireMode(registry.sessionWorkspace(source), mode, { provider: next.provider })
   const session = sessionStore.updateSession(created.id, { sourceSessionId, mode }, config.writeDir)
-  const run = spawnRun(session.id, mode === 'plan' ? 'plan' : 'run', { mode, prompt, autoName })
+  const run = spawnRun(session.id, mode === 'plan' ? 'plan' : 'run', { mode, prompt, images, autoName })
   return { session, run }
 }
 
-const forkSession = async (sourceSessionId, prompt, forkRetryKey, promptProvenance) => {
-  if (typeof prompt !== 'string' || !prompt.trim()) {
-    throw Object.assign(new Error('prompt is required'), { status: 400 })
+const forkSession = async (sourceSessionId, prompt = '', forkRetryKey, promptProvenance, images) => {
+  images = imageStore.normalizeImages(sourceSessionId, images, config.writeDir)
+  if (typeof prompt !== 'string' || (!prompt.trim() && !images.length)) {
+    throw Object.assign(new Error('prompt or images are required'), { status: 400 })
   }
   const lock = sessionLock.acquire(sourceSessionId, config.writeDir, { exclusive: true })
   try {
@@ -229,7 +234,7 @@ const forkSession = async (sourceSessionId, prompt, forkRetryKey, promptProvenan
     const entry = registry.requireMode(registry.sessionWorkspace(source), mode, { provider: source.provider })
     const workspaceId = source.workspaceId || workspaceStore.findWorkspaceByCwd(source.cwd, config.writeDir)?.id
     const { session, requestFile } = await require('./nativeFork').ensureNativeFork(source, {
-      workspaceId, sessionFields: spawnSessionFields(source, source), mode, prompt, retryKey: forkRetryKey,
+      workspaceId, sessionFields: spawnSessionFields(source, source), mode, prompt, images, retryKey: forkRetryKey,
     })
     // A persisted first run means delivery may already have happened. A lost
     // HTTP response or failed daemon launch must not resend the user's message.
@@ -241,7 +246,7 @@ const forkSession = async (sourceSessionId, prompt, forkRetryKey, promptProvenan
       return existing
     }
     return spawnRun(session.id, session.mode === 'plan' ? 'plan' : 'run', {
-      mode: session.mode, prompt, promptProvenance, autoName: entry.autoName, forkStart: true,
+      mode: session.mode, prompt, images, promptProvenance, autoName: entry.autoName, forkStart: true,
       onPrepared: (run) => {
         writeJson(requestFile, { ...readJson(requestFile), firstRunId: run.id })
         sessionStore.updateSession(session.id, {
@@ -260,6 +265,7 @@ const pluginContext = (source, session, harness, options, runId = null) => ({
 
 const preparePluginTurn = async (source, plugin, harness, options = {}) => {
   options = normalizeRunOptions(options)
+  options.images = imageStore.normalizeImages(source.id, options.images, config.writeDir)
   let session = source
   if (plugin.newSession) {
     const created = harness.sessions.create({ provider: options.provider, model: options.model })
@@ -278,7 +284,7 @@ const preparePluginTurn = async (source, plugin, harness, options = {}) => {
   const instructions = typeof plugin.instructions === 'function'
     ? await plugin.instructions(ctx, harness) : plugin.instructions
   return {
-    session, prompt: text,
+    session, prompt: text, images: options.images,
     promptProvenance: typeof built === 'string' ? options.promptProvenance : built,
     plugin: { ...registry.turnDescriptor(plugin, instructions), sourceSessionId: source.id, options },
   }
@@ -289,6 +295,7 @@ const runPlugin = async (source, plugin, harness, options) => {
   const prepared = await preparePluginTurn(source, plugin, harness, options)
   return spawnRun(prepared.session.id, 'run', {
     mode: plugin.id, prompt: prepared.prompt, promptProvenance: prepared.promptProvenance,
+    images: prepared.images,
     plugin: prepared.plugin, autoName: plugin.autoName,
   })
 }
@@ -307,11 +314,16 @@ const run = async (sessionId, input = {}) => {
   const { prompt, runAfterSessionId, promptProvenance } = options
   const source = sessionStore.loadSession(sessionId, config.writeDir)
   if (!source) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
+  const images = imageStore.normalizeImages(sessionId, options.images, config.writeDir)
+  options.images = images
   if (source.status === 'queued') throw Object.assign(new Error('session is queued'), { status: 409 })
   const mode = options.mode || replyMode(source)
   const workspace = registry.sessionWorkspace(source)
   const harness = workspace ? registry.makeHarnessApi(workspace, source) : undefined
   const entry = registry.requireMode(workspace, mode, { harness, provider: source.provider })
+  if (images.length && (entry.pipeline || (entry.launch && mode !== 'fork'))) {
+    throw Object.assign(new Error(`Image attachments are not supported in ${mode} mode`), { status: 400 })
+  }
   if (entry.launch) {
     if (!harness) throw Object.assign(new Error(`${mode}: plugin modes need a workspace`), { status: 400 })
     if (runAfterSessionId) throw Object.assign(new Error(`${mode} cannot be scheduled with run after`), { status: 400 })
@@ -319,12 +331,12 @@ const run = async (sessionId, input = {}) => {
   }
   require('./delegation').assertChildRun(source, mode, { userFollowup: true })
   if (runAfterSessionId != null && runAfterSessionId !== '') {
-    const outcome = require('./runAfter').enqueue(source, { prompt, mode, runAfterSessionId, promptProvenance })
+    const outcome = require('./runAfter').enqueue(source, { prompt, images, mode, runAfterSessionId, promptProvenance })
     if (outcome) return { sessionId, mode, ...outcome }
   }
   if (repliesInPlace(source, entry)) {
     const plugin = entry.kind === 'plugin' ? lastPluginRun(sessionId, mode) || registry.turnDescriptor(entry) : undefined
-    return spawnRun(sessionId, 'run', { mode, ...resumeInput(source, mode, prompt, promptProvenance), plugin })
+    return spawnRun(sessionId, 'run', { mode, ...resumeInput(source, mode, prompt, promptProvenance), images, plugin })
   }
   if (entry.pipeline) return spawnWorkflow(sessionId, { mode, prompt, promptProvenance })
   if (entry.kind === 'plugin') {
@@ -332,29 +344,33 @@ const run = async (sessionId, input = {}) => {
     return runPlugin(source, entry, harness, { ...options, mode })
   }
   if (!source.mode) sessionStore.updateSession(sessionId, { mode }, config.writeDir)
-  return spawnRun(sessionId, mode === 'plan' ? 'plan' : 'run', { mode, prompt, promptProvenance, autoName: entry.autoName })
+  return spawnRun(sessionId, mode === 'plan' ? 'plan' : 'run', { mode, prompt, images, promptProvenance, autoName: entry.autoName })
 }
 
-const plan = (sessionId, { prompt }) => run(sessionId, { mode: 'plan', prompt })
+const plan = (sessionId, { prompt, images }) => run(sessionId, { mode: 'plan', prompt, images })
 
 // A run that lost the network before its agent started never delivered its
 // prompt, so resuming must resend it rather than "continue".
 const undeliveredRun = (sessionId, session) => {
   if (session?.status !== 'disconnected') return null
   const last = sessionStore.listRuns(sessionId, config.writeDir).at(-1)
-  return last && last.status === 'disconnected' && !last.providerAgentId && last.prompt ? last : null
+  return last && last.status === 'disconnected' && !last.providerAgentId && (last.prompt || last.images?.length) ? last : null
 }
 
-const resume = (sessionId, { prompt, mode: requested, promptProvenance } = {}) => {
+const resume = (sessionId, { prompt, mode: requested, promptProvenance, images } = {}) => {
   const session = sessionStore.loadSession(sessionId, config.writeDir)
   if (session?.status === 'queued') {
     throw Object.assign(new Error('queued session cannot be resumed'), { status: 409 })
   }
-  if (isWorkflowResume(session)) return spawnWorkflow(sessionId, { mode: session.mode, resume: true })
-  const retry = !prompt && undeliveredRun(sessionId, session)
-  if (retry) return spawnRun(sessionId, 'resume', { mode: retry.mode, prompt: retry.prompt, promptProvenance: retry.promptProvenance, handoff: retry.handoff, plugin: retry.plugin })
+  images = imageStore.normalizeImages(sessionId, images, config.writeDir)
+  if (isWorkflowResume(session)) {
+    if (images.length) throw Object.assign(new Error('Image attachments are not supported in workflow mode'), { status: 400 })
+    return spawnWorkflow(sessionId, { mode: session.mode, resume: true })
+  }
+  const retry = !prompt && !images.length && undeliveredRun(sessionId, session)
+  if (retry) return spawnRun(sessionId, 'resume', { mode: retry.mode, prompt: retry.prompt, images: retry.images, promptProvenance: retry.promptProvenance, handoff: retry.handoff, plugin: retry.plugin })
   const mode = requested || replyMode(session)
-  return spawnRun(sessionId, 'resume', { mode, ...resumeInput(session, mode, prompt, promptProvenance), plugin: lastPluginRun(sessionId, mode) })
+  return spawnRun(sessionId, 'resume', { mode, ...resumeInput(session, mode, prompt, promptProvenance), images, plugin: lastPluginRun(sessionId, mode) })
 }
 
 const terminate = (sessionId, intent, { delegated = false } = {}) => require('./delegation').withDeliveryLock(sessionId, () => {
@@ -408,7 +424,7 @@ const stop = (sessionId, { delegated = false } = {}) => {
 const answer = (sessionId, qid, value) =>
   questionStore.answer(sessionId, qid, value, config.writeDir)
 
-const steer = (sessionId, text, options) => {
+const steer = (sessionId, text, options = {}) => {
   const session = sessionStore.loadSession(sessionId, config.writeDir)
   if (!session) throw Object.assign(new Error(`session not found: ${sessionId}`), { status: 404 })
   if (session.status === 'queued') throw Object.assign(new Error('session is queued'), { status: 409 })
@@ -419,7 +435,8 @@ const steer = (sessionId, text, options) => {
     throw Object.assign(new Error('session has no running agent to steer'), { status: 409 })
   }
   if (isDelegatedChild(session)) detachDelegation(session, sessionStore.listRuns(sessionId, config.writeDir), config.writeDir)
-  return steerStore.write(sessionId, text, config.writeDir, options)
+  const images = imageStore.normalizeImages(sessionId, options.images, config.writeDir)
+  return steerStore.write(sessionId, text ?? '', config.writeDir, { ...options, images })
 }
 
 const status = async (sessionId) => {

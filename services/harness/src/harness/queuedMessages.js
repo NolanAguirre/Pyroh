@@ -39,12 +39,13 @@ const resolve = (session, requested) => {
   return { mode, entry, inPlace, harness }
 }
 
-const enqueue = (sessionId, { prompt, mode, promptProvenance } = {}) => {
-  if (typeof prompt !== 'string' || !prompt.trim()) fail('prompt is required')
+const enqueue = (sessionId, { prompt = '', mode, promptProvenance, images } = {}) => {
+  images = require('../store/imageStore').normalizeImages(sessionId, images, config.writeDir)
+  if (typeof prompt !== 'string' || (!prompt.trim() && !images.length)) fail('prompt or images are required')
   loadSession(sessionId)
   return withDeliveryLock(sessionId, () => {
     const selected = resolve(loadSession(sessionId), mode)
-    return queue.enqueue(sessionId, prompt, selected.mode, config.writeDir, promptProvenance)
+    return queue.enqueue(sessionId, prompt, selected.mode, config.writeDir, promptProvenance, images)
   })
 }
 
@@ -73,14 +74,14 @@ const prepare = async (session, message) => {
       plugin = store.listRuns(session.id, config.writeDir).findLast(run => run.mode === entry.id && run.plugin)?.plugin
     } else {
       const prepared = await require('./Harness').preparePluginTurn(session, entry, harness, {
-        mode: message.mode, prompt, promptProvenance,
+        mode: message.mode, prompt, promptProvenance, images: message.images,
       })
       prompt = prepared.prompt
       promptProvenance = prepared.promptProvenance
       plugin = prepared.plugin
     }
   }
-  return { mode: message.mode, prompt, plugin,
+  return { mode: message.mode, prompt, plugin, images: message.images,
     promptProvenance: require('../prompt/provenance').supplied(prompt, promptProvenance) }
 }
 
@@ -152,7 +153,7 @@ const send = async (sessionId, messageId) => {
     })
     if (started) return started
     resolve(loadSession(sessionId), message.mode)
-    const steer = require('./Harness').steer(sessionId, prepared.prompt, { queuedMessageId: messageId, promptProvenance: prepared.promptProvenance })
+    const steer = require('./Harness').steer(sessionId, prepared.prompt, { queuedMessageId: messageId, promptProvenance: prepared.promptProvenance, images: prepared.images })
     state.messages = state.messages.filter(item => item.id !== messageId)
     queue.save(sessionId, state)
     return { steer }

@@ -64,6 +64,7 @@ const runOneTurn = async ({
   mode,
   plugin,
   prompt,
+  images,
   promptProvenance,
   model,
   tools,
@@ -81,9 +82,11 @@ const runOneTurn = async ({
   instructions,
   delegationEligible,
 }) => {
-  const logicalMode = mode ?? session.mode ?? 'agent'
-  let messageType = promptProvenance?.messageType ?? 'user'
   const entry = registry.turnMode(mode ?? session.mode, plugin)
+  const logicalMode = entry?.id ?? mode ?? session.mode ?? 'agent'
+  const previousLogicalMode = session.providerConfiguration?.settings.logicalMode
+  const leavingLeader = logicalMode !== 'leader' && (previousLogicalMode?.id ?? previousLogicalMode) === 'leader'
+  let messageType = promptProvenance?.messageType ?? 'user'
   mode = entry?.base || mode || session.mode
   const primitive = AGENT_MODES.includes(mode)
   const nativeFork = session.fork?.kind === 'native'
@@ -247,16 +250,15 @@ const runOneTurn = async ({
     const managedInstructions = managed
       ? [
         instructions,
+        leavingLeader && 'Leader mode is off. The following delegation guidance replaces the earlier Leader instructions.',
+        (first || logicalMode === 'leader' || leavingLeader) && delegation.guidance(session.provider, child, {
+          session: delegationSession, canDelegate: canDelegate && !textOnly, ...promptContext(),
+        }),
         canManageChildren && !canDelegate && !textOnly && 'Existing children may still finish. Use harness_agents status/wait/stop to manage them; spawning is unavailable. If their results are needed, end this turn with a brief pending-work update. Their results will resume you automatically unless spawned with dontReturn: true. Do not poll or wait in a loop.',
       ].filter(Boolean).join('\n\n')
       : instructions
     const sendOptions = { mode, logicalMode, onEvent: handleEvent, outputSchema, instructions: managedInstructions }
     const firstSendOptions = { ...sendOptions }
-    // Conversation history retains guidance for later turns and steers.
-    if (first && managed) firstSendOptions.instructions = [
-      managedInstructions,
-      delegation.guidance(session.provider, child, { session: delegationSession, canDelegate: canDelegate && !textOnly, ...promptContext() }),
-    ].filter(Boolean).join('\n\n')
     if (terse) firstSendOptions.terse = true
     // Codex and Grok drop their transport when a cancel overruns its grace
     // period, so a follow-up send may need a fresh driver on the same agent.
@@ -284,6 +286,7 @@ const runOneTurn = async ({
     if (assembled.text !== prompt) onPromptRewrite?.(assembled.text, assembled)
     assembled = await prependNotesWithProvenance(fired, { ...session, ...promptContext() }, assembled)
     let firstSend = true
+    let segmentImages = require('../store/imageStore').resolveImages(session.id, images, writeDir)
     let result
     while (true) {
       const segmentStart = Date.now()
@@ -302,6 +305,7 @@ const runOneTurn = async ({
       publishRequestMetrics()
       const collector = requestMetrics
       const options = { ...(firstSend ? firstSendOptions : sendOptions), evidenceSegmentId: collector.segmentId,
+        images: segmentImages,
         promptProvenance: sendPrompt,
         onEvent: event => handleEvent(event, collector) }
       const inflight = firstSend ? await driver.send(sendPrompt.text, options) : await sendFollowUp(sendPrompt.text, options)
@@ -335,6 +339,7 @@ const runOneTurn = async ({
       if (!steering || signal?.aborted) break
       const steers = steering.take()
       if (!steers.length) break
+      segmentImages = steers.flatMap(steer => require('../store/imageStore').resolveImages(session.id, steer.images, writeDir))
       const currentSession = sessionStore.loadSession(session.id, writeDir)
       if (child && currentSession?.delegationDetached) {
         sendOptions.instructions = [
@@ -363,7 +368,8 @@ const runOneTurn = async ({
         metadata.rewrittenText = sources.map(source => source.rewrittenText ?? source.originalText ?? source.text).join('\n\n')
       }
       assembled = provenance.assemble(sections, metadata)
-      onEvent?.({ type: 'user', steer: true, text: assembled.text, itemId: assembled.userItemId })
+      onEvent?.({ type: 'user', steer: true, text: assembled.text, itemId: assembled.userItemId,
+        ...(segmentImages.length ? { images: segmentImages.map(({ id, sessionId, name, mimeType, size }) => ({ id, sessionId, name, mimeType, size })) } : {}) })
       if (signal?.aborted) break
     }
 

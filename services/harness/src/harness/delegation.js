@@ -522,6 +522,7 @@ const guidance = (provider, child = false, { session, canDelegate: enabled, mode
   const prompts = require('../prompts')
   const context = { model: model || require('../prompt/context').sessionModel(session), mode: mode ?? session?.mode, messageType }
   if (!allowed) return prompts.text('delegationChild', provider, context)
+  if (!child && context.mode === 'leader') return prompts.text('delegationLeader', provider, context)
   const scope = child ? 'Stay within your assigned task. Return findings to your parent after any child work finishes, then stop.' : ''
   return [scope, prompts.text('delegationParent', provider, context)].filter(Boolean).join('\n\n')
 }

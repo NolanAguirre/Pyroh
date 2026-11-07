@@ -284,6 +284,12 @@ const api = {
   },
   plan: (id, prompt) => sessionPost(id, '/plan', { prompt }),
   inputCommand: (id, prompt) => sessionPost(id, '/commands', { prompt }),
+  uploadSessionImage: (id, image) => sessionPost(id, '/images', image),
+  sessionImageUrl: (sessionId, image) => {
+    const { machine } = splitId(sessionId)
+    const owner = tagId(image.sessionId || splitId(sessionId).id, machine)
+    return sessionUrl(owner, `/images/${encodeURIComponent(image.id)}`).url
+  },
   submitPrompt: (sessionId, request) => {
     const { machine, url } = sessionUrl(sessionId, '/submissions')
     const body = {

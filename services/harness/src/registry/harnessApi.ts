@@ -87,13 +87,13 @@ export const makeHarnessApi = (workspace: Workspace, source?: Session): HarnessA
       create: createSession,
       inspect: loadSession,
       resolveTarget: (sessionId, target) => harnessModule().resolveNewChatTarget(loadSession(sessionId), target),
-      continue: (sessionId, prompt, target) => {
+      continue: (sessionId, prompt, target, images) => {
         loadSession(sessionId)
-        return harnessModule().continueInNewChat(sessionId, prompt, target)
+        return harnessModule().continueInNewChat(sessionId, prompt, target, images)
       },
-      fork: (sessionId, { prompt, forkRetryKey, promptProvenance } = {}) => {
+      fork: (sessionId, { prompt, forkRetryKey, promptProvenance, images } = {}) => {
         loadSession(sessionId)
-        return harnessModule().forkSession(sessionId, prompt, forkRetryKey, promptProvenance)
+        return harnessModule().forkSession(sessionId, prompt, forkRetryKey, promptProvenance, images)
       },
     },
     runs: {
@@ -131,4 +131,3 @@ export const makeHarnessApi = (workspace: Workspace, source?: Session): HarnessA
     log: (msg) => log(`${workspace.name || workspace.id}: ${msg}`),
   }
 }
-

@@ -3,6 +3,7 @@ const config = require('../../config')
 const { errorMessage } = require('../../store/formatError')
 const { composePromptWithProvenance } = require('../modes')
 const { capture } = require('../../prompt/provenance')
+const { imageMetadata } = require('../images')
 const { providerMode } = require('../providerModes')
 const prompts = require('../../prompts')
 
@@ -259,7 +260,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
     return agent
   }
 
-  const send = async (prompt, { mode, logicalMode = mode || selectedLogicalMode, onEvent, terse = false, instructions, promptProvenance } = {}) => {
+  const send = async (prompt, { mode, logicalMode = mode || selectedLogicalMode, onEvent, terse = false, instructions, promptProvenance, images = [] } = {}) => {
     if (!agent) throw new Error('cursor driver: agent not created')
     const emit = typeof onEvent === 'function' ? onEvent : () => {}
     // The caller holds the session lock. Any persisted active run belongs to a
@@ -313,8 +314,9 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
           timingSemantics: 'agent_turn_observed; may contain multiple model calls' })
       }
     }
-    notify(capture(composed, { provider: 'cursor', options: { ...options, onDelta: undefined }, providerAgentId: providerAgentId() }))
-    const run = await agent.send(text, options)
+    notify(capture(composed, { provider: 'cursor', options: { ...options, onDelta: undefined }, providerAgentId: providerAgentId(), images: imageMetadata(images) }))
+    const message = images.length ? { text, images: images.map(({ data, mimeType }) => ({ data, mimeType })) } : text
+    const run = await agent.send(message, options)
     const runId = run.id || null
     evidenceRunId = runId
     evidence({ type: 'model_request_evidence', kind: 'provider_run',
@@ -393,7 +395,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
     throw Object.assign(new Error('Cursor native conversation fork is not supported by this driver'), { code: 'PROVIDER_FORK_UNSUPPORTED' })
   }
 
-  return { create, resume, fork, send, listModels, providerAgentId, close,
+  return { create, resume, fork, send, steer: send, listModels, providerAgentId, close,
     resolvedSettings: () => ({ model: selectedModel }) }
 }
 

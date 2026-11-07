@@ -11,9 +11,11 @@ const PROVIDER_VERSIONS = {
   },
   cursor: {
     delegationParent: withDelegationSchemas,
+    delegationLeader: withDelegationSchemas,
   },
   grok: {
     delegationParent: noNativeSpawning,
+    delegationLeader: noNativeSpawning,
     delegationChild: noNativeSpawning,
   },
 }

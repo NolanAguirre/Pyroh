@@ -29,7 +29,7 @@
 //     inherited provider totals are context/baseline, not new billable usage.
 //   resolvedSettings?() -> { model?, reasoningEffort? }
 //     Capture provider-selected defaults so forks keep the source's actual model.
-//   send(prompt, { mode, logicalMode?, onEvent, outputSchema?, terse? }) -> Promise<{ cancel, wait }>
+//   send(prompt, { mode, logicalMode?, onEvent, outputSchema?, terse?, images? }) -> Promise<{ cancel, wait }>
 //     Kick off a run. `onEvent(event)` receives normalized events as they stream.
 //     `cancel()` cancels the in-flight run. `wait()` resolves the terminal result:
 //       { status, result, usage, durationMs, error }
@@ -39,6 +39,15 @@
 //     `logicalMode` retains the requested plugin/special mode for prompt lookup.
 //     `terse` prefixes modes.tersePrompt(). The caller sets it on the first prompt
 //     of an execute, ask, plan, or token-waste session.
+//     `images` contains validated, resolved { id, sessionId, name, mimeType, size,
+//     path, data } entries: path is absolute and data is base64. Attachments are
+//     sent separately from composed text. provider_prompt events include only
+//     { id, sessionId, name, mimeType, size } metadata under `images`.
+//   steer(prompt, options) -> Promise<{ cancel, wait }>
+//     Same input and result as send. The caller must cancel and await the old
+//     turn first; steering starts a follow-up turn in the same conversation.
+//     Grok rejects images with PROVIDER_IMAGES_UNSUPPORTED before sending if
+//     initialize.agentCapabilities.promptCapabilities.image is not true.
 //   listModels() -> Promise<Array<{ id, displayName? }>>
 //   providerAgentId() -> string | null
 //   close() -> Promise<void>

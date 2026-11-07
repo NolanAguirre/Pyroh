@@ -34,14 +34,15 @@ const sourceConfiguration = (source, mode, runs) => {
 // The caller holds an exclusive source lock until this resolves. A durable
 // intent is written before provider I/O. An uncertain outcome is never retried
 // blindly because neither transport promises idempotent fork creation.
-const ensureNativeFork = async (source, { mode, workspaceId, prompt, retryKey, sessionFields }, writeDir = config.writeDir) => {
+const ensureNativeFork = async (source, { mode, workspaceId, prompt, images, retryKey, sessionFields }, writeDir = config.writeDir) => {
   if (!['codex', 'claude'].includes(source.provider)) fail(`Native forks are unavailable for ${source.provider}: its current transport has no confirmed fork support`, 400)
   if (!source.providerAgentId) fail('The source has no provider conversation to fork', 400)
   if (retryKey != null && (typeof retryKey !== 'string' || !retryKey.trim() || retryKey.length > 256)) fail('forkRetryKey must be a nonempty string of at most 256 characters', 400)
   const runs = store.listRuns(source.id, writeDir)
   const sourceRunId = runs.at(-1)?.id || null
-  const requestHash = fingerprint({ prompt })
-  const key = fingerprint(retryKey || { sourceProviderAgentId: source.providerAgentId, sourceRunId, prompt })
+  const attachments = images?.length ? { images: images.map(({ id, sessionId }) => ({ id, sessionId })) } : {}
+  const requestHash = fingerprint({ prompt, ...attachments })
+  const key = fingerprint(retryKey || { sourceProviderAgentId: source.providerAgentId, sourceRunId, prompt, ...attachments })
   const file = path.join(paths.sessionDir(source.id, writeDir), 'fork-requests', `${key}.json`)
   let request = readJson(file)
   if (request && request.requestHash !== requestHash) fail('This fork retry key belongs to a different message')

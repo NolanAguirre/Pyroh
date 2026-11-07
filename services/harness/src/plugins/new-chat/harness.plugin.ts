@@ -30,7 +30,7 @@ export default definePlugin({
         model: ctx.options.model,
         mode: ctx.options.targetMode,
       })
-      const next = await api.sessions.continue(ctx.sourceSession.id, prompt, target)
+      const next = await api.sessions.continue(ctx.sourceSession.id, prompt, target, ctx.options.images)
       return { continuation: next }
     },
   }],

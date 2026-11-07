@@ -21,7 +21,7 @@ Commands:
                                                           Create a session in a workspace
   plan <sid> --prompt <text> [--detach]                   Run a plan-mode turn
   ask <sid> --prompt <text> [--detach]                    Ask a question without changing code
-  run <sid> --prompt <text> [--mode agent|plan|ask|token-waste|memory-extract|new-chat|<plugin-id>] [--detach]
+  run <sid> --prompt <text> [--mode agent|leader|plan|ask|token-waste|memory-extract|new-chat|<plugin-id>] [--detach]
                                                           Run a turn (prompt optional for token-waste/memory-extract/new-chat)
                                                           External plugin modes run detached
   token-waste <sid> [--prompt <focus>] [--provider p] [--model m] [--detach]
@@ -30,7 +30,7 @@ Commands:
                                                           Spawn a new session to extract memories via mcp-memory
   runs [--mode mode]                                      List indexed runs, metrics, and transcript paths
   token-waste-runs                                        Alias for runs --mode token-waste
-  new-chat <sid> [--prompt <focus>] [--provider p] [--model m] [--target-mode agent|ask|plan] [--detach]
+  new-chat <sid> [--prompt <focus>] [--provider p] [--model m] [--target-mode agent|leader|ask|plan] [--detach]
                                                           Summarize and continue in a new session
   decompose <sid> --prompt <text> [--plan-file path] [--detach]
                                                           Decompose a top-level plan

@@ -7,6 +7,7 @@ const { createCapture } = require('./codexTelemetry')
 const { normalizeCodexOptions } = require('./codexOptions')
 const { composePromptWithProvenance } = require('../modes')
 const { capture } = require('../../prompt/provenance')
+const { imageMetadata } = require('../images')
 const { providerMode } = require('../providerModes')
 const prompts = require('../../prompts')
 
@@ -429,7 +430,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
     }
   }
 
-  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, outputSchema, terse = false, instructions, promptProvenance, evidenceSegmentId = crypto.randomUUID() } = {}) => {
+  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, outputSchema, terse = false, instructions, promptProvenance, images = [], evidenceSegmentId = crypto.randomUUID() } = {}) => {
     if (!threadId) throw new Error('Codex thread not created')
     if (active && !active.done) throw new Error('Codex turn already running')
     const wait = new Promise((resolve) => {
@@ -450,9 +451,12 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
     const text = composed.text
     for (const message of diagnostics) emit({ type: 'status', status: `Codex diagnostic: ${message}` })
     try {
-      emit(capture(composed, { provider: 'codex', providerAgentId: threadId }))
+      emit(capture(composed, { provider: 'codex', providerAgentId: threadId, images: imageMetadata(images) }))
       const response = await transport.request('turn/start', {
-        threadId, input: [{ type: 'text', text, text_elements: [] }],
+        threadId, input: [
+          { type: 'text', text, text_elements: [] },
+          ...images.map(({ path }) => ({ type: 'localImage', path })),
+        ],
         model: selectedModel, cwd: threadOptions.cwd,
         effort: selectedEffort,
         approvalPolicy: approvalFor(mode, options.approvalPolicy),
@@ -488,7 +492,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
   }
   return { create: (settings) => openThread(null, settings), resume: openThread, fork,
     resolvedSettings: () => ({ model: selectedModel, reasoningEffort: selectedEffort }),
-    send, listModels, providerAgentId: () => threadId, close }
+    send, steer: send, listModels, providerAgentId: () => threadId, close }
 }
 
 module.exports = { createDriver }

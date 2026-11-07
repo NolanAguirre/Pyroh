@@ -24,10 +24,11 @@ const queuedReceipt = (sessionId, messageId, writeDir) => {
   return readJson(path.join(dir, `${id}.json`)) || readJson(path.join(dir, `.${id}.claimed.json`))
 }
 
-const write = (sessionId, text, writeDir, { queuedMessageId, promptProvenance } = {}) => {
+const write = (sessionId, text, writeDir, { queuedMessageId, promptProvenance, images } = {}) => {
   const existing = queuedMessageId && queuedReceipt(sessionId, queuedMessageId, writeDir)
   if (existing) return existing
   const record = { id: queuedMessageId ? queuedId(queuedMessageId) : genId(), text: String(text), createdAt: Date.now(),
+    ...(images?.length ? { images } : {}),
     ...(promptProvenance ? { promptProvenance: require('../prompt/provenance').supplied(text, promptProvenance) } : {}),
     ...(queuedMessageId ? { queuedMessageId } : {}) }
   writeJson(path.join(paths.steerDir(sessionId, writeDir), `${record.id}.json`), record)

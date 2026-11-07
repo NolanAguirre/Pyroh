@@ -41,13 +41,20 @@ export const validatePromptDocument = (value: unknown): PromptDocument => {
 }
 export const normalizeRunOptions = (value: unknown = {}): RunOptions => {
   const input = record(value, 'run options')
-  const allowed = ['mode', 'prompt', 'provider', 'model', 'targetMode', 'runAfterSessionId', 'forkRetryKey', 'promptProvenance']
+  const allowed = ['mode', 'prompt', 'images', 'provider', 'model', 'targetMode', 'runAfterSessionId', 'forkRetryKey', 'promptProvenance']
   for (const key of Object.keys(input)) if (!allowed.includes(key)) throw validationError(`unknown run option: ${key}`)
   const output: RunOptions = {}
   for (const key of ['mode', 'prompt', 'provider', 'model', 'targetMode', 'runAfterSessionId', 'forkRetryKey'] as const) {
     if (input[key] !== undefined) output[key] = input[key] === null ? null : string(input[key], `run options.${key}`)
   }
   if (input.promptProvenance !== undefined) output.promptProvenance = input.promptProvenance === null ? null : validatePromptProvenance(input.promptProvenance)
+  if (input.images !== undefined) {
+    if (!Array.isArray(input.images) || input.images.length > 5) throw validationError('images must be an array of at most 5 attachments')
+    output.images = input.images.map(value => {
+      const image = record(value, 'image')
+      return { id: string(image.id, 'image.id', true), sessionId: string(image.sessionId, 'image.sessionId', true) }
+    })
+  }
   return output
 }
 export const validateManifest = (value: unknown): PluginManifest => {

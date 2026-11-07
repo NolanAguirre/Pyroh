@@ -3,6 +3,7 @@ const config = require('../../config')
 const { normalizeClaudeOptions } = require('./claudeOptions')
 const { composePromptWithProvenance } = require('../modes')
 const { capture } = require('../../prompt/provenance')
+const { imageMetadata } = require('../images')
 const { providerMode } = require('../providerModes')
 
 const CLIENT_APP = 'harness/0.1.0'
@@ -461,7 +462,7 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     }
   }
 
-  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, outputSchema, terse = false, instructions, promptProvenance } = {}) => {
+  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, outputSchema, terse = false, instructions, promptProvenance, images = [] } = {}) => {
     if (!sessionId) throw new Error('Claude session not created')
     if (active && !active.done) throw new Error('Claude turn already running')
     const { query } = await loadSdk()
@@ -496,8 +497,11 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     // Claude Code has no ask mode. Ask uses the default permission mode, blocks
     // edit tools, and denies every approval request, plus an instruction.
     const composed = composePromptWithProvenance(prompt, { mode, logicalMode, model: settings.model, terse, instructions, provider: 'claude', promptProvenance })
-    const content = composed.text
-    emit(capture(composed, { provider: 'claude', providerAgentId: sessionId }))
+    const content = images.length ? [
+      { type: 'text', text: composed.text },
+      ...images.map(({ data, mimeType }) => ({ type: 'image', source: { type: 'base64', data, media_type: mimeType } })),
+    ] : composed.text
+    emit(capture(composed, { provider: 'claude', providerAgentId: sessionId, images: imageMetadata(images) }))
     input.push({ type: 'user', message: { role: 'user', content }, parent_tool_use_id: null })
     const source = query({ prompt: input.iterable, options: {
       ...baseOptions(),
@@ -541,7 +545,7 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
 
   return { create: (next) => openSession(null, next), resume: openSession, fork,
     resolvedSettings: () => ({ model: sessionModel(settings.model) }),
-    send, listModels, providerAgentId: () => sessionId, close }
+    send, steer: send, listModels, providerAgentId: () => sessionId, close }
 }
 
 module.exports = { createDriver }
