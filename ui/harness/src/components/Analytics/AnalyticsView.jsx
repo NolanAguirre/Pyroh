@@ -7,7 +7,6 @@ import useToolStats from './useToolStats'
 import AnalyticsTopbar from './AnalyticsTopbar'
 import SummaryCard from './cards/SummaryCard'
 import WorkspaceCard from './cards/WorkspaceCard'
-import TotalsCard from './cards/TotalsCard'
 import ToolCard from './cards/ToolCard'
 import TargetCard from './cards/TargetCard'
 import PerRunCard from './cards/PerRunCard'
@@ -122,7 +121,6 @@ const AnalyticsView = ({ devId, workspaces = [], providers = [], onBack, onOpenS
                 totalTokens={tokenUsage(perRun?.tokens).total}
                 workspaceName={workspaceName}
               />
-              <TotalsCard overTime={stats.overTime} />
               <ToolCard byTool={stats.byTool} tool={tool} toggleTool={toggleTool} />
               {stats.targets && (
                 <TargetCard
