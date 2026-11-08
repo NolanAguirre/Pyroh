@@ -208,6 +208,16 @@
   margin: 0;
 }
 
+.analytics__card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.analytics__card-header > :last-child {
+  margin-left: auto;
+}
+
 .analytics__table {
   max-height: 420px;
   font-size: 12px;

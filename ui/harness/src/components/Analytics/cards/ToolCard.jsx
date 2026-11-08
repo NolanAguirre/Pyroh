@@ -1,21 +1,41 @@
-import { Card, CardHeader, CardSection, DevScope, Matrix, ProgressBar } from 'component-library'
+import { useState } from 'react'
+import { Card, CardHeader, CardSection, DevScope, Matrix, ProgressBar, SelectDisplay } from 'component-library'
 import { formatNumber } from '../../../format'
+import { ALL } from '../constants'
 
-const ToolCard = ({ byTool, tool, toggleTool }) => {
-  const maxToolCount = byTool?.[0]?.count || 1
+const LIMIT_OPTIONS = [
+  ...['10', '25', '50'].map((value) => ({ value, displayValue: `Top ${value}` })),
+  { value: ALL, displayValue: 'All tools' },
+]
+
+const ToolCard = ({ byTool = [], tool, toggleTool }) => {
+  const [limit, setLimit] = useState('10')
+  const shown = limit === ALL ? byTool : byTool.slice(0, Number(limit))
+  const maxToolCount = byTool[0]?.count || 1
 
   return (
-    <DevScope id="k27g7v7" state={{ tools: byTool.length, tool }}>
+    <DevScope id="k27g7v7" state={{ tools: byTool.length, shown: shown.length, limit, tool }}>
       <Card>
-        <CardHeader>By tool</CardHeader>
+        <CardHeader>
+          <div className="analytics__card-header">
+            <span>By tool</span>
+            <SelectDisplay
+              className="analytics__select"
+              aria-label="Tool limit"
+              selected={limit}
+              options={LIMIT_OPTIONS}
+              select={setLimit}
+            />
+          </div>
+        </CardHeader>
         <CardSection>
           <Matrix
             devId="xcx97r7"
             rowDevId="dye0g66"
-            className="analytics__table analytics__table--page"
+            className="analytics__table"
             label="Tool call counts"
             rowLabel="Tool"
-            rows={byTool.map((entry) => ({ id: entry.tool, ...entry }))}
+            rows={shown.map((entry) => ({ id: entry.tool, ...entry }))}
             columns={[
               { id: 'share', title: 'Share' },
               { id: 'count', title: 'Calls' },
