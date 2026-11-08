@@ -76,6 +76,42 @@
   gap: 12px;
 }
 
+.analytics__models .fold {
+  border-color: var(--border);
+  border-radius: 4px;
+}
+
+.analytics__models .fold__trigger {
+  padding: 6px 10px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.analytics__models .fold__trigger:hover,
+.analytics__models .fold__trigger--open {
+  background: var(--bg-elev);
+  color: var(--text);
+}
+
+.analytics__models .fold__content-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border-top-color: var(--border);
+  color: var(--text);
+}
+
+.analytics__models .form-dropdown__trigger {
+  padding: 4px 8px;
+  border-color: var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+}
+
 .analytics__summary .card__section {
   padding: 8px 12px;
 }

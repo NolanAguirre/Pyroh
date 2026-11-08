@@ -1,4 +1,5 @@
-import { Card, CardHeader, CardRow, DevScope } from 'component-library'
+import { useState } from 'react'
+import { Card, CardHeader, CardRow, DevScope, DropdownTypeahead, DropdownTypeaheadMenu, DropdownTypeaheadTrigger, Fold, FoldContent, FoldTrigger } from 'component-library'
 import { formatNumber } from '../../../format'
 import { formatAverage, formatTs } from '../format'
 import { tokenMetrics } from '../tokenMetrics'
@@ -38,6 +39,34 @@ const UsageCard = ({ title, tokens }) => {
   )
 }
 
+const ModelUsage = ({ byModel }) => {
+  const [model, setModel] = useState('')
+  const options = byModel.map((row) => ({ value: row.model, displayValue: row.model }))
+  const selected = byModel.find((row) => row.model === model)
+
+  if (byModel.length === 0) return null
+
+  return (
+    <div className="analytics__models">
+      <Fold>
+        <FoldTrigger>Models</FoldTrigger>
+        <FoldContent>
+          <DropdownTypeahead
+            defaultValue={model}
+            options={options}
+            change={setModel}
+            filterable
+          >
+            <DropdownTypeaheadTrigger placeholder="Search models" />
+            <DropdownTypeaheadMenu filterPlaceholder="Search models" emptyMessage="No models" />
+          </DropdownTypeahead>
+          {selected ? <UsageCard title={selected.model} tokens={selected.tokens} /> : null}
+        </FoldContent>
+      </Fold>
+    </div>
+  )
+}
+
 const SummaryCard = ({ totals, perRun }) => {
   const metrics = tokenMetrics(perRun?.tokens)
   const usage = metrics.usage
@@ -60,9 +89,7 @@ const SummaryCard = ({ totals, perRun }) => {
         <DevScope id="w7tq2na" state={{ runs: metrics.runs, total: usage.total, avg: metrics.rows[0].avg, reads: usage.readTotal, writes: usage.writeTotal }}>
           <UsageCard title="Token usage" tokens={perRun?.tokens} />
         </DevScope>
-        {byModel.map((row) => (
-          <UsageCard key={row.model} title={row.model} tokens={row.tokens} />
-        ))}
+        <ModelUsage byModel={byModel} />
       </div>
     </DevScope>
   )
