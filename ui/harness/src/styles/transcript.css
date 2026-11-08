@@ -237,13 +237,39 @@
   color: var(--accent);
 }
 
+.tx__user-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.tx__user-whole {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.tx__user-whole--on,
+.tx__user-whole:hover,
+.tx__user-whole:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .tx__user-copy {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 22px;
   height: 22px;
-  margin-left: auto;
   padding: 0;
   border: none;
   background: none;

@@ -8,7 +8,7 @@ const kinds = {
   context: 'Added context',
 }
 
-const ProviderPrompt = ({ prompt, devId }) => {
+const ProviderPrompt = ({ prompt, devId, plain = false }) => {
   const [compare, setCompare] = useState(false)
   const sections = Array.isArray(prompt.sections)
     && prompt.sections.every((section) => typeof section?.text === 'string')
@@ -26,31 +26,35 @@ const ProviderPrompt = ({ prompt, devId }) => {
   const hasRewrittenSection = sections.some((section) => section.kind === 'rewritten')
 
   return (
-    <DevScope id={devId} state={{ provider: prompt.provider || '', sections: sections.length, rewrite: hasRewrite, compare }}>
+    <DevScope id={devId} state={{ provider: prompt.provider || '', sections: sections.length, rewrite: hasRewrite, compare, plain }}>
       <div className="tx__provider-prompt">
-        <div className="tx__prompt-legend" aria-label="Prompt sources">
-          {legend.map(({ kind, label }) => (
-            <span key={`${kind}:${label}`} className={`tx__prompt-source tx__prompt-source--${kind}`}>
-              {label}
-            </span>
-          ))}
-        </div>
-        <div className="tx__prompt-sections">{sections.map((section, index) => {
-          const kind = kinds[section.kind] ? section.kind : 'unknown'
-          return (
-            <DevScope key={index} id="3utx2t3" state={{ index, kind }}>
-              <div className={`tx__prompt-section tx__prompt-section--${kind}`}>
-                <Fold defaultOpen={kind === 'rewritten' || (kind === 'user' && !hasRewrittenSection)}>
-                  <FoldTrigger>{section.label || kinds[section.kind] || 'Source unavailable'}</FoldTrigger>
-                  <FoldContent>
-                    <div className="tx__user-body tx__prompt-text">{section.text}</div>
-                  </FoldContent>
-                </Fold>
-              </div>
-            </DevScope>
-          )
-        })}</div>
-        {hasRewrite && (
+        {plain ? <div className="tx__user-body tx__prompt-text">{prompt.text}</div> : (
+          <>
+            <div className="tx__prompt-legend" aria-label="Prompt sources">
+              {legend.map(({ kind, label }) => (
+                <span key={`${kind}:${label}`} className={`tx__prompt-source tx__prompt-source--${kind}`}>
+                  {label}
+                </span>
+              ))}
+            </div>
+            <div className="tx__prompt-sections">{sections.map((section, index) => {
+              const kind = kinds[section.kind] ? section.kind : 'unknown'
+              return (
+                <DevScope key={index} id="3utx2t3" state={{ index, kind }}>
+                  <div className={`tx__prompt-section tx__prompt-section--${kind}`}>
+                    <Fold defaultOpen={kind === 'rewritten' || (kind === 'user' && !hasRewrittenSection)}>
+                      <FoldTrigger>{section.label || kinds[section.kind] || 'Source unavailable'}</FoldTrigger>
+                      <FoldContent>
+                        <div className="tx__user-body tx__prompt-text">{section.text}</div>
+                      </FoldContent>
+                    </Fold>
+                  </div>
+                </DevScope>
+              )
+            })}</div>
+          </>
+        )}
+        {!plain && hasRewrite && (
           <DevScope id="vt8m541" state={{ compare }}>
             <FoldDisplay isOpen={compare} toggle={() => setCompare((value) => !value)}>
               <FoldTrigger>Compare original and rewritten user text</FoldTrigger>

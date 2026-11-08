@@ -33,6 +33,7 @@ const loadSessionHref = (event) => {
 
 const UserMessage = ({ event, sessionId }) => {
   const [copied, setCopied] = useState(false)
+  const [whole, setWhole] = useState(false)
   const dependency = event.runAfter
   const text = event.text || dependency?.prompt || ''
   const captured = event.providerPrompt
@@ -48,7 +49,7 @@ const UserMessage = ({ event, sessionId }) => {
   }
 
   return (
-    <DevScope id="hr9k4u2" state={{ runId: event.runId, queued: Boolean(dependency), captured: Boolean(captured), answer: Boolean(event.answer), steer: Boolean(event.steer) }}>
+    <DevScope id="hr9k4u2" state={{ runId: event.runId, queued: Boolean(dependency), captured: Boolean(captured), whole, answer: Boolean(event.answer), steer: Boolean(event.steer) }}>
       <div className="tx tx--user">
         <div className="tx__user-header">
           <span className="tx__user-tag">{captured ? 'Agent prompt' : 'You'}</span>
@@ -56,19 +57,33 @@ const UserMessage = ({ event, sessionId }) => {
           {event.answer && <span className="tx__steer-tag">Answer</span>}
           {event.steer && <span className="tx__steer-tag">Steer</span>}
           {dependency && <span className="tx__steer-tag">Queued</span>}
-          <DevScope id="k3w8n1p" state={{ copied }}>
-            <button
-              type="button"
-              className="tx__user-copy"
-              aria-label={copied ? 'Copied' : captured ? 'Copy exact agent prompt' : 'Copy message'}
-              title={copied ? 'Copied' : captured ? 'Copy exact agent prompt' : 'Copy'}
-              onClick={copy}
-            >
-              {copied ? <CheckIcon /> : <CopyIcon />}
-            </button>
-          </DevScope>
+          <span className="tx__user-actions">
+            {captured && (
+              <DevScope id="w4n8k2p" state={{ whole }}>
+                <button
+                  type="button"
+                  className={`tx__user-whole${whole ? ' tx__user-whole--on' : ''}`}
+                  aria-pressed={whole}
+                  onClick={() => setWhole((value) => !value)}
+                >
+                  {whole ? 'By source' : 'See full prompt'}
+                </button>
+              </DevScope>
+            )}
+            <DevScope id="k3w8n1p" state={{ copied }}>
+              <button
+                type="button"
+                className="tx__user-copy"
+                aria-label={copied ? 'Copied' : captured ? 'Copy exact agent prompt' : 'Copy message'}
+                title={copied ? 'Copied' : captured ? 'Copy exact agent prompt' : 'Copy'}
+                onClick={copy}
+              >
+                {copied ? <CheckIcon /> : <CopyIcon />}
+              </button>
+            </DevScope>
+          </span>
         </div>
-        {captured ? <ProviderPrompt prompt={captured} devId="md9l4wi" /> : <div className="tx__user-body">{text}</div>}
+        {captured ? <ProviderPrompt prompt={captured} devId="md9l4wi" plain={whole} /> : <div className="tx__user-body">{text}</div>}
         <SessionImagePreviews images={event.images || captured?.images || dependency?.images} sessionId={sessionId || event.viewerSessionId} />
         {!captured && !dependency && (event.runPrompt || event.steer) && (
           <DevScope id="8yxr6ek" state={{ runPrompt: Boolean(event.runPrompt) }}>
