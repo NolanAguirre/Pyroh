@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { Card, CardHeader, CardRow, DevScope, DropdownTypeahead, DropdownTypeaheadMenu, DropdownTypeaheadTrigger, Fold, FoldContent, FoldTrigger } from 'component-library'
 import { formatNumber } from '../../../format'
-import { formatAverage, formatTs } from '../format'
+import { formatAverage, formatTs, ioDetail, ioText, vsDetail, vsText } from '../format'
 import { tokenMetrics } from '../tokenMetrics'
 import Stat from '../Stat'
 
-const UsageCard = ({ title, tokens }) => {
+const UsageCard = ({ title, tokens, children }) => {
   const metrics = tokenMetrics(tokens)
 
   return (
@@ -34,6 +34,7 @@ const UsageCard = ({ title, tokens }) => {
             ))}
           </div>
         </div>
+        {children}
       </Card>
     </div>
   )
@@ -90,8 +91,14 @@ const SummaryCard = ({ totals, perRun }) => {
             <Stat label="Last call" value={formatTs(totals.last)} />
           </CardRow>
         </Card>
-        <DevScope id="w7tq2na" state={{ runs: metrics.runs, total: usage.total, avg: metrics.rows[0].avg, reads: usage.readTotal, writes: usage.writeTotal }}>
-          <UsageCard title="Token usage" tokens={perRun?.tokens} />
+        <DevScope id="w7tq2na" state={{ runs: metrics.runs, total: usage.total, avg: metrics.rows[0].avg, reads: usage.readTotal, writes: usage.writeTotal, inOut: perRun.tokens?.inputPerOutput, buildInOut: perRun.buildTokens?.inputPerOutput }}>
+          <UsageCard title="Token usage" tokens={perRun?.tokens}>
+            <CardRow>
+              <Stat label="Cache vs new reads" value={vsText(perRun.tokens?.reads)} sub={vsDetail(perRun.tokens?.reads)} />
+              <Stat label="Input : output" value={ioText(perRun.tokens)} sub={ioDetail(perRun.tokens)} />
+              <Stat label="Input : output (no plan/ask)" value={ioText(perRun.buildTokens)} sub={ioDetail(perRun.buildTokens)} />
+            </CardRow>
+          </UsageCard>
         </DevScope>
         <ModelUsage byModel={byModel} />
       </div>
