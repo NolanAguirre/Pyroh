@@ -11,6 +11,7 @@ import ToolCard from './cards/ToolCard'
 import TargetCard from './cards/TargetCard'
 import PerRunCard from './cards/PerRunCard'
 import SubagentsCard from './cards/SubagentsCard'
+import ModeCard from './cards/ModeCard'
 import BreakdownCard from './cards/BreakdownCard'
 import './Analytics.css'
 
@@ -111,11 +112,12 @@ const AnalyticsView = ({ devId, workspaces = [], providers = [], onBack, onOpenS
           {error && <p className="analytics__error">{error}</p>}
           {checkpointError && <p className="analytics__error" role="alert">{checkpointError}</p>}
           {!stats && !error && <p className="hint">Loading tool-call metrics…</p>}
-          {stats && totals.calls === 0 && <p className="hint">No tool calls in this range.</p>}
+          {stats && totals.calls === 0 && !stats.byMode?.runs && !stats.subagents?.harness?.count && <p className="hint">No tool calls in this range.</p>}
 
-          {stats && (totals.calls > 0 || stats.subagents?.harness?.count > 0) && (
+          {stats && (totals.calls > 0 || stats.subagents?.harness?.count > 0 || stats.byMode?.runs > 0) && (
             <>
               <SummaryCard totals={totals} perRun={perRun} />
+              <ModeCard byMode={stats.byMode} />
               <WorkspaceCard
                 byWorkspace={stats.byWorkspace || []}
                 totalTokens={tokenUsage(perRun?.tokens).total}

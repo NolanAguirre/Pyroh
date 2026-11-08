@@ -28,8 +28,8 @@ const vsText = (pair) => (pair && (pair.cache || pair.fresh) ? `${pair.cachePct}
 const ioText = (tokens) => (tokens && tokens.inputPerOutput != null ? `${tokens.inputPerOutput}:1` : '-')
 
 const formatText = (summary) => {
-  const { range, totals, byTool, byWorkspace, overTime, perRun, subagents, breakdown, targets } = summary
-  if (!totals.calls && !subagents.harness?.count) {
+  const { range, totals, byTool, byWorkspace, overTime, perRun, byMode, subagents, breakdown, targets } = summary
+  if (!totals.calls && !subagents.harness?.count && !byMode?.runs) {
     return `No tool calls found (range: ${formatTs(range.since)} .. ${formatTs(range.until)})`
   }
   const out = []
@@ -99,6 +99,13 @@ const formatText = (summary) => {
       ]),
     ),
   ].join('\n')))
+
+  if (byMode?.runs) {
+    out.push(section('By mode', table(
+      ['mode', 'runs', 'subagent', 'non-nested'],
+      byMode.modes.map((entry) => [entry.mode, entry.runs, entry.subagent, entry.nonNested]),
+    )))
+  }
 
   const owned = subagents.harness
   if (owned) {

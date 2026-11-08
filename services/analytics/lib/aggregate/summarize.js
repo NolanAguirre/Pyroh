@@ -113,6 +113,27 @@ const summarizePerRun = (calls, { top, usageRuns }) => {
   return { byWorkspace, perRun }
 }
 
+// Custom children are harness_agents spawns. Forks are copies, not nested work.
+// Workflows are nested, but they are not custom subagents.
+const isCustomSubagent = (run) => run.childKind === 'delegation'
+  || (Boolean(run.parentRunId) && run.childKind !== 'workflow' && run.childKind !== 'fork')
+
+const summarizeModes = (usageRuns) => {
+  const unique = [...new Map((usageRuns || []).map((run) => [runKeyOf(run), run])).values()]
+  const groups = new Map()
+  for (const run of unique) {
+    const mode = run.mode || '(none)'
+    if (!groups.has(mode)) groups.set(mode, { mode, runs: 0, subagent: 0, nonNested: 0 })
+    const entry = groups.get(mode)
+    entry.runs += 1
+    if (isCustomSubagent(run)) entry.subagent += 1
+    else if (!run.parentRunId) entry.nonNested += 1
+  }
+  const modes = [...groups.values()].sort((a, b) => b.runs - a.runs || a.mode.localeCompare(b.mode))
+  const sum = (key) => modes.reduce((total, entry) => total + entry[key], 0)
+  return { runs: sum('runs'), subagent: sum('subagent'), nonNested: sum('nonNested'), modes }
+}
+
 const summarizeSubagents = (calls, usageRuns = []) => {
   const unique = [...new Map((usageRuns || []).map(run => [runKeyOf(run), run])).values()]
   const children = unique.filter(run => run.parentRunId)
@@ -196,6 +217,7 @@ const summarize = (calls, { bucket = 'day', by = null, top = 10, since = null, u
     byWorkspace,
     overTime: summarizeOverTime(calls, byTool, { bucket, top }),
     perRun,
+    byMode: summarizeModes(usageRuns),
     subagents: summarizeSubagents(calls, usageRuns),
     breakdown: by ? summarizeBreakdown(calls, { by, top }) : null,
     targets: tool ? summarizeTargets(calls, tool) : null,

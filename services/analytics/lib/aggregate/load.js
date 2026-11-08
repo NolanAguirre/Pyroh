@@ -82,7 +82,7 @@ const loadRuns = async (options) => {
             r.input, r.output, r.cache_read, r.cache_write, r.reasoning, r.total,
             s.workspace_id, w.name AS workspace_name, s.provider, s.model, r.duration_ms,
             s.meta->>'parentSessionId' AS parent_session_id, s.meta->>'parentRunId' AS parent_run_id,
-            s.meta->>'rootSessionId' AS root_session_id,
+            s.meta->>'rootSessionId' AS root_session_id, s.meta->>'childKind' AS child_kind,
             mr.result->'runMetadata'->r.run_id->>'status' AS status
      FROM runs r
      JOIN sessions s ON s.id = r.session_id
@@ -103,6 +103,7 @@ const loadRuns = async (options) => {
     firstTs: row.started_at,
     model: row.model, durationMs: num(row.duration_ms), status: row.status,
     parentSessionId: row.parent_session_id, parentRunId: row.parent_run_id, rootSessionId: row.root_session_id,
+    childKind: row.child_kind,
     usage: usageOf(row),
   }))
 }
