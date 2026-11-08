@@ -46,21 +46,25 @@ const ModelUsage = ({ byModel }) => {
 
   if (byModel.length === 0) return null
 
+  const rows = selected ? [selected] : byModel
+
   return (
     <div className="analytics__models">
+      <DropdownTypeahead
+        defaultValue={model}
+        options={options}
+        change={setModel}
+        filterable
+      >
+        <DropdownTypeaheadTrigger placeholder="Search models" />
+        <DropdownTypeaheadMenu filterPlaceholder="Search models" emptyMessage="No models" />
+      </DropdownTypeahead>
       <Fold>
         <FoldTrigger>Models</FoldTrigger>
         <FoldContent>
-          <DropdownTypeahead
-            defaultValue={model}
-            options={options}
-            change={setModel}
-            filterable
-          >
-            <DropdownTypeaheadTrigger placeholder="Search models" />
-            <DropdownTypeaheadMenu filterPlaceholder="Search models" emptyMessage="No models" />
-          </DropdownTypeahead>
-          {selected ? <UsageCard title={selected.model} tokens={selected.tokens} /> : null}
+          {rows.map((row) => (
+            <UsageCard key={row.model} title={row.model} tokens={row.tokens} />
+          ))}
         </FoldContent>
       </Fold>
     </div>

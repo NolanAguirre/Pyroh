@@ -76,6 +76,12 @@
   gap: 12px;
 }
 
+.analytics__models {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .analytics__models .fold {
   border-color: var(--border);
   border-radius: 4px;
