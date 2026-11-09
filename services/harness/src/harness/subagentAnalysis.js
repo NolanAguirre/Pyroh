@@ -7,7 +7,7 @@ const runIndex = require('../store/runIndexStore')
 const { readJson } = require('../store/jsonFile')
 const { parseInputCommand } = require('../prompt/triggers')
 const { createRequestMetrics, summarizeRequestMetrics } = require('../agents/requestMetrics')
-const { readEvidence: readCodexEvidence } = require('../agents/providers/codexTelemetry')
+const { createContextAnalysis } = require('./transcriptContext')
 
 const fields = ['input', 'output', 'cacheRead', 'cacheWrite', 'fresh', 'reasoning', 'total', 'requests']
 const number = (value) => Number.isSafeInteger(value) && value >= 0
@@ -59,15 +59,6 @@ const aggregate = (rows) => Object.fromEntries(fields.map(key => {
 }))
 const metric = (value) => value.value !== null ? fmt(value.value)
   : `unknown (${fmt(value.subtotal)} known; ${value.covered}/${value.count} runs)`
-const average = (rows, key) => {
-  const covered = rows.filter(row => row[key] !== null && row.requests !== null && row.requestFields?.includes(key))
-  if (!rows.length || covered.length !== rows.length) return 'unknown'
-  const requests = covered.reduce((total, row) => total + row.requests, 0)
-  if (!requests) return 'unknown'
-  const value = fmt(covered.reduce((total, row) => total + row[key], 0) / requests)
-  return value
-}
-
 const requestFields = (keys) => [
   ...(keys.includes('inputTokens') ? ['input'] : []),
   ...(keys.includes('cacheReadTokens') ? ['cacheRead'] : []),
@@ -76,7 +67,7 @@ const requestFields = (keys) => [
 
 // Live summaries reconcile every send segment before reconciling the whole run.
 // Repeated summaries replace by segment ID; they are never additive snapshots.
-const requestEvidence = (events, usage, provider, saved, cutoff, context) => {
+const requestEvidence = (events, usage, provider, saved, cutoff) => {
   const segments = new Map()
   const accept = (metrics) => {
     if (![1, 2].includes(metrics?.version) || metrics.provider !== provider || !metrics.segmentId
@@ -107,9 +98,6 @@ const requestEvidence = (events, usage, provider, saved, cutoff, context) => {
   }
   if (segments.size || events.some(event => ['model_request', 'model_request_evidence'].includes(event.type) && [1, 2].includes(event.version))) {
     const metrics = summarizeRequestMetrics([...segments.values()])
-    const telemetry = provider === 'codex' ? readCodexEvidence({ segments: metrics.segments, cutoff, ...context }) : null
-    const telemetryRecords = telemetry ? [...telemetry.bySegment.values()].flat() : []
-    const telemetryConfigured = metrics.segments.some(segment => segment.telemetryCaptures?.length)
     const tokens = measuredUsage(metrics.coveredUsage, provider)
     const reconciled = metrics.coverage === 'complete' && usage.input !== null && usage.output !== null
       && tokens.input === usage.input && tokens.output === usage.output
@@ -122,15 +110,12 @@ const requestEvidence = (events, usage, provider, saved, cutoff, context) => {
       fields: reconciled ? requestFields(matching) : [],
       coverage: reconciled ? 'complete' : metrics.coverage === 'unsupported' ? 'unsupported' : 'partial',
       observed: metrics.observedRequests,
-      segments: metrics.segments.map(segment => ({ ...segment, telemetry: telemetry?.bySegment.get(segment.segmentId) || [] })),
+      segments: metrics.segments,
       detail: [...new Set([
         metrics.reason,
         ...metrics.segments.flatMap(segment => [segment.provenance, segment.limitation, segment.reason]),
         !reconciled && metrics.coverage === 'complete' && 'Segment totals do not reconcile with authoritative run usage.',
         !segments.size && 'Request snapshots exist without a final coverage summary.',
-        telemetryConfigured && `Codex telemetry: ${telemetryRecords.length} attributed log records (${telemetryRecords.filter(record => record.attribution === 'thread_and_time_window').length} by thread/time window); ${telemetry.unattributed} unattributed; ${telemetry.excluded} other-thread records excluded. Log records are not request counts; export completeness is unknown.`,
-        provider === 'codex' && !telemetryConfigured && 'No local telemetry capture was configured for these segments.',
-        ...(telemetry?.issues || []),
       ].filter(Boolean))].join(' ') }
   }
 
@@ -303,8 +288,7 @@ const collect = (current, writeDir, cutoff) => {
       const reported = usage.has(record.id) ? usage.get(record.id).usage : record.usage
       const tokens = measuredUsage(complete ? reported : null, provider)
       if (!complete) warnings.add(`Run ${record.id} was ongoing or lacked a completion timestamp at cutoff; usage is unknown.`)
-      const evidence = requestEvidence(events.get(record.id) || [], tokens, provider, record.modelRequests, cutoff,
-        { writeDir, sessionId: node.id, runId: record.id })
+      const evidence = requestEvidence(events.get(record.id) || [], tokens, provider, record.modelRequests, cutoff)
       rows.push({ ...tokens, requests: complete ? evidence.requests : null, requestFields: evidence.fields, requestEvidence: evidence,
         id: record.id, sessionId: node.id, provider, model: record.model || session.model || 'unknown',
         startedAt: record.startedAt, endedAt: complete ? record.endedAt : null, status: complete ? record.status || 'finished' : 'incomplete at cutoff' })
@@ -336,119 +320,71 @@ const collect = (current, writeDir, cutoff) => {
       pending.push({ id: link.sessionId, expectedRunId: link.runId, depth: node.depth + 1, ancestors: [...node.ancestors, node.id] })
     }
   }
-  return { source, agents, warnings: [...warnings], excluded, cutoff }
+  const sourcesForContext = new Map([...sessions.values()].map(session => [session.id, locate(session.id)]))
+  for (const agent of agents) sourcesForContext.set(agent.id, locate(agent.id))
+  const context = createContextAnalysis([...sourcesForContext.values()].filter(Boolean), writeDir, cutoff)
+  return { source, agents, warnings: [...warnings], excluded, cutoff, context }
 }
 
-const comparison = (agents, assumptions, warnings) => {
-  const descendants = agents.filter(agent => agent.depth > 0 && agent.rows.length)
-  const childRows = descendants.flatMap(agent => agent.rows)
-  const children = aggregate(childRows)
-  const root = aggregate(agents.filter(agent => agent.depth === 0).flatMap(agent => agent.rows))
-  const complete = descendants.length > 0 && descendants.every(agent => {
-    const totals = aggregate(agent.rows)
-    return totals.input.value !== null && totals.requests.value > 0 && agent.rows.every(row => row.requestFields?.includes('input'))
-  })
-  const summedAverages = complete ? descendants.reduce((total, agent) => {
-    const totals = aggregate(agent.rows)
-    return total + totals.input.value / totals.requests.value
-  }, 0) : null
-  const requests = assumptions.requests ?? children.requests.value
-  const output = assumptions.output ?? children.output.value
-  const shared = assumptions.shared ?? null
-  const avg = summedAverages !== null && shared !== null ? summedAverages - shared : null
-  const estimatedInput = avg !== null && avg >= 0 && requests > 0 ? avg * requests : null
-  // Any missing links or incomplete runs prevent a whole-subtree prediction.
-  const available = estimatedInput !== null && output !== null && warnings.length === 0
-  const lines = [
-    '### Hypothetical combined agent — estimate, not measured',
-    `Coordinator baseline: ${metric(root.total)} tokens. This is measured root work; delegation-only overhead cannot be isolated from it. This comparison holds all root/coordinator work constant; it does not claim delegation overhead disappears. Descendant coordinator work is included among the tasks being combined.`,
-    `Measured descendant input: ${metric(children.input)}; output: ${metric(children.output)}; total: ${metric(children.total)}.`,
-    'Rough model: merged average context ≈ sum of descendant average request contexts − shared starting-context deduction; merged input ≈ merged average × assumed combined requests. Output is estimated separately.',
-    `Sum of descendant average contexts: ${fmt(summedAverages)}. Shared deduction: ${fmt(shared)}${shared !== null ? ' (user assumption)' : ' (not measured; supply shared=<tokens>)'}.`,
-    `Combined requests: ${fmt(requests)} (${assumptions.requests !== undefined ? 'user assumption' : 'assumes the measured descendant request count stays constant, when known'}). Combined output: ${fmt(output)} (${assumptions.output !== undefined ? 'user assumption' : 'assumes measured descendant output stays constant, when known'}).`,
-  ]
+// The counterfactual keeps coordinator work and child output constant. It is
+// an input-token scenario, not evidence of quality, elapsed-time or cash savings.
+const comparison = (data, assumptions, summaries) => {
+  const children = data.agents.filter(agent => agent.depth > 0 && agent.rows.length)
+  if (!children.length) return ['**Worth it?** No subagent work found.']
+  const root = data.agents.find(agent => agent.depth === 0)
+  const parentContext = root ? summaries.get(root.id).current : null
+  const childRows = children.flatMap(agent => agent.rows)
+  const totals = aggregate(childRows)
+  const stats = children.map(agent => summaries.get(agent.id))
+  const turns = assumptions.requests ?? sum(stats.map(stat => stat.turns))
+  const shared = assumptions.shared ?? 0
+  const output = assumptions.output ?? totals.output.value
+  const mergedContext = parentContext !== null ? parentContext - shared : null
+  const mergedInput = mergedContext !== null && mergedContext >= 0 && turns > 0 ? mergedContext * turns : null
+  const available = !data.warnings.length && mergedInput !== null && output !== null && totals.total.value !== null
+  const difference = available ? mergedInput + output - totals.total.value : null
+  const lines = [difference === null
+    ? '**Worth it?** Unclear: usage, turns, or context is missing.'
+    : difference > 0
+      ? `**Worth it?** The rough model favors subagents by about ${fmt(difference)} tokens.`
+      : difference < 0
+        ? `**Worth it?** The rough model favors doing the work in the coordinator by about ${fmt(-difference)} tokens.`
+        : '**Worth it?** No token advantage in this model.']
+  lines.push(`Subagents used ${metric(totals.total)} tokens across ${fmt(turns)}${assumptions.requests !== undefined ? ' assumed combined' : stats.some(stat => stat.turnsEstimated) ? ' estimated' : ''} model turns.`)
   if (available) {
-    const estimate = estimatedInput + output
-    lines.push(`Estimated merged average: ${fmt(avg)}; input: ${fmt(estimatedInput)}; output: ${fmt(output)}; descendant total: ${fmt(estimate)}; subtree total with constant coordinator: ${fmt(root.total.value === null ? null : root.total.value + estimate)}.`)
-    if (children.total.value !== null) lines.push(`Estimated token difference versus measured descendants: ${fmt(estimate - children.total.value)} (positive means more tokens).`)
+    lines.push(`Why: at the coordinator’s current context, (${fmt(parentContext)} − ${fmt(shared)} shared deduction) × ${fmt(turns)} turns + ${fmt(output)} output ≈ ${fmt(mergedInput + output)} tokens for the child work. Existing coordinator work stays constant; future context growth is not modeled.`)
   } else {
-    lines.push('Numeric merged estimate unavailable: it requires complete request and usage coverage, a supplied shared-context deduction, a positive combined request count, and a nonnegative merged context. Missing links or incomplete coverage also block a whole-subtree estimate.')
+    lines.push('The comparison needs known child usage, a current coordinator context, and measured or estimated child turns. Incomplete work or missing delegation records blocks a verdict.')
   }
-  const breakEven = available && avg > 0 && children.total.value !== null && children.total.value >= output
-    ? (children.total.value - output) / avg : null
-  lines.push(`Token break-even request count: ${fmt(breakEven)} (rounded). Formula: (measured descendant total − assumed merged output) / merged average. This holds coordinator work constant and is not a price break-even.`)
-  const intervals = descendants.map(agent => ({ id: agent.id,
-    start: agent.rows.every(row => number(row.startedAt)) ? Math.min(...agent.rows.map(row => row.startedAt)) : null,
-    end: agent.rows.every(row => number(row.endedAt)) ? Math.max(...agent.rows.map(row => row.endedAt)) : null,
-  })).sort((a, b) => (a.start ?? Infinity) - (b.start ?? Infinity))
-  const timing = intervals.length > 1 && intervals.every(item => item.start !== null && item.end !== null)
-  const overlap = timing && intervals.some((item, i) => intervals.slice(0, i).some(previous => previous.end > item.start))
-  lines.push(timing
-    ? `Observed start order: ${intervals.map(item => cell(item.id)).join(' → ')}. ${overlap ? 'Run intervals overlap; this does not establish model-request interleaving.' : 'Agent run intervals are sequential.'}`
-    : 'Sequential versus interleaved request order is unknown from the available timing evidence.')
-  if (available) {
-    const half = Math.max(1, Math.ceil(requests / 2))
-    lines.push(`Batching sensitivity with the same assumed context and output: ${fmt(half)} requests → ${fmt(avg * half + output)} descendant tokens; ${fmt(requests * 2)} requests → ${fmt(avg * requests * 2 + output)}. These are scenarios, not supported execution forecasts.`)
-  }
-  lines.push('Sequential task grouping and interleaving can change retained context, summaries, outputs, and request count; this simple model does not simulate those effects. Shared deduction must represent total duplicated starting context across the combined agents, not an invented prefix size.',
-    'Cache reuse and fresh-token cost differ from total tokens. No cache hits, cost savings, latency savings, or exact per-file attribution are predicted.')
-  return lines.join('\n\n')
-}
-
-const timestamp = value => number(value) && Number.isFinite(new Date(value).getTime()) ? new Date(value).toISOString() : 'unknown'
-const timeWindow = values => {
-  const known = values.filter(number)
-  return known.length ? `${timestamp(Math.min(...known))} → ${timestamp(Math.max(...known))}` : 'unknown'
-}
-const durations = values => {
-  const known = values.filter(value => (typeof value === 'number' || typeof value === 'string' && value.trim() !== '')
-    && Number.isFinite(Number(value)) && Number(value) >= 0).map(Number)
-  return known.length ? `${known.length} records; ${fmt(Math.min(...known))}–${fmt(Math.max(...known))} ms` : 'unknown'
+  lines.push(`This assumes ${assumptions.requests === undefined ? 'the same number of turns' : 'your combined turn count'} and ${assumptions.output === undefined ? 'the same output' : 'your output estimate'}${assumptions.shared === undefined ? ', with no shared-context deduction (shared=0)' : ''}. It does not measure work quality, time saved, or dollar cost.`)
+  return lines
 }
 
 const analyzeSubagents = (session, writeDir, assumptions = {}) => {
   const data = collect(session, writeDir, Date.now())
-  const rows = data.agents.flatMap(agent => agent.rows)
-  const totals = aggregate(rows)
-  const tableHeader = '| Agent / run | Input | Output | Cache read | Cache write | Fresh | Reasoning | Total | Model requests |'
-  const tableRule = '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |'
-  const tableRow = (label, values) => `| ${cell(label)} | ${fields.map(key => metric(values[key])).join(' | ')} |`
-  const timingRows = rows.flatMap(row => (row.requestEvidence.segments || []).map(segment => {
-    const localTimes = [...(segment.requestRecords || []).flatMap(record => [record.firstObservedAt, record.lastObservedAt]),
-      ...(segment.evidence || []).map(record => record.observedAt)]
-    const steps = (segment.evidence || []).filter(record => record.kind === 'step' && record.eventType === 'step-completed')
-    return `| ${cell(`${row.id} / ${segment.segmentId}`)} | ${timestamp(segment.startedAt)} → ${timestamp(segment.endedAt)} | ${timeWindow(localTimes)} | ${durations(steps.map(record => record.durationMs))} | ${timeWindow((segment.telemetry || []).map(record => record.occurredAt))} | ${durations((segment.telemetry || []).map(record => record.attributes?.duration_ms))} |`
-  }))
+  const summaries = new Map(data.agents.map(agent => [agent.id, data.context.describe(agent)]))
+  const estimate = (value, estimated) => `${estimated ? '~' : ''}${fmt(value)}`
   const lines = [
-    '## Subagent usage analysis',
-    `Source: ${cell(data.source.id)}${data.source.id !== session.id ? ` (requested from ${cell(session.id)})` : ''}. Cutoff: ${new Date(data.cutoff).toISOString()}.`,
-    `Measured coverage: ${data.agents.length} located agents, ${rows.length} model-run records; ${data.excluded} local commands or workflow containers excluded. This analysis itself makes no model requests and is excluded.`,
-    'One authoritative usage record per run wins over its run copy. Session totals, child rollups, cumulative stream snapshots, and raw/result copies are not added. Finished records at cutoff are included; ongoing or missing data remain unknown. Reads occur across files, so this is not an atomic snapshot.',
-    'Fresh = inclusive input − cache reads when provider semantics and both fields are established; cache writes are part of fresh input. Cache is within input and reasoning is within output where confirmed, never added again to total. Unknown is not zero. “Known” subtotals cover only located records.',
-    '### Measured usage by agent',
-    tableHeader, tableRule,
-    ...data.agents.map(agent => tableRow(`${agent.depth ? `depth ${agent.depth}` : 'coordinator'} ${agent.id} (${agent.rows.length} runs)`, aggregate(agent.rows))),
-    tableRow(data.warnings.length ? 'Located subtree (coverage gaps below)' : 'Whole subtree', totals),
-    '', '### Measured usage by run', tableHeader, tableRule,
-    ...data.agents.flatMap(agent => agent.rows.map(row => tableRow(`${agent.id} / ${row.id} · ${row.provider}/${row.model} · ${row.status}`, aggregate([row])))),
-    '', '### Whole-token request averages',
-    'Weighted by model requests and rounded to whole tokens. Average context = total input / model-request count. Every run in a displayed scope must have complete reconciled coverage for that average; partial observed IDs are never denominators. Tool calls, user turns, and run counts are never request counts.',
-    '', '| Scope | Average request context | Average cached input | Average fresh input |', '| --- | ---: | ---: | ---: |',
-    ...data.agents.map(agent => `| ${cell(agent.id)} | ${average(agent.rows, 'input')} | ${average(agent.rows, 'cacheRead')} | ${average(agent.rows, 'fresh')} |`),
-    ...rows.map(row => `| ${cell(row.id)} | ${average([row], 'input')} | ${average([row], 'cacheRead')} | ${average([row], 'fresh')} |`),
-    `| Located subtree | ${average(rows, 'input')} | ${average(rows, 'cacheRead')} | ${average(rows, 'fresh')} |`,
-    '', 'Live request counts require unique completed response IDs, complete coverage of every steering segment, and input/output reconciliation with authoritative segment and run usage. Claude also checks reported model round trips when supplied. Cache/fresh averages require matching covered cache usage. Historical direct response evidence is labeled separately; usage-only history stays unknown.',
-    '', '### Request evidence and limits',
-    '| Run | Coverage | Observed model/response IDs (may be partial) | Provenance / limits |', '| --- | --- | ---: | --- |',
-    ...rows.map(row => `| ${cell(row.id)} | ${cell(row.requestEvidence.coverage)} | ${fmt(row.requestEvidence.observed)} | ${cell(row.requestEvidence.detail)} |`),
-    '', '### Recorded evidence timing',
-    'Observation timestamps, conversation-step durations, and Codex transport/event durations are different measurements. Ranges describe only recorded evidence, not model-request latency or complete request order. Codex batches can arrive after run completion; only records received by the report cutoff are included. Unattributed and native child-thread events are excluded from the intervals below. Per-event values remain in the durable evidence records.',
-    '| Run / steering segment | Segment interval | Local evidence observed | Cursor step durations | Codex event timestamps | Codex transport/event durations |',
-    '| --- | --- | --- | --- | --- | --- |',
-    ...(timingRows.length ? timingRows : ['| Historical records | unknown | unknown | unknown | unknown | unknown |']),
-    '', comparison(data.agents, assumptions, data.warnings),
+    '## Subagent analysis',
+    '', ...comparison(data, assumptions, summaries).flatMap(line => [line, '']),
+    '| Agent | Model turns | Current context | Input tokens |',
+    '| --- | ---: | ---: | ---: |',
+    ...data.agents.filter(agent => agent.rows.length).map(agent => {
+      const summary = summaries.get(agent.id)
+      const label = `${agent.depth ? 'Subagent' : 'Coordinator'} ${agent.session.name || agent.id} (${agent.session.provider || agent.rows[0].provider})`
+      return `| ${cell(label)} | ${estimate(summary.turns, summary.turnsEstimated)} | ${estimate(summary.current, summary.currentEstimated)} | ${metric(aggregate(agent.rows).input)} |`
+    }),
+    '',
+    '~ means estimated. Measured turns use reconciled model requests; tool calls are not turns.',
   ]
-  if (data.warnings.length) lines.push('', '### Coverage gaps', '', ...data.warnings.map(warning => `- ${cell(warning)}`))
+  if (data.agents.some(agent => agent.rows.some(row => row.provider === 'cursor'))) {
+    lines.push('', `Cursor: current context ≈ transcript characters × average tokens/character from ${data.context.samples} GPT/Claude agents. Estimated turns ≈ input tokens ÷ average context, assuming even growth from the run’s starting context to its ending context. Observed response IDs provide a lower bound.`,
+      'Calibration excludes known compaction, context resets, inherited history, incomplete data, and agents above 2M reported tokens. Hidden compaction and provider differences can still skew estimates.')
+    const reasons = [...new Set(data.agents.filter(agent => agent.session.provider === 'cursor')
+      .map(agent => summaries.get(agent.id).reason).filter(Boolean))]
+    if (reasons.length) lines.push(`Unavailable estimates: ${reasons.map(cell).join(' ')}`)
+  }
+  if (data.warnings.length) lines.push('', `Coverage: ${data.warnings.slice(0, 2).map(cell).join(' ')}${data.warnings.length > 2 ? ` (${data.warnings.length - 2} more gaps.)` : ''}`)
   return lines.join('\n')
 }
 
