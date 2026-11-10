@@ -224,11 +224,15 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
     // Register the worker and its running status before snapshot work can block.
     if (!terminating && entry?.snapshot && (!session.parentRunId || session.childKind === 'workflow' || session.delegationDetached)) {
       const cwd = require('../store/workspaceStore').resolveSessionCwd(session, writeDir)
-      const snap = require('../store/gitSnapshot').snapshotIfGitRepo(cwd, {
-        message: `harness: snapshot before ${action} ${runId}`,
-        onProgress: logLine,
-      })
-      logLine(snap.committed ? `git snapshot ${snap.hash} in ${cwd}` : `git snapshot skipped: ${snap.reason}`)
+      try {
+        const snap = require('../store/gitSnapshot').snapshotIfGitRepo(cwd, {
+          message: `harness: snapshot before ${action} ${runId}`,
+          onProgress: logLine,
+        })
+        logLine(snap.committed ? `git snapshot ${snap.hash} in ${cwd}` : `git snapshot skipped: ${snap.reason}`)
+      } catch (err) {
+        logLine(`warning: git snapshot failed; continuing run: ${formatError(err)}`)
+      }
     }
     const queuedMessage = sessionStore.loadRun(sessionId, runId, writeDir)?.queuedMessage
     // Beyond this boundary provider delivery may be ambiguous after a crash.
