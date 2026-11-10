@@ -1,1 +1,0 @@
-/home/nolan/.s6craft/.claude/rules/js-factory-functions.md
