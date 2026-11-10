@@ -7,11 +7,6 @@ const FIRST_MESSAGE_TEMPLATES = [
     template: 'Always work in the existing local project directory. Do not create Git worktrees unless the user explicitly requests one.',
   },
   {
-    id: 'toolkitTerminology',
-    name: 'Toolkit terminology',
-    template: 'When the user says toolkit, they mean a shell command organized through their toolkit structure, not necessarily the literal toolkit command.',
-  },
-  {
     id: 'backendWatching',
     name: 'Backend watching',
     template: 'Start backend services without watching or automatic reload in both direct commands and root make start; omit Node --watch from default dev/start scripts.',
@@ -20,11 +15,6 @@ const FIRST_MESSAGE_TEMPLATES = [
     id: 'localReverseProxy',
     name: 'Local reverse proxy',
     template: 'Use nginx for local reverse proxying instead of Vite proxy.',
-  },
-  {
-    id: 'projectPorts',
-    name: 'Project port block',
-    template: 'Ask the user which 100-port block to use when none is assigned, then record it and keep project app ports within it; shared PostgreSQL on 5432 is exempt. Respect assigned ports, including nginx, without fallback or silent increments.',
   },
   {
     id: 'sqitchMigrations',

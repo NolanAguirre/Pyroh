@@ -29,6 +29,9 @@ const prefetchDevIds = async (session) => {
 }
 
 const actions = {
+  toolkitTerminology: {
+    prepend: (session) => prompts.render('toolkitTerminology', {}, session.provider, sessionContext(session)),
+  },
   makefileRules: {
     prepend: (session) => prompts.render('makefileRules', {}, session.provider, sessionContext(session)),
   },

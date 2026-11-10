@@ -58,6 +58,16 @@ Continue useful coordination while children run. Never poll, sleep, or wait for 
   },
   ...FIRST_MESSAGE_TEMPLATES,
   {
+    id: 'toolkitTerminology',
+    activation: { kind: 'Text trigger', condition: 'The first message contains the word “toolkit” (case-insensitive). Skipped on follow-ups and steers.' },
+    name: 'Toolkit terminology',
+    group: 'rewrites',
+    description: 'Prepended to the first message when it mentions toolkit.',
+    usedBy: ['prompt/actions.js'],
+    vars: [],
+    template: 'When the user says toolkit, they mean a shell command organized through their toolkit structure, not necessarily the literal toolkit command.',
+  },
+  {
     id: 'agent',
     activation: { kind: 'Mode condition', condition: 'Every turn using the agent base mode.' },
     name: 'Execute base',
