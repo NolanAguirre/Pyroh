@@ -3,6 +3,7 @@ import { devIdPaths } from './triggers/devIdPaths.js'
 import { sessionIdPaths } from './triggers/sessionIdPaths.js'
 import { makefileRules } from './triggers/makefileRules.js'
 import { toolkitTerminology } from './triggers/toolkitTerminology.js'
+import { javascriptConventions } from './triggers/javascriptConventions.js'
 
 // Keep command matching and help text together as the command list grows.
 export const INPUT_COMMANDS = [
@@ -64,6 +65,18 @@ export const TRIGGERS = [devIds, devIdPaths, sessionIdPaths, makefileRules, tool
 
 export const inScope = (trigger, { first = true } = {}) => first || trigger.scope !== 'first'
 
+// Negative triggers suppress the prompt with the same id. Any text pattern or
+// optional when(text, context) condition can exclude it, even without a positive
+// trigger. Check incoming text before adding harness instructions or paths.
+export const NEGATIVE_TRIGGERS = [javascriptConventions]
+
+export const hasNegativeTrigger = (text, id, options = {}) => NEGATIVE_TRIGGERS.some(trigger =>
+  trigger.id === id && inScope(trigger, options) && (
+    (typeof text === 'string' && (trigger.patterns ?? []).some(pattern =>
+      new RegExp(pattern.source, pattern.flags).test(text))) ||
+    trigger.when?.(text, options) === true
+  ))
+
 // Matches from every applicable trigger, sorted by position. When matches
 // overlap, the earlier (then longer) one wins. `first: false` skips
 // first-prompt-only triggers.
@@ -71,7 +84,7 @@ export const findTriggers = (text, options = {}) => {
   if (typeof text !== 'string' || !text) return []
   const matches = []
   for (const trigger of TRIGGERS) {
-    if (!inScope(trigger, options)) continue
+    if (!inScope(trigger, options) || hasNegativeTrigger(text, trigger.id, options)) continue
     for (const pattern of trigger.patterns) {
       for (const match of text.matchAll(pattern)) {
         if (!match[0]) continue

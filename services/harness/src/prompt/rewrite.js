@@ -1,16 +1,17 @@
 const { execFile } = require('child_process')
 const path = require('path')
-const { TRIGGERS, inScope } = require('./triggers')
+const { TRIGGERS, inScope, hasNegativeTrigger } = require('./triggers')
 const prompts = require('../prompts')
 const paths = require('../store/paths')
 const provenance = require('./provenance')
 const { TEMPLATES } = require('../prompts/templates')
 
 const firstMessageTemplates = TEMPLATES.filter(entry => entry.firstMessage)
-const prependFirstMessage = (prompt, context) => {
+const prependFirstMessage = (prompt, context, incomingText) => {
   if (context.first !== true) return prompt
   const parts = firstMessageTemplates
     .filter(entry => entry.id !== 'terse' || context.terse)
+    .filter(entry => !hasNegativeTrigger(incomingText, entry.id, context))
     .map(entry => provenance.section('system', entry.name, prompts.text(entry.id, context.provider, context)))
     .filter(part => part.text)
   if (context.firstMessageInstructions) {
@@ -53,7 +54,8 @@ const rules = [
   { name: 'devId', trigger: trigger('devIdPaths'), rewrite: devIdPaths },
   { name: 'sessionId', trigger: trigger('sessionIdPaths'), rewrite: sessionIdPaths },
 ]
-const applicableRules = (context) => rules.filter(rule => inScope(rule.trigger, context)
+const applicableRules = (context, incomingText) => rules.filter(rule => inScope(rule.trigger, context)
+  && !hasNegativeTrigger(incomingText, rule.trigger.id, context)
   && prompts.appliesTo(rule.trigger.id, context.provider, context))
 
 const replaceAsync = async (text, pattern, rewrite, context) => {
@@ -73,10 +75,10 @@ const replaceAsync = async (text, pattern, rewrite, context) => {
 const rewritePrompt = async (text, context = {}) => {
   if (typeof text !== 'string' || !text) return text
   let out = text
-  for (const { trigger: { patterns }, rewrite } of applicableRules(context)) {
+  for (const { trigger: { patterns }, rewrite } of applicableRules(context, text)) {
     out = await replaceAsync(out, patterns[0], rewrite, context)
   }
-  return prependFirstMessage(provenance.supplied(out), context).text
+  return prependFirstMessage(provenance.supplied(out), context, text).text
 }
 
 // Use the same full-string matches and replacements as rewritePrompt. Section
@@ -84,7 +86,7 @@ const rewritePrompt = async (text, context = {}) => {
 const rewritePromptWithProvenance = async (prompt, context = {}) => {
   let out = prompt
   context = { messageType: prompt.messageType, ...context }
-  for (const { trigger: { patterns }, rewrite } of applicableRules(context)) {
+  for (const { trigger: { patterns }, rewrite } of applicableRules(context, prompt.text)) {
     const matches = [...out.text.matchAll(patterns[0])]
     const replacements = await Promise.all(matches.map(match => rewrite(match, context)))
     const parts = []
@@ -107,7 +109,7 @@ const rewritePromptWithProvenance = async (prompt, context = {}) => {
   if (out.sections.some(part => part.kind === 'rewritten')) {
     out.rewrittenText = out.sections.filter(part => ['user', 'rewritten'].includes(part.kind)).map(part => part.text).join('')
   }
-  return prependFirstMessage(out, context)
+  return prependFirstMessage(out, context, prompt.text)
 }
 
 module.exports = { rewritePrompt, rewritePromptWithProvenance, rules }

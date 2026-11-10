@@ -13,7 +13,7 @@ const { readJsonAsync } = require('../store/jsonFile')
 const { listProviders } = require('../agents/driver')
 const registry = require('../registry')
 const prompts = require('../prompts')
-const { TRIGGERS } = require('../prompt/triggers')
+const { TRIGGERS, NEGATIVE_TRIGGERS } = require('../prompt/triggers')
 const composerActions = require('./composerActions')
 const submissionStore = require('../store/submissionStore')
 const imageStore = require('../store/imageStore')
@@ -183,6 +183,13 @@ router.get('/registry/explain', (req, res) => {
 router.get('/prompt-triggers', (_req, res) => {
   res.json({
     triggers: TRIGGERS.map(({ id, label, description, scope, patterns }) => ({
+      id,
+      label,
+      description,
+      scope,
+      patterns: patterns.map(({ source, flags }) => ({ source, flags })),
+    })),
+    negativeTriggers: NEGATIVE_TRIGGERS.map(({ id, label, description, scope, patterns = [] }) => ({
       id,
       label,
       description,

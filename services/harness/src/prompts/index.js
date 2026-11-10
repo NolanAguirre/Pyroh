@@ -4,7 +4,7 @@ const { readJson, writeJson } = require('../store/jsonFile')
 const { TEMPLATES } = require('./templates')
 const { listProviders } = require('../agents/driver')
 const { PROVIDER_VERSIONS } = require('./providers')
-const { TRIGGERS } = require('../prompt/triggers')
+const { TRIGGERS, NEGATIVE_TRIGGERS } = require('../prompt/triggers')
 
 const PLACEHOLDER = /\{\{(\w+)\}\}/g
 const placeholders = (template) => [...new Set([...template.matchAll(PLACEHOLDER)].map((match) => match[1]))]
@@ -167,6 +167,11 @@ const describe = ({ id, name, group, description, usedBy, vars, activation, appl
       ...activation, scope: trigger.scope,
       patterns: trigger.patterns.map((pattern) => pattern.toString()),
     } : activation,
+    exclusions: NEGATIVE_TRIGGERS.filter(trigger => trigger.id === id).map(trigger => ({
+      description: trigger.description,
+      scope: trigger.scope,
+      patterns: (trigger.patterns ?? []).map(pattern => pattern.toString()),
+    })),
     template: resolvedText(id, provider, context), defaultTemplate: defaultText(id, provider, context),
     messageTypes: messageTypes(id, provider, context), defaultMessageTypes: defaultMessageTypes(id, provider, context),
     edited, builtIn: model == null && version != null,

@@ -140,6 +140,13 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange,
               <span className="hint">Text patterns (shared by all versions)</span>
               {activation.patterns.map((pattern) => <code key={pattern}>{pattern}</code>)}
             </div>}
+            {prompt.exclusions?.map((exclusion, index) => (
+              <div key={index} className="registry__prompt-patterns">
+                <strong>Negative trigger (shared by all versions)</strong>
+                <p>{exclusion.description}</p>
+                {exclusion.patterns.map(pattern => <code key={pattern}>{pattern}</code>)}
+              </div>
+            ))}
           </div>
 
           <div className="registry__prompt-editor">
