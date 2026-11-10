@@ -5,6 +5,7 @@ const workspaceStore = require('../store/workspaceStore')
 const registry = require('../registry')
 const { sessionModel } = require('../prompt/context')
 const { evaluatePrompt } = require('../prompt/rewrite')
+const { highlightsFor } = require('../prompt/conditions')
 const { userPrompt } = require('../prompt/provenance')
 const { actions, prependNotesWithProvenance } = require('../prompt/actions')
 const { INPUT_COMMANDS, parseInputCommand } = require('../prompt/triggers')
@@ -56,7 +57,9 @@ const evaluatePromptRoute = async (req, res) => {
     const fired = result.triggered.filter(entry => entry.target === 'action' && entry.effect === 'applied')
       .map(entry => actions[entry.id]).filter(Boolean)
     const preview = await prependNotesWithProvenance(fired, { ...session, ...context }, result.prompt, { preview: true })
-    return res.json({ prompt: preview.text, triggered: result.triggered, highlights: result.highlights })
+    // Feedback shows changes from the default; prompt assembly still uses every applied condition.
+    const triggered = result.triggered.filter(entry => (entry.effect === 'applied') !== entry.defaultOn)
+    return res.json({ prompt: preview.text, triggered, highlights: highlightsFor(triggered) })
   } catch (err) {
     return res.status(err.status || 400).json({ error: err.message || String(err) })
   }

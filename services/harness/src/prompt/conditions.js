@@ -10,7 +10,7 @@ const matchesFor = (text, patterns = []) => patterns.flatMap(pattern => {
     .map(match => ({ start: match.index, end: match.index + match[0].length }))
 })
 
-const condition = ({ id, label, description, target, eligible, patterns }) => ({
+const condition = ({ id, label, description, target, defaultOn, eligible, patterns }) => ({
   id,
   evaluate: (text, context) => {
     if (!eligible(context) || !prompts.text(id, context.provider, context)) return null
@@ -19,12 +19,12 @@ const condition = ({ id, label, description, target, eligible, patterns }) => ({
     const exclusions = NEGATIVE_TRIGGERS.filter(trigger => trigger.id === id && inScope(trigger, context))
     if (hasNegativeTrigger(text, id, context)) {
       return {
-        id, label, target, effect: 'excluded',
+        id, label, target, defaultOn, effect: 'excluded',
         description: exclusions.map(trigger => trigger.description).join(' '),
         matches: exclusions.flatMap(trigger => matchesFor(text, trigger.patterns)),
       }
     }
-    return { id, label, description, target, effect: 'applied', matches }
+    return { id, label, description, target, defaultOn, effect: 'applied', matches }
   },
 })
 
@@ -32,13 +32,13 @@ const condition = ({ id, label, description, target, eligible, patterns }) => ({
 // A condition returns null when it leaves the prompt alone.
 const conditions = [
   ...TEMPLATES.filter(entry => entry.firstMessage).map(entry => condition({
-    id: entry.id, label: entry.name, description: entry.description, target: 'first',
+    id: entry.id, label: entry.name, description: entry.description, target: 'first', defaultOn: true,
     eligible: context => context.first === true && (entry.id !== 'terse' || context.terse),
   })),
   ...TRIGGERS.map(trigger => {
     const target = ['devIdPaths', 'sessionIdPaths'].includes(trigger.id) ? 'rewrite' : 'action'
     return condition({
-      ...trigger, target,
+      ...trigger, target, defaultOn: false,
       eligible: context => inScope(trigger, context)
         && (target !== 'action' || !context.textOnly)
         && (trigger.id !== 'devIds' || Boolean(config.devIdMcpUrl && context.workspaceId)),
