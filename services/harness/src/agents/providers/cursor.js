@@ -260,14 +260,14 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
     return agent
   }
 
-  const send = async (prompt, { mode, logicalMode = mode || selectedLogicalMode, onEvent, terse = false, instructions, promptProvenance, images = [] } = {}) => {
+  const send = async (prompt, { mode, logicalMode = mode || selectedLogicalMode, onEvent, instructions, promptProvenance, images = [] } = {}) => {
     if (!agent) throw new Error('cursor driver: agent not created')
     const emit = typeof onEvent === 'function' ? onEvent : () => {}
     // The caller holds the session lock. Any persisted active run belongs to a
     // dead prior daemon; force expires it without discarding its checkpoint.
     const options = { ...(mode ? { mode: sdkMode(mode) } : {}), ...(selectedModel ? { model: { id: selectedModel } } : {}),
       ...(resumed ? { local: { force: true } } : {}) }
-    const composed = composePromptWithProvenance(prompt, { mode, logicalMode, model: selectedModel, terse, instructions, provider: 'cursor', promptProvenance })
+    const composed = composePromptWithProvenance(prompt, { mode, logicalMode, model: selectedModel, instructions, provider: 'cursor', promptProvenance })
     const text = composed.text
     let streamError = null
     const notify = (event) => {

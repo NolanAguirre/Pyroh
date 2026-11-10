@@ -462,7 +462,7 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     }
   }
 
-  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, outputSchema, terse = false, instructions, promptProvenance, images = [] } = {}) => {
+  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, outputSchema, instructions, promptProvenance, images = [] } = {}) => {
     if (!sessionId) throw new Error('Claude session not created')
     if (active && !active.done) throw new Error('Claude turn already running')
     const { query } = await loadSdk()
@@ -496,7 +496,7 @@ const createDriver = ({ tools = {}, claude = {}, permissions = [], onPermissions
     input = createInput()
     // Claude Code has no ask mode. Ask uses the default permission mode, blocks
     // edit tools, and denies every approval request, plus an instruction.
-    const composed = composePromptWithProvenance(prompt, { mode, logicalMode, model: settings.model, terse, instructions, provider: 'claude', promptProvenance })
+    const composed = composePromptWithProvenance(prompt, { mode, logicalMode, model: settings.model, instructions, provider: 'claude', promptProvenance })
     const content = images.length ? [
       { type: 'text', text: composed.text },
       ...images.map(({ data, mimeType }) => ({ type: 'image', source: { type: 'base64', data, media_type: mimeType } })),

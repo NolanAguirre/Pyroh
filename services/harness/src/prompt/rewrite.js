@@ -4,6 +4,20 @@ const { TRIGGERS, inScope } = require('./triggers')
 const prompts = require('../prompts')
 const paths = require('../store/paths')
 const provenance = require('./provenance')
+const { TEMPLATES } = require('../prompts/templates')
+
+const firstMessageTemplates = TEMPLATES.filter(entry => entry.firstMessage)
+const prependFirstMessage = (prompt, context) => {
+  if (context.first !== true) return prompt
+  const parts = firstMessageTemplates
+    .filter(entry => entry.id !== 'terse' || context.terse)
+    .map(entry => provenance.section('system', entry.name, prompts.text(entry.id, context.provider, context)))
+    .filter(part => part.text)
+  if (context.firstMessageInstructions) {
+    parts.push(provenance.section('system', 'Delegation instructions', context.firstMessageInstructions))
+  }
+  return provenance.prepend(parts, prompt)
+}
 
 // --null puts a NUL after the path so paths containing ':' still parse.
 const findLocations = (needle, cwd) => new Promise((resolve) => {
@@ -62,7 +76,7 @@ const rewritePrompt = async (text, context = {}) => {
   for (const { trigger: { patterns }, rewrite } of applicableRules(context)) {
     out = await replaceAsync(out, patterns[0], rewrite, context)
   }
-  return out
+  return prependFirstMessage(provenance.supplied(out), context).text
 }
 
 // Use the same full-string matches and replacements as rewritePrompt. Section
@@ -93,7 +107,7 @@ const rewritePromptWithProvenance = async (prompt, context = {}) => {
   if (out.sections.some(part => part.kind === 'rewritten')) {
     out.rewrittenText = out.sections.filter(part => ['user', 'rewritten'].includes(part.kind)).map(part => part.text).join('')
   }
-  return out
+  return prependFirstMessage(out, context)
 }
 
 module.exports = { rewritePrompt, rewritePromptWithProvenance, rules }

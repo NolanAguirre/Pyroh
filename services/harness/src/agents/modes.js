@@ -13,14 +13,12 @@ const tersePrompt = (provider, context = {}) => prompts.text('terse', provider, 
 
 const withAskPrompt = (prompt, provider, context = {}) => `${askPrompt(provider, context)}\n\n${prompt}`
 
-// `terse` is the first prompt of a session. Ask and plugin instructions are
-// added on every turn.
-const composePromptWithProvenance = (prompt, { mode = 'agent', logicalMode = mode, model, terse = false, instructions, provider, promptProvenance } = {}) => {
+// First-message instructions are handled by prompt/rewrite. Mode and plugin
+// instructions are added on every turn.
+const composePromptWithProvenance = (prompt, { mode = 'agent', logicalMode = mode, model, instructions, provider, promptProvenance } = {}) => {
   const text = prompt == null ? '' : String(prompt)
   const parts = []
   const context = { model, mode: logicalMode, messageType: promptProvenance?.messageType ?? 'user' }
-  const terseText = tersePrompt(provider, context)
-  if (terse && !text.startsWith(terseText)) parts.push(provenance.section('system', 'Terse instructions', terseText))
   const promptIds = provider ? providerMode(provider, mode).prompts : mode === 'ask' ? ['ask'] : []
   const basePromptIds = mode === 'agent' || mode === 'plan' ? [mode] : []
   for (const id of [...new Set([...basePromptIds, ...promptIds])]) {

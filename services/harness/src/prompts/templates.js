@@ -1,5 +1,6 @@
 // Every built-in prompt the harness sends. Placeholders are {{name}} and must
 // be listed in `vars`; anything else fails at load.
+const { FIRST_MESSAGE_TEMPLATES } = require('./firstMessage')
 
 const transcriptVars = [
   { name: 'sessionId', description: 'Id of the source session being analyzed.' },
@@ -13,8 +14,8 @@ const TEMPLATES = [
     activation: { kind: 'First message', condition: 'First prompt of a new agent conversation where delegation is available.' },
     name: 'Subagent: parent guidance',
     group: 'subagents',
-    description: 'Instructions for managed sessions below the global subagent depth limit.',
-    usedBy: ['harness/delegation.js guidance'],
+    description: 'First-message rewrite for managed sessions below the global subagent depth limit. Reapplied when leaving Leader mode.',
+    usedBy: ['prompt/rewrite.js', 'harness/delegation.js guidance'],
     vars: [],
     template: "Use only harness_agents spawn/status/wait/stop for delegation.\nUse grok-4.7 for fact-finding only; use inherit for judgment and implementation. Inherit preserves the parent provider, model, and settings.\nOnly use subagents for two or more substantial, independent tasks that can run in parallel. Otherwise, do the work yourself. Use at most two children at once. Children must not delegate. Do not split small tasks to justify delegation.\nGive each child a clear task, context, scope, expected output, and stopping point. Share the existing directory; assign separate files for edits. Do not create worktrees.\nRequest exact-symbol searches and brief findings with paths, evidence, and gaps. Use results directly. Do not duplicate child work or start dependent work before results arrive. Stop a child before taking over.\nUse a stable retryKey per task. Set dontReturn: true only if you need neither results nor completion notice; it disables automatic delivery and resumption.\nContinue independent work while children run. Never poll, sleep, or wait for completion. When only child work remains, report completed and pending work, then end your turn. Children keep running; results resume you automatically unless dontReturn is true. Continue then.",
   },
@@ -39,21 +40,23 @@ Continue useful coordination while children run. Never poll, sleep, or wait for 
     activation: { kind: 'First message', condition: 'First prompt of a new agent conversation where delegation is unavailable.' },
     name: 'Subagent: child guidance',
     group: 'subagents',
-    description: 'Instructions for managed sessions where delegation is unavailable.',
-    usedBy: ['harness/delegation.js guidance'],
+    description: 'First-message rewrite for managed sessions where delegation is unavailable. Reapplied when delegation mode changes.',
+    usedBy: ['prompt/rewrite.js', 'harness/delegation.js guidance'],
     vars: [],
     template: "Delegation is unavailable. Complete the assigned task yourself; do not spawn agents or create worktrees.\nStay within scope. Search exact symbols first; read only relevant sections. Return concise findings with paths, evidence, and gaps, then stop.",
   },
   {
     id: 'terse',
+    firstMessage: true,
     activation: { kind: 'First message + flag', condition: 'First prompt of a session whose mode enables terse.' },
     name: 'Terse',
-    group: 'flags',
+    group: 'rewrites',
     description: 'Prepended to the first prompt of a session when terse is on.',
-    usedBy: ['agents/modes.js composePrompt'],
+    usedBy: ['prompt/rewrite.js'],
     vars: [],
     template: 'Respond tersely and use simple language when responding to the user.',
   },
+  ...FIRST_MESSAGE_TEMPLATES,
   {
     id: 'agent',
     activation: { kind: 'Mode condition', condition: 'Every turn using the agent base mode.' },

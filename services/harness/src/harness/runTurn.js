@@ -247,19 +247,21 @@ const runOneTurn = async ({
       sessionStore.updateSession(session.id, { context: null }, writeDir)
     }
 
+    const firstMessageInstructions = managed && first && logicalMode !== 'leader'
+      ? delegation.guidance(session.provider, child, {
+        session: delegationSession, canDelegate: canDelegate && !textOnly, ...promptContext(),
+      }) : undefined
     const managedInstructions = managed
       ? [
         instructions,
         leavingLeader && 'Leader mode is off. The following delegation guidance replaces the earlier Leader instructions.',
-        (first || logicalMode === 'leader' || leavingLeader) && delegation.guidance(session.provider, child, {
+        (logicalMode === 'leader' || leavingLeader) && delegation.guidance(session.provider, child, {
           session: delegationSession, canDelegate: canDelegate && !textOnly, ...promptContext(),
         }),
         canManageChildren && !canDelegate && !textOnly && 'Existing children may still finish. Use harness_agents status/wait/stop to manage them; spawning is unavailable. If their results are needed, end this turn with a brief pending-work update. Their results will resume you automatically unless spawned with dontReturn: true. Do not poll or wait in a loop.',
       ].filter(Boolean).join('\n\n')
       : instructions
     const sendOptions = { mode, logicalMode, onEvent: handleEvent, outputSchema, instructions: managedInstructions }
-    const firstSendOptions = { ...sendOptions }
-    if (terse) firstSendOptions.terse = true
     // Codex and Grok drop their transport when a cancel overruns its grace
     // period, so a follow-up send may need a fresh driver on the same agent.
     const sendFollowUp = async (text, options) => {
@@ -281,7 +283,7 @@ const runOneTurn = async ({
     }
 
     let assembled = await rewritePromptWithProvenance(provenance.supplied(prompt, { ...promptProvenance, messageType }),
-      { cwd: settings.cwd, first, provider: session.provider, ...promptContext() })
+      { cwd: settings.cwd, first, terse, firstMessageInstructions, provider: session.provider, ...promptContext() })
     if (runId) assembled.userItemId = `user:${runId}`
     if (assembled.text !== prompt) onPromptRewrite?.(assembled.text, assembled)
     assembled = await prependNotesWithProvenance(fired, { ...session, ...promptContext() }, assembled)
@@ -305,7 +307,7 @@ const runOneTurn = async ({
       requestMetricsOpen = true
       publishRequestMetrics()
       const collector = requestMetrics
-      const options = { ...(firstSend ? firstSendOptions : sendOptions), evidenceSegmentId: collector.segmentId,
+      const options = { ...sendOptions, evidenceSegmentId: collector.segmentId,
         images: segmentImages,
         promptProvenance: sendPrompt,
         onEvent: event => handleEvent(event, collector) }

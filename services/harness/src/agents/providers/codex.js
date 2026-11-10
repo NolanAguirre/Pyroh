@@ -430,7 +430,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
     }
   }
 
-  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, outputSchema, terse = false, instructions, promptProvenance, images = [], evidenceSegmentId = crypto.randomUUID() } = {}) => {
+  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, outputSchema, instructions, promptProvenance, images = [], evidenceSegmentId = crypto.randomUUID() } = {}) => {
     if (!threadId) throw new Error('Codex thread not created')
     if (active && !active.done) throw new Error('Codex turn already running')
     const wait = new Promise((resolve) => {
@@ -447,7 +447,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
     const policy = providerMode('codex', mode)
     const sandbox = tools.restrictedChild ? 'read-only' : policy.sandbox || options.sandbox
     // Ask keeps shell reads available and injects the provider's no-change prompt.
-    const composed = composePromptWithProvenance(prompt, { mode, logicalMode, model: selectedModel, terse, instructions, provider: 'codex', promptProvenance })
+    const composed = composePromptWithProvenance(prompt, { mode, logicalMode, model: selectedModel, instructions, provider: 'codex', promptProvenance })
     const text = composed.text
     for (const message of diagnostics) emit({ type: 'status', status: `Codex diagnostic: ${message}` })
     try {

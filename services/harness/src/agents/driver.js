@@ -29,7 +29,7 @@
 //     inherited provider totals are context/baseline, not new billable usage.
 //   resolvedSettings?() -> { model?, reasoningEffort? }
 //     Capture provider-selected defaults so forks keep the source's actual model.
-//   send(prompt, { mode, logicalMode?, onEvent, outputSchema?, terse?, images? }) -> Promise<{ cancel, wait }>
+//   send(prompt, { mode, logicalMode?, onEvent, outputSchema?, images? }) -> Promise<{ cancel, wait }>
 //     Kick off a run. `onEvent(event)` receives normalized events as they stream.
 //     `cancel()` cancels the in-flight run. `wait()` resolves the terminal result:
 //       { status, result, usage, durationMs, error }
@@ -37,8 +37,7 @@
 //     native mode or emulates it through the provider mode registry. Ask
 //     restrictions depend on the provider; Codex permits shell reads by prompt.
 //     `logicalMode` retains the requested plugin/special mode for prompt lookup.
-//     `terse` prefixes modes.tersePrompt(). The caller sets it on the first prompt
-//     of an execute, ask, plan, or token-waste session.
+//     The harness applies first-message rewrites before calling the driver.
 //     `images` contains validated, resolved { id, sessionId, name, mimeType, size,
 //     path, data } entries: path is absolute and data is base64. Attachments are
 //     sent separately from composed text. provider_prompt events include only
