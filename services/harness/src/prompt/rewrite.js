@@ -5,13 +5,13 @@ const { evaluateConditions, highlightsFor } = require('./conditions')
 const prompts = require('../prompts')
 const paths = require('../store/paths')
 const provenance = require('./provenance')
+const overlays = require('../prompts/overlays')
 const prependFirstMessage = (prompt, context, triggered) => {
-  if (context.first !== true) return prompt
   const parts = triggered
-    .filter(entry => entry.target === 'first' && entry.effect === 'applied')
+    .filter(entry => (entry.target === 'prepend' || (entry.target === 'first' && context.first === true)) && entry.effect === 'applied')
     .map(entry => provenance.section('system', entry.label, prompts.text(entry.id, context.provider, context)))
     .filter(part => part.text)
-  if (context.firstMessageInstructions) {
+  if (context.first === true && context.firstMessageInstructions) {
     parts.push(provenance.section('system', 'Delegation instructions', context.firstMessageInstructions))
   }
   return provenance.prepend(parts, prompt)
@@ -32,14 +32,14 @@ const findLocations = (needle, cwd) => new Promise((resolve) => {
   )
 })
 
-const devIdPaths = async ([match, id], { cwd, provider, model, mode, messageType }) => {
-  const locations = await findLocations(id, cwd)
-  return locations.length ? prompts.render('devIdPaths', { match, files: locations.join(' ') }, provider, { model, mode, messageType }) : match
+const devIdPaths = async ([match, id], context) => {
+  const locations = await findLocations(id, context.cwd)
+  return locations.length ? prompts.render('devIdPaths', { match, files: locations.join(' ') }, context.provider, context) : match
 }
 
-const sessionIdPaths = ([match], { provider, model, mode, messageType }) => {
+const sessionIdPaths = ([match], context) => {
   const location = paths.locateSession(match)
-  return location ? prompts.render('sessionIdPaths', { match, path: path.resolve(location.dir) }, provider, { model, mode, messageType }) : match
+  return location ? prompts.render('sessionIdPaths', { match, path: path.resolve(location.dir) }, context.provider, context) : match
 }
 
 const trigger = (id) => TRIGGERS.find((item) => item.id === id)
@@ -65,9 +65,15 @@ const rewritePrompt = async (text, context = {}) => {
 const evaluatePrompt = async (prompt, context = {}) => {
   let out = prompt
   context = { messageType: prompt.messageType, ...context }
-  let triggered = evaluateConditions(prompt.text, context)
+  const overlay = overlays.resolve(context)
+  let triggered = evaluateConditions(out.text, context)
   for (const { trigger: { id, patterns }, rewrite } of applicableRules(triggered)) {
-    const matches = [...out.text.matchAll(patterns[0])]
+    const selectedPatterns = overlay.triggers.get(id)?.patterns ?? patterns
+    const candidates = selectedPatterns.flatMap(pattern => [...out.text.matchAll(new RegExp(pattern.source,
+      pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`))]).filter(match => match[0])
+      .sort((a, b) => a.index - b.index || b[0].length - a[0].length)
+    const matches = []
+    for (const match of candidates) if (!matches.length || match.index >= matches.at(-1).index + matches.at(-1)[0].length) matches.push(match)
     const replacements = await Promise.all(matches.map(match => rewrite(match, context)))
     if (!matches.some((match, index) => replacements[index] !== match[0])) {
       triggered = triggered.filter(entry => entry.id !== id)
@@ -93,6 +99,11 @@ const evaluatePrompt = async (prompt, context = {}) => {
     })
     parts.push(...provenance.slice(out, last, out.text.length))
     out = provenance.assemble(parts, out)
+  }
+  for (const rewrite of overlay.rewrites) {
+    const value = await rewrite(out, overlay.context)
+    require('../sdk').validatePromptDocument(value)
+    out = provenance.supplied(value.text, { ...out, ...value })
   }
   if (out.sections.some(part => part.kind === 'rewritten')) {
     out.rewrittenText = out.sections.filter(part => ['user', 'rewritten'].includes(part.kind)).map(part => part.text).join('')

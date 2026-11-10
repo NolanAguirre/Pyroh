@@ -15,10 +15,10 @@ const withAskPrompt = (prompt, provider, context = {}) => `${askPrompt(provider,
 
 // First-message instructions are handled by prompt/rewrite. Mode and plugin
 // instructions are added on every turn.
-const composePromptWithProvenance = (prompt, { mode = 'agent', logicalMode = mode, model, instructions, provider, promptProvenance } = {}) => {
+const composePromptWithProvenance = (prompt, { mode = 'agent', logicalMode = mode, model, instructions, provider, promptProvenance, promptContext = {} } = {}) => {
   const text = prompt == null ? '' : String(prompt)
   const parts = []
-  const context = { model, mode: logicalMode, messageType: promptProvenance?.messageType ?? 'user' }
+  const context = { ...promptContext, model, mode: logicalMode, messageType: promptProvenance?.messageType ?? 'user' }
   const promptIds = provider ? providerMode(provider, mode).prompts : mode === 'ask' ? ['ask'] : []
   const basePromptIds = mode === 'agent' || mode === 'plan' ? [mode] : []
   for (const id of [...new Set([...basePromptIds, ...promptIds])]) {

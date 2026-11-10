@@ -147,9 +147,43 @@ export interface PolicyContext {
   provider?: string
   decision: Decision
 }
+export interface PromptContext {
+  workspace?: Workspace | null
+  workspaceId?: string | null
+  cwd?: string
+  provider?: string
+  model?: string | null
+  mode?: string | null
+  messageType?: 'user' | 'agent'
+  first?: boolean
+  [key: string]: unknown
+}
+export interface PromptTemplate {
+  template?: string
+  name?: string
+  firstMessage?: boolean
+  messageTypes?: ('user' | 'agent')[]
+}
+export interface PromptTrigger {
+  patterns?: RegExp[]
+  excludePatterns?: RegExp[]
+  scope?: 'first' | 'message'
+}
+export interface PromptOverlay {
+  // An include list replaces the inherited selection. Exclude wins within a layer.
+  include?: string[]
+  exclude?: string[]
+  templates?: Record<string, string | PromptTemplate>
+  triggers?: Record<string, PromptTrigger>
+  // Pure transform after built-in text rewrites, before instructions are prepended.
+  // Called for both draft previews and sends; preserve the document's provenance.
+  rewritePrompt?: (prompt: PromptDocument, context: PromptContext) => MaybePromise<PromptDocument>
+}
 export interface PluginDefinition {
   manifest?: PluginManifest
-  getModes(api: HarnessApi): PluginMode[]
+  getModes?: (api: HarnessApi) => PluginMode[]
+  prompts?: PromptOverlay
+  getPrompts?: (context: PromptContext) => PromptOverlay | null | undefined
   policy?: (ctx: PolicyContext) => { effect: Effect; reason?: string } | null | void
 }
 export interface SessionTarget { provider: string; model: string | null; mode: string }

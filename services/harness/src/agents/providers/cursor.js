@@ -154,6 +154,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
   let sdk = null
   let selectedModel = null
   let selectedLogicalMode = 'agent'
+  let selectedCwd = null
   let resumed = false
 
   const ensureSdk = () => {
@@ -166,7 +167,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
     if (typeof tools.askUser !== 'function') return undefined
     return {
       ask_user: {
-        description: prompts.text('askUserCursor', 'cursor', { model: selectedModel, mode: selectedLogicalMode }),
+        description: prompts.text('askUserCursor', 'cursor', { cwd: selectedCwd, model: selectedModel, mode: selectedLogicalMode }),
         parameters: {
           type: 'object',
           properties: {
@@ -216,18 +217,19 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
   // generalPurpose, etc.): the built-in wins and ignores our model.
   const subagents = () => ({
     generalPurpose: {
-      description: prompts.text('subagentGeneralPurposeDescription', 'cursor', { model: selectedModel, mode: selectedLogicalMode }),
-      prompt: prompts.text('subagentGeneralPurpose', 'cursor', { model: selectedModel, mode: selectedLogicalMode }),
+      description: prompts.text('subagentGeneralPurposeDescription', 'cursor', { cwd: selectedCwd, model: selectedModel, mode: selectedLogicalMode }),
+      prompt: prompts.text('subagentGeneralPurpose', 'cursor', { cwd: selectedCwd, model: selectedModel, mode: selectedLogicalMode }),
       model: { id: selectedModel },
     },
     harnessExplore: {
-      description: prompts.text('subagentExploreDescription', 'cursor', { model: selectedModel, mode: selectedLogicalMode }),
-      prompt: prompts.text('subagentExplore', 'cursor', { model: 'grok-4.7', mode: selectedLogicalMode }),
+      description: prompts.text('subagentExploreDescription', 'cursor', { cwd: selectedCwd, model: selectedModel, mode: selectedLogicalMode }),
+      prompt: prompts.text('subagentExplore', 'cursor', { cwd: selectedCwd, model: 'grok-4.7', mode: selectedLogicalMode }),
       model: { id: 'grok-4.7' },
     },
   })
 
   const create = async ({ model, cwd, mode, logicalMode = mode || 'agent', tools, name } = {}) => {
+    selectedCwd = cwd || process.cwd()
     selectedModel = resolveModel(model)
     selectedLogicalMode = logicalMode
     const { Agent } = ensureSdk()
@@ -248,6 +250,7 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
   }
 
   const resume = async (providerAgentId, { model, cwd, mode, logicalMode = mode || 'agent', tools } = {}) => {
+    selectedCwd = cwd || process.cwd()
     resumed = true
     selectedModel = resolveModel(model)
     selectedLogicalMode = logicalMode
@@ -260,14 +263,14 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
     return agent
   }
 
-  const send = async (prompt, { mode, logicalMode = mode || selectedLogicalMode, onEvent, instructions, promptProvenance, images = [] } = {}) => {
+  const send = async (prompt, { mode, logicalMode = mode || selectedLogicalMode, onEvent, instructions, promptProvenance, promptContext = { cwd: selectedCwd }, images = [] } = {}) => {
     if (!agent) throw new Error('cursor driver: agent not created')
     const emit = typeof onEvent === 'function' ? onEvent : () => {}
     // The caller holds the session lock. Any persisted active run belongs to a
     // dead prior daemon; force expires it without discarding its checkpoint.
     const options = { ...(mode ? { mode: sdkMode(mode) } : {}), ...(selectedModel ? { model: { id: selectedModel } } : {}),
       ...(resumed ? { local: { force: true } } : {}) }
-    const composed = composePromptWithProvenance(prompt, { mode, logicalMode, model: selectedModel, instructions, provider: 'cursor', promptProvenance })
+    const composed = composePromptWithProvenance(prompt, { mode, logicalMode, model: selectedModel, instructions, provider: 'cursor', promptProvenance, promptContext })
     const text = composed.text
     let streamError = null
     const notify = (event) => {

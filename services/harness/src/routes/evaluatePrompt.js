@@ -56,7 +56,7 @@ const evaluatePromptRoute = async (req, res) => {
     const result = await evaluatePrompt(userPrompt(body.prompt), context)
     const fired = result.triggered.filter(entry => entry.target === 'action' && entry.effect === 'applied')
       .map(entry => actions[entry.id]).filter(Boolean)
-    const preview = await prependNotesWithProvenance(fired, { ...session, ...context }, result.prompt, { preview: true })
+    const preview = await prependNotesWithProvenance(fired, { ...session, ...context }, result.prompt, { preview: true, context })
     // Feedback shows changes from the default; prompt assembly still uses every applied condition.
     const triggered = result.triggered.filter(entry => (entry.effect === 'applied') !== entry.defaultOn)
     return res.json({ prompt: preview.text, triggered, highlights: highlightsFor(triggered) })

@@ -76,7 +76,7 @@ export const makeHarnessApi = (workspace: Workspace, source?: Session): HarnessA
     workspace,
     capabilities: { memory: Boolean(config.memoryMcpUrl) },
     prompts: {
-      terse: tersePrompt(), ask: askPrompt(),
+      terse: tersePrompt(undefined, { workspace }), ask: askPrompt(undefined, { workspace }),
       context: (session, mode) => sessionContext(session, mode),
       render: (id, vars, session, mode, metadata) =>
         prompts.renderWithProvenance(id, vars, session.provider, sessionContext(session, mode), metadata),

@@ -188,7 +188,7 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
     await applyMode(settings.mode)
   }
 
-  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, instructions, promptProvenance, images = [] } = {}) => {
+  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, instructions, promptProvenance, promptContext = {}, images = [] } = {}) => {
     if (!sessionId) throw new Error('Grok session not created')
     if (active && !active.done) throw new Error('Grok turn already running')
     client.assertImageSupport(images)
@@ -199,7 +199,7 @@ const createDriver = ({ tools = {}, grok = {}, bin = config.grokBin } = {}) => {
     })
     const turn = active
     emit({ type: 'status', status: 'running' })
-    const composed = composePromptWithProvenance(prompt, { mode, logicalMode, model: selectedModel, instructions, provider: 'grok', promptProvenance })
+    const composed = composePromptWithProvenance(prompt, { mode, logicalMode, model: selectedModel, instructions, provider: 'grok', promptProvenance, promptContext })
     emit(capture(composed, { provider: 'grok', providerAgentId: sessionId, images: imageMetadata(images) }))
     client.prompt(sessionId, composed.text, onUpdate, { images }).then((response) => {
       if (turn !== active) return

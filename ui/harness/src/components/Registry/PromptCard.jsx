@@ -46,6 +46,7 @@ const Template = ({ template, query = '' }) => (
 )
 
 const versionStatus = (version) => {
+  if (version.pluginOverride) return 'Plugin overlay'
   if (version.edited) return 'Saved edit'
   if (version.model) return 'Inherited text and targets'
   if (version.provider == null) return 'Built-in default'
@@ -91,7 +92,7 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange,
   }
 
   const save = (template, targets) => {
-    if (saving || disabled) return
+    if (saving || disabled || selected.pluginOverride) return
     onBusyChange(prompt.id, true)
     setSaving(true)
     setError(null)
@@ -116,6 +117,7 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange,
       <Card>
         <CardHeader>
           <strong>{prompt.name}</strong> <code className="registry__id">{prompt.id}</code>
+          {prompt.enabled === false && <Badge size="small">Excluded by overlay</Badge>}
         </CardHeader>
         <CardSection>
           <p className="registry__flag-desc">{prompt.description}</p>
@@ -130,19 +132,19 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange,
           </div>
           <div className="registry__prompt-activation">
             <div className="registry__chips">
-              <strong>Shared activation</strong>
+              <strong>Activation</strong>
               <Badge size="small" variant="info">{activation?.kind || 'Condition'}</Badge>
               {activation?.scope && <Badge size="small">{activation.scope === 'first' ? 'First message only' : 'Every message'}</Badge>}
               {!activation?.patterns && <span className="hint">No text trigger</span>}
             </div>
             <p>{activation?.condition || prompt.description}</p>
             {activation?.patterns && <div className="registry__prompt-patterns">
-              <span className="hint">Text patterns (shared by all versions)</span>
+              <span className="hint">Text patterns</span>
               {activation.patterns.map((pattern) => <code key={pattern}>{pattern}</code>)}
             </div>}
             {prompt.exclusions?.map((exclusion, index) => (
               <div key={index} className="registry__prompt-patterns">
-                <strong>Negative trigger (shared by all versions)</strong>
+                <strong>Negative trigger</strong>
                 <p>{exclusion.description}</p>
                 {exclusion.patterns.map(pattern => <code key={pattern}>{pattern}</code>)}
               </div>
@@ -155,7 +157,9 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange,
               <FoldContent>
                 {open && <>
                   <p className="hint">
-                    {model
+                    {selected.pluginOverride
+                      ? `This prompt is supplied by ${selected.pluginSource || 'a plugin'}. Edit the plugin to change it.`
+                      : model
                       ? `Saving replaces this prompt's text and targets for ${model}${mode ? ` in ${mode} mode` : ' in all modes'}, across every provider. Reset removes only this override and restores inherited text and targets${provider ? `, previewed for ${provider}` : ''}.`
                       : provider == null
                       ? 'Editing the shared default updates inherited text and targets, including built-in variants that adapt the shared text. Saved overrides keep their own values.'
@@ -166,7 +170,7 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange,
                           : `This version inherits the shared default. Saving text or targets creates a ${provider} override.`}
                     {provider && !applicableProviders.includes(provider) && ' This provider does not currently use this prompt.'}
                   </p>
-                  <p className="hint">Reset restores both text and targets for this scope.</p>
+                  {!selected.pluginOverride && <p className="hint">Reset restores both text and targets for this scope.</p>}
                   {prompt.vars?.length > 0 && <ul className="registry__list registry__vars">
                     {prompt.vars.map((item) => <li key={item.name}><code>{`{{${item.name}}}`}</code> {item.description}</li>)}
                   </ul>}
@@ -208,10 +212,10 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange,
                   {error && <p className="registry__error" role="alert">{error}</p>}
                   <div className="registry__prompt-actions">
                     {draft == null ? <>
-                      <Button devId="r3e7p5d" variant="secondary" size="sm" disabled={saving || disabled} onClick={edit}>
+                      <Button devId="r3e7p5d" variant="secondary" size="sm" disabled={saving || disabled || selected.pluginOverride} onClick={edit}>
                         {model ? 'Edit model replacement' : provider ? `Edit ${provider} version` : 'Edit shared default'}
                       </Button>
-                      {selected.edited && <Button devId="r9z2k6u" variant="secondary" size="sm" onClick={() => save(null)} disabled={saving || disabled}>
+                      {selected.edited && !selected.pluginOverride && <Button devId="r9z2k6u" variant="secondary" size="sm" onClick={() => save(null)} disabled={saving || disabled}>
                         {saving ? 'Resetting…' : model ? 'Reset to inherited text and targets' : provider ? selected.builtIn ? 'Reset to built-in variant' : 'Reset to shared default' : 'Reset to built-in default'}
                       </Button>}
                     </> : <>

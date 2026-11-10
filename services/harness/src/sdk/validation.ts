@@ -1,4 +1,4 @@
-import type { CoreMode, PhasePipeline, PluginDefinition, PluginManifest, PluginMode, PromptDocument, PromptProvenance, RunOptions, SavedModeDescriptor } from './types'
+import type { CoreMode, PhasePipeline, PluginDefinition, PluginManifest, PluginMode, PromptDocument, PromptOverlay, PromptProvenance, RunOptions, SavedModeDescriptor } from './types'
 
 export const SDK_VERSION = 1 as const
 export const CORE_MODES: readonly CoreMode[] = ['agent', 'ask', 'plan']
@@ -123,10 +123,43 @@ export const validateMode = (value: unknown): PluginMode => {
 export const validatePlugin = (value: unknown): PluginDefinition => {
   const input = record(value, 'plugin')
   if (input.manifest !== undefined) validateManifest(input.manifest)
-  // Manifestless policy-only plugins predate the SDK.
-  if (typeof input.getModes !== 'function' && (input.getModes !== undefined || input.manifest !== undefined)) throw validationError('plugin.getModes must be a function')
+  if (input.getModes !== undefined && typeof input.getModes !== 'function') throw validationError('plugin.getModes must be a function')
+  if (input.getPrompts !== undefined && typeof input.getPrompts !== 'function') throw validationError('plugin.getPrompts must be a function')
+  if (input.prompts !== undefined) validatePromptOverlay(input.prompts)
   if (input.policy !== undefined && typeof input.policy !== 'function') throw validationError('plugin.policy must be a function')
   return value as PluginDefinition
+}
+export const validatePromptOverlay = (value: unknown): PromptOverlay => {
+  const input = record(value, 'prompt overlay')
+  if (typeof input.then === 'function') throw validationError('getPrompts must return an overlay synchronously')
+  const allowed = ['include', 'exclude', 'templates', 'triggers', 'rewritePrompt']
+  for (const key of Object.keys(input)) if (!allowed.includes(key)) throw validationError(`unknown prompt overlay field: ${key}`)
+  for (const key of ['include', 'exclude']) {
+    if (input[key] !== undefined && (!Array.isArray(input[key]) || input[key].some(item => typeof item !== 'string' || !item))) throw validationError(`prompts.${key} must be an array of prompt ids`)
+  }
+  if (input.rewritePrompt !== undefined && typeof input.rewritePrompt !== 'function') throw validationError('prompts.rewritePrompt must be a function')
+  if (input.templates !== undefined) {
+    for (const [key, value] of Object.entries(record(input.templates, 'prompts.templates'))) {
+      if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(key)) throw validationError(`invalid prompt id: ${key}`)
+      if (typeof value === 'string') continue
+      const template = record(value, `prompts.templates.${key}`)
+      for (const field of Object.keys(template)) if (!['template', 'name', 'firstMessage', 'messageTypes'].includes(field)) throw validationError(`unknown prompt template field: ${field}`)
+      for (const field of ['template', 'name']) if (template[field] !== undefined) string(template[field], `${key}.${field}`)
+      if (template.firstMessage !== undefined && typeof template.firstMessage !== 'boolean') throw validationError(`${key}.firstMessage must be a boolean`)
+      if (template.messageTypes !== undefined && (!Array.isArray(template.messageTypes) || template.messageTypes.some(type => type !== 'user' && type !== 'agent'))) throw validationError(`${key}.messageTypes must contain only user or agent`)
+    }
+  }
+  if (input.triggers !== undefined) {
+    for (const [key, value] of Object.entries(record(input.triggers, 'prompts.triggers'))) {
+      const trigger = record(value, `prompts.triggers.${key}`)
+      for (const field of Object.keys(trigger)) if (!['patterns', 'excludePatterns', 'scope'].includes(field)) throw validationError(`unknown prompt trigger field: ${field}`)
+      if (trigger.scope !== undefined && trigger.scope !== 'first' && trigger.scope !== 'message') throw validationError(`${key}.scope must be first or message`)
+      for (const field of ['patterns', 'excludePatterns']) {
+        if (trigger[field] !== undefined && (!Array.isArray(trigger[field]) || trigger[field].some(pattern => !(pattern instanceof RegExp)))) throw validationError(`${key}.${field} must be an array of regular expressions`)
+      }
+    }
+  }
+  return value as PromptOverlay
 }
 export const definePlugin = <T extends PluginDefinition>(plugin: T): T => {
   validatePlugin(plugin)

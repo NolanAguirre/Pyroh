@@ -5,6 +5,7 @@ const { TEMPLATES } = require('./templates')
 const { listProviders } = require('../agents/driver')
 const { PROVIDER_VERSIONS } = require('./providers')
 const { TRIGGERS, NEGATIVE_TRIGGERS } = require('../prompt/triggers')
+const overlays = require('./overlays')
 
 const PLACEHOLDER = /\{\{(\w+)\}\}/g
 const placeholders = (template) => [...new Set([...template.matchAll(PLACEHOLDER)].map((match) => match[1]))]
@@ -124,12 +125,21 @@ const defaultMessageTypes = (id, provider, { model, mode } = {}) => {
   return types
 }
 const messageTypes = (id, provider, context = {}) =>
-  selectedEdit(id, provider, context)?.messageTypes ?? defaultMessageTypes(id, provider, context)
+  overlays.resolve(context, provider).edits.get(id)?.messageTypes
+    ?? (byId.has(id) ? selectedEdit(id, provider, context)?.messageTypes ?? defaultMessageTypes(id, provider, context) : ['user', 'agent'])
 const appliesTo = (id, provider, context = {}) =>
-  messageTypes(id, provider, context).includes(context.messageType ?? 'user')
-const resolvedText = (id, provider, context = {}) =>
-  editText(selectedEdit(id, provider, context)) ?? defaultText(id, provider, context)
-const text = (id, provider, context = {}) => appliesTo(id, provider, context) ? resolvedText(id, provider, context) : ''
+  overlays.resolve(context, provider).enabled(id) && messageTypes(id, provider, context).includes(context.messageType ?? 'user')
+const resolvedText = (id, provider, context = {}) => {
+  const overlay = overlays.resolve(context, provider)
+  const entry = overlay.entries.get(id)
+  if (!entry) throw new Error(`prompts: unknown prompt ${id}`)
+  return overlay.edits.get(id)?.template ?? (byId.has(id)
+    ? editText(selectedEdit(id, provider, context)) ?? defaultText(id, provider, context) : entry.template)
+}
+const text = (id, provider, context = {}) => {
+  if (!overlays.resolve(context, provider).entries.has(id)) throw new Error(`prompts: unknown prompt ${id}`)
+  return appliesTo(id, provider, context) ? resolvedText(id, provider, context) : ''
+}
 const render = (id, vars = {}, provider, context = {}) =>
   text(id, provider, context).replace(PLACEHOLDER, (_, key) => (vars[key] == null ? '' : String(vars[key])))
 const renderWithProvenance = (id, vars = {}, provider, context = {}, metadata = {}) => {
@@ -155,8 +165,11 @@ const focusBlock = (focus, provider, context = {}) => (focus ? render('operatorF
 const directoryLines = (directories) => directories.map((dir) => `- ${JSON.stringify(dir)}`).join('\n')
 
 const describe = ({ id, name, group, description, usedBy, vars, activation, applicableProviders }, provider, context = {}) => {
+  const overlay = overlays.resolve(context, provider)
   const version = providerEntries(provider)?.get(id)
-  const trigger = TRIGGERS.find((item) => item.id === id)
+  const builtInTrigger = TRIGGERS.find((item) => item.id === id)
+  const customTrigger = overlay.triggers.get(id)
+  const trigger = builtInTrigger || customTrigger ? { ...builtInTrigger, ...customTrigger } : null
   const { model = null, mode = null } = context
   const edited = selectedEdit(id, provider, context) != null
   const inheritedModelEdit = model != null && mode != null && modelEdits(model)?.prompts?.[id] != null
@@ -165,15 +178,20 @@ const describe = ({ id, name, group, description, usedBy, vars, activation, appl
     applicableProviders: applicableProviders ?? [...providers.keys()],
     activation: trigger ? {
       ...activation, scope: trigger.scope,
-      patterns: trigger.patterns.map((pattern) => pattern.toString()),
+      patterns: (trigger.patterns || []).map((pattern) => pattern.toString()),
     } : activation,
-    exclusions: NEGATIVE_TRIGGERS.filter(trigger => trigger.id === id).map(trigger => ({
+    exclusions: customTrigger?.excludePatterns !== undefined ? [{
+      description: 'Plugin exclusion patterns', scope: customTrigger.scope,
+      patterns: customTrigger.excludePatterns.map(pattern => pattern.toString()),
+    }] : NEGATIVE_TRIGGERS.filter(trigger => trigger.id === id).map(trigger => ({
       description: trigger.description,
       scope: trigger.scope,
       patterns: (trigger.patterns ?? []).map(pattern => pattern.toString()),
     })),
-    template: resolvedText(id, provider, context), defaultTemplate: defaultText(id, provider, context),
-    messageTypes: messageTypes(id, provider, context), defaultMessageTypes: defaultMessageTypes(id, provider, context),
+    template: resolvedText(id, provider, context), defaultTemplate: byId.has(id) ? defaultText(id, provider, context) : overlay.entries.get(id).template,
+    messageTypes: messageTypes(id, provider, context), defaultMessageTypes: byId.has(id) ? defaultMessageTypes(id, provider, context) : ['user', 'agent'],
+    enabled: overlay.enabled(id), pluginSource: overlay.sources.get(id),
+    pluginOverride: !byId.has(id) || overlay.edits.get(id)?.template !== undefined || overlay.edits.get(id)?.messageTypes !== undefined,
     edited, builtIn: model == null && version != null,
     customized: model != null ? edited || inheritedModelEdit : provider != null && (version != null || edited),
   }
@@ -181,7 +199,7 @@ const describe = ({ id, name, group, description, usedBy, vars, activation, appl
 const list = (provider, context = {}) => {
   providerEntries(provider)
   validateScope(context)
-  return TEMPLATES.map((entry) => describe(entry, provider, context))
+  return [...overlays.resolve(context, provider).entries.values()].map((entry) => describe(entry, provider, context))
 }
 
 // Null resets only the selected scope. A model edit replaces inherited text;

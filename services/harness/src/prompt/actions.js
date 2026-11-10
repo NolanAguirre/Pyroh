@@ -30,7 +30,7 @@ const prefetchDevIds = async (session) => {
 }
 
 const instructionAction = id => {
-  const prepend = session => prompts.render(id, {}, session.provider, sessionContext(session))
+  const prepend = (session, context = sessionContext(session)) => prompts.render(id, {}, session.provider, context)
   return { prepend, preview: prepend }
 }
 
@@ -39,15 +39,15 @@ const actions = {
   makefileRules: instructionAction('makefileRules'),
   devIds: {
     // Preview describes the instructions without reserving ids on each keystroke.
-    preview: session => prompts.render('devIds', { ids: 'none' }, session.provider, sessionContext(session)),
+    preview: (session, context = sessionContext(session)) => prompts.render('devIds', { ids: 'none' }, session.provider, context),
     // mcpdevid records who each id was issued to from the URL path.
     mcpServers: (session) => {
       if (!config.devIdMcpUrl || !session.workspaceId) return []
       return [{ name: DEVID_SERVER_NAME, url: `${config.devIdMcpUrl}/mcp/${devIdRoute(session)}` }]
     },
-    prepend: async (session) => {
+    prepend: async (session, context = sessionContext(session)) => {
       if (!config.devIdMcpUrl || !session.workspaceId) return null
-      return prompts.render('devIds', { ids: await prefetchDevIds(session) }, session.provider, sessionContext(session))
+      return prompts.render('devIds', { ids: await prefetchDevIds(session) }, session.provider, context)
     },
   },
 }
@@ -65,8 +65,8 @@ const actionsForPrompt = (text, context = {}) => evaluateConditions(text, contex
 
 const triggerMcpServers = (fired, session) => fired.flatMap((action) => action.mcpServers?.(session) || [])
 
-const prependNotesWithProvenance = async (fired, session, prompt, { preview = false } = {}) => {
-  const notes = (await Promise.all(fired.map(action => preview ? action.preview?.(session) : action.prepend?.(session)))).filter(Boolean)
+const prependNotesWithProvenance = async (fired, session, prompt, { preview = false, context = sessionContext(session) } = {}) => {
+  const notes = (await Promise.all(fired.map(action => preview ? action.preview?.(session, context) : action.prepend?.(session, context)))).filter(Boolean)
   return provenance.prepend(notes.map(note => provenance.section('system', 'Harness trigger instructions', note)), prompt)
 }
 

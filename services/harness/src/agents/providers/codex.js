@@ -380,7 +380,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
         ...(tools.disableNativeSpawning ? { 'features.multi_agent': false } : {}),
         ...(harnessMcp.length ? { mcp_servers: Object.fromEntries(harnessMcp.map((server) => [server.name, { url: server.url }])) } : {}),
       },
-      dynamicTools: typeof tools.askUser === 'function' ? [askTool({ model, mode: settings.logicalMode || settings.mode || 'agent' })] : [],
+      dynamicTools: typeof tools.askUser === 'function' ? [askTool({ cwd: settings.cwd, model, mode: settings.logicalMode || settings.mode || 'agent' })] : [],
     }
     if (method === 'thread/fork') {
       // Fork inherits persisted dynamic tools; the fork RPC does not accept a
@@ -430,7 +430,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
     }
   }
 
-  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, outputSchema, instructions, promptProvenance, images = [], evidenceSegmentId = crypto.randomUUID() } = {}) => {
+  const send = async (prompt, { mode = 'agent', logicalMode = mode, onEvent, outputSchema, instructions, promptProvenance, promptContext = { cwd: threadOptions.cwd }, images = [], evidenceSegmentId = crypto.randomUUID() } = {}) => {
     if (!threadId) throw new Error('Codex thread not created')
     if (active && !active.done) throw new Error('Codex turn already running')
     const wait = new Promise((resolve) => {
@@ -447,7 +447,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
     const policy = providerMode('codex', mode)
     const sandbox = tools.restrictedChild ? 'read-only' : policy.sandbox || options.sandbox
     // Ask keeps shell reads available and injects the provider's no-change prompt.
-    const composed = composePromptWithProvenance(prompt, { mode, logicalMode, model: selectedModel, instructions, provider: 'codex', promptProvenance })
+    const composed = composePromptWithProvenance(prompt, { mode, logicalMode, model: selectedModel, instructions, provider: 'codex', promptProvenance, promptContext })
     const text = composed.text
     for (const message of diagnostics) emit({ type: 'status', status: `Codex diagnostic: ${message}` })
     try {

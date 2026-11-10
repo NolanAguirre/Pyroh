@@ -217,9 +217,9 @@ const promptQuery = (req) => {
 router.get('/prompts', async (req, res) => {
   try {
     const { provider, model, mode, workspaceId } = promptQuery(req)
-    const entries = prompts.list(provider, { model, mode })
     const workspace = workspaceId ? await Harness.getWorkspace(workspaceId) : null
     if (workspaceId && !workspace) return res.status(404).json({ error: 'workspace not found' })
+    const entries = prompts.list(provider, { model, mode, workspace })
     const modes = new Map(registry.resolve(workspace).modes.map(({ id, label }) => [id, { id, label }]))
     for (const id of prompts.savedModes()) if (!modes.has(id)) modes.set(id, { id, label: id })
     res.json({

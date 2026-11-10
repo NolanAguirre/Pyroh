@@ -49,7 +49,7 @@ export const builtinMode = (id: string): ModeEntry | null => {
   for (const plugin of bundledPlugins()) {
     if (!plugin.exports) continue
     try {
-      const modes = plugin.exports.getModes(undefined as unknown as HarnessApi)
+      const modes = plugin.exports.getModes?.(undefined as unknown as HarnessApi) || []
       if (!Array.isArray(modes)) throw new Error('getModes() must return an array')
       const seen = new Set<string>()
       const entries = modes.map(mode => normalizeMode(mode, { reserved: RESERVED_MODES, seen }))

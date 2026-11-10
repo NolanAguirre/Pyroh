@@ -122,7 +122,7 @@ const runOneTurn = async ({
   const textOnly = Array.isArray(tools) && tools.length === 0
   // Each trigger declares whether it applies only to the first prompt or every message.
   const fired = actionsForPrompt(prompt, { first, textOnly, provider: session.provider,
-    workspaceId: session.workspaceId, model: settings.model, mode: logicalMode, messageType })
+    cwd: settings.cwd, workspaceId: session.workspaceId, model: settings.model, mode: logicalMode, messageType })
   const previousTools = session.providerConfiguration?.tools
   const extraMcpServers = [...(previousTools?.mcpServers || []).filter(server => !['harness_agents', MEMORY_SERVER_NAME].includes(server.name))]
   for (const server of triggerMcpServers(fired, session)) {
@@ -188,7 +188,8 @@ const runOneTurn = async ({
     let providerAgentId = driver.providerAgentId()
     if (nativeFork && providerAgentId !== session.providerAgentId) throw new Error('Native fork resume returned a different provider thread')
     configuration.settings = { ...configuration.settings, ...driver.resolvedSettings?.() }
-    const promptContext = () => ({ model: driver.resolvedSettings?.().model || configuration.settings.model || settings.model, mode: logicalMode, messageType })
+    const promptContext = () => ({ cwd: settings.cwd, workspaceId: session.workspaceId,
+      model: driver.resolvedSettings?.().model || configuration.settings.model || settings.model, mode: logicalMode, messageType })
     sessionStore.updateSession(session.id, { providerConfiguration: configuration }, writeDir)
     if (typeof onCreated === 'function') onCreated(providerAgentId)
 
@@ -286,7 +287,8 @@ const runOneTurn = async ({
         workspaceId: session.workspaceId, textOnly, ...promptContext() })
     if (runId) assembled.userItemId = `user:${runId}`
     if (assembled.text !== prompt) onPromptRewrite?.(assembled.text, assembled)
-    assembled = await prependNotesWithProvenance(fired, { ...session, ...promptContext() }, assembled)
+    assembled = await prependNotesWithProvenance(fired, { ...session, ...promptContext() }, assembled,
+      { context: { ...promptContext(), provider: session.provider, first, terse, textOnly } })
     let firstSend = true
     let segmentImages = require('../store/imageStore').resolveImages(session.id, images, writeDir)
     const pendingSteers = []
@@ -308,6 +310,7 @@ const runOneTurn = async ({
       publishRequestMetrics()
       const collector = requestMetrics
       const options = { ...sendOptions, evidenceSegmentId: collector.segmentId,
+        promptContext: promptContext(),
         images: segmentImages,
         promptProvenance: sendPrompt,
         onEvent: event => handleEvent(event, collector) }
@@ -366,7 +369,8 @@ const runOneTurn = async ({
           { cwd: settings.cwd, first: false, provider: session.provider, workspaceId: session.workspaceId, textOnly, ...context })
         const actions = actionsForPrompt(steer.text, { ...context, first: false, textOnly,
           provider: session.provider, workspaceId: session.workspaceId })
-        return prependNotesWithProvenance(actions, { ...session, ...context }, rewritten)
+        return prependNotesWithProvenance(actions, { ...session, ...context }, rewritten,
+          { context: { ...context, first: false, textOnly, provider: session.provider } })
       }))
       messageType = sources.some(source => source.messageType === 'user') ? 'user' : 'agent'
       const sections = sources.flatMap((source, index) => source.sections.map((part, partIndex) => ({
