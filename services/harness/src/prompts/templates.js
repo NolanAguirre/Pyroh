@@ -132,6 +132,16 @@ Read the target file and at most one sibling view for patterns. Do not spawn a s
 - Root make start must launch required app processes and stop its child process groups on Ctrl+C. Start backend services without watching or automatic reload by default.`,
   },
   {
+    id: 'makefileConventions',
+    activation: { kind: 'Text trigger', condition: 'A prompt mentioning make or Makefile, case-insensitively. Applies to matching first messages and follow-ups.' },
+    name: 'Makefile conventions',
+    group: 'flags',
+    description: 'Prepended to matching messages with text-based Makefile help and rule maintenance conventions.',
+    usedBy: ['prompt/actions.js'],
+    vars: [],
+    template: 'Use a text-based Makefile help rule without regex, awk, or other non-text implementations. Update make rules when CLI or run mechanisms change.',
+  },
+  {
     id: 'devIdPaths',
     activation: { kind: 'Text trigger', condition: 'A ## token followed by seven lowercase letters or digits, when matching files exist. Already expanded tokens are skipped.' },
     name: 'Dev id paths',

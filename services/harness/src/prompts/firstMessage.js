@@ -76,11 +76,6 @@ const FIRST_MESSAGE_TEMPLATES = [
     name: 'Shell conventions',
     template: 'Write portable shell scripts without bashisms. Do not use file extensions on scripts.',
   },
-  {
-    id: 'makefileConventions',
-    name: 'Makefile conventions',
-    template: 'Use a text-based Makefile help rule without regex, awk, or other non-text implementations. Update make rules when CLI or run mechanisms change.',
-  },
 ].map(entry => ({
   ...entry,
   firstMessage: true,

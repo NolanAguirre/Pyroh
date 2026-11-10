@@ -2,6 +2,7 @@ import { devIds } from './triggers/devIds.js'
 import { devIdPaths } from './triggers/devIdPaths.js'
 import { sessionIdPaths } from './triggers/sessionIdPaths.js'
 import { makefileRules } from './triggers/makefileRules.js'
+import { makefileConventions } from './triggers/makefileConventions.js'
 import { toolkitTerminology } from './triggers/toolkitTerminology.js'
 import { javascriptConventions } from './triggers/javascriptConventions.js'
 
@@ -61,7 +62,7 @@ export const parseInputCommand = (text) => {
 // scope: 'message' applies to every user message (prompts, follow-ups,
 // queued messages, steers, answers); 'first' only to the first prompt sent
 // to a new agent or subagent.
-export const TRIGGERS = [devIds, devIdPaths, sessionIdPaths, makefileRules, toolkitTerminology]
+export const TRIGGERS = [devIds, devIdPaths, sessionIdPaths, makefileRules, makefileConventions, toolkitTerminology]
 
 export const inScope = (trigger, { first = true } = {}) => first || trigger.scope !== 'first'
 

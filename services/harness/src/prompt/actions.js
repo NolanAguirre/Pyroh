@@ -37,6 +37,7 @@ const instructionAction = id => {
 const actions = {
   toolkitTerminology: instructionAction('toolkitTerminology'),
   makefileRules: instructionAction('makefileRules'),
+  makefileConventions: instructionAction('makefileConventions'),
   devIds: {
     // Preview describes the instructions without reserving ids on each keystroke.
     preview: (session, context = sessionContext(session)) => prompts.render('devIds', { ids: 'none' }, session.provider, context),
