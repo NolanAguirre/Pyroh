@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Button, DevScope, ImageAttachments, Popup, PromptInput, SplitPane, useSpeechRecognition } from 'component-library'
-import { INPUT_COMMANDS, TRIGGERS, parseInputCommand } from 'prompt-triggers'
+import { Button, DevScope, ImageAttachments, Popup, SplitPane, useSpeechRecognition } from 'component-library'
+import { INPUT_COMMANDS, parseInputCommand } from 'prompt-triggers'
+import PromptInput from '../common/PromptInput'
 import useSessionEvents from '../useSessionEvents'
 import api from '../api'
 import Transcript from './Transcript'
@@ -519,8 +520,12 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
               <DevScope id="hr8r3c4">
                 <PromptInput
                   className={`composer__input${isDecompose ? ' composer__input--plan' : ''}`}
-                  triggers={TRIGGERS}
-                  first={!steering && (spawnsSession || !session?.providerAgentId)}
+                  sessionId={sessionId}
+                  evaluationContext={{ mode, steering,
+                    ...(picksSpawnTarget ? { provider: spawnProvider || session.provider, ...(spawnModel ? { model: spawnModel } : {}) } : {}),
+                    ...(isNewChat ? { targetMode: spawnMode } : {}),
+                  }}
+                  evaluationRevision={`${session?.providerAgentId || ''}:${session?.model || ''}:${session?.status || ''}`}
                   placeholder={
                     steering
                       ? 'Send to interrupt, or Queue for after this turn (⌘↵ to send)…'

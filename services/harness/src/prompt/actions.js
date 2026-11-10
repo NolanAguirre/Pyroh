@@ -3,6 +3,7 @@ const prompts = require('../prompts')
 const { sessionContext } = require('./context')
 const { DEVID_SERVER_NAME } = require('../agents/driver')
 const provenance = require('./provenance')
+const { evaluateConditions } = require('./conditions')
 
 // Server-side effects for triggers found by `findTriggers`, keyed by trigger
 // id. mcpServers(session) returns { name, url } entries; prepend() resolves to
@@ -28,14 +29,17 @@ const prefetchDevIds = async (session) => {
   }
 }
 
+const instructionAction = id => {
+  const prepend = session => prompts.render(id, {}, session.provider, sessionContext(session))
+  return { prepend, preview: prepend }
+}
+
 const actions = {
-  toolkitTerminology: {
-    prepend: (session) => prompts.render('toolkitTerminology', {}, session.provider, sessionContext(session)),
-  },
-  makefileRules: {
-    prepend: (session) => prompts.render('makefileRules', {}, session.provider, sessionContext(session)),
-  },
+  toolkitTerminology: instructionAction('toolkitTerminology'),
+  makefileRules: instructionAction('makefileRules'),
   devIds: {
+    // Preview describes the instructions without reserving ids on each keystroke.
+    preview: session => prompts.render('devIds', { ids: 'none' }, session.provider, sessionContext(session)),
     // mcpdevid records who each id was issued to from the URL path.
     mcpServers: (session) => {
       if (!config.devIdMcpUrl || !session.workspaceId) return []
@@ -54,14 +58,19 @@ const firedActions = (matches, provider, context = {}) => [...new Set(matches.ma
   .map((id) => actions[id])
   .filter(Boolean)
 
+const actionsForPrompt = (text, context = {}) => evaluateConditions(text, context)
+  .filter(entry => entry.target === 'action' && entry.effect === 'applied')
+  .map(entry => actions[entry.id])
+  .filter(Boolean)
+
 const triggerMcpServers = (fired, session) => fired.flatMap((action) => action.mcpServers?.(session) || [])
 
-const prependNotesWithProvenance = async (fired, session, prompt) => {
-  const notes = (await Promise.all(fired.map((action) => action.prepend?.(session)))).filter(Boolean)
+const prependNotesWithProvenance = async (fired, session, prompt, { preview = false } = {}) => {
+  const notes = (await Promise.all(fired.map(action => preview ? action.preview?.(session) : action.prepend?.(session)))).filter(Boolean)
   return provenance.prepend(notes.map(note => provenance.section('system', 'Harness trigger instructions', note)), prompt)
 }
 
 const prependNotes = async (fired, session, text) =>
   (await prependNotesWithProvenance(fired, session, provenance.supplied(text))).text
 
-module.exports = { actions, firedActions, triggerMcpServers, prependNotes, prependNotesWithProvenance }
+module.exports = { actions, firedActions, actionsForPrompt, triggerMcpServers, prependNotes, prependNotesWithProvenance }

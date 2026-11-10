@@ -26,6 +26,8 @@ const checkpointStore = require('../store/checkpointStore')
 
 const router = express.Router()
 
+router.post('/sessions/:id/prompt-evaluation', require('../routes/evaluatePrompt'))
+
 const sendSessionList = async (req, res, workspaceId) => {
   const { orderBy = 'createdAt', order = 'desc', limit, active } = req.query
   if (active !== undefined && !['true', 'false'].includes(active)) {

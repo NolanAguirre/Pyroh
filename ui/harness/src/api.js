@@ -191,6 +191,15 @@ const api = {
   adoptSubmission: (sessionId, submission) => tagSubmission(submission, splitId(sessionId).machine),
   getProviders: () => fetch(at(null, '/api/providers')).then(json),
   getPromptTriggers: () => fetch(at(null, '/api/prompt-triggers')).then(json),
+  evaluatePrompt: (sessionId, body, { signal } = {}) => {
+    const { id, machine } = splitId(sessionId)
+    return fetch(at(machine, `/api/sessions/${encodeURIComponent(id)}/prompt-evaluation`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    }).then(json)
+  },
   getUiSettings: () => fetch(at(null, '/api/ui')).then(json),
   getConfig: () => fetch(at(null, '/api/config')).then(json),
   setUiSettings: (patch) => send('PATCH', at(null, '/api/ui'), patch).then(json),

@@ -15,8 +15,7 @@ const sourceConfiguration = (source, mode, runs) => {
   if (source.providerConfiguration) return source.providerConfiguration
   // Older sessions predate configuration snapshots. Reconstruct the Harness
   // configuration from their first prompt and current registry without replaying it.
-  const { firedActions, triggerMcpServers } = require('../prompt/actions')
-  const { findTriggers } = require('../prompt/triggers')
+  const { actionsForPrompt, triggerMcpServers } = require('../prompt/actions')
   const first = readForkHistory(source.id)?.runs?.[0] || runs[0]
   const list = registry.toolsFor(registry.sessionWorkspace(source), { mode, provider: source.provider })
   return {
@@ -24,7 +23,9 @@ const sourceConfiguration = (source, mode, runs) => {
     settings: { model: source.model, cwd: source.cwd, mode },
     tools: {
       list, askUserEnabled: list.includes('ask_user'),
-      mcpServers: triggerMcpServers(firedActions(findTriggers(first?.prompt || '')), source),
+      mcpServers: triggerMcpServers(actionsForPrompt(first?.prompt || '', {
+        first: true, provider: source.provider, model: source.model, mode, workspaceId: source.workspaceId,
+      }), source),
       disableNativeSpawning: true,
       restrictedChild: Boolean(source.parentRunId) && !source.delegationDetached && mode !== 'agent',
     },

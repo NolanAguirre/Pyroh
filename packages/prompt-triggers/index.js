@@ -55,8 +55,8 @@ export const parseInputCommand = (text) => {
   return null
 }
 
-// Pure and synchronous: the UI runs this on every keystroke and the server
-// runs it before each turn. Patterns need the `g` flag.
+// Pure and synchronous matching for backend consumers. Draft highlights and
+// activation feedback come from the backend evaluator. Patterns need `g`.
 //
 // scope: 'message' applies to every user message (prompts, follow-ups,
 // queued messages, steers, answers); 'first' only to the first prompt sent

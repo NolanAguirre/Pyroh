@@ -10,8 +10,7 @@ const sessionStore = require('../store/sessionStore')
 const { rewritePromptWithProvenance } = require('../prompt/rewrite')
 const provenance = require('../prompt/provenance')
 const { sessionModel } = require('../prompt/context')
-const { findTriggers } = require('../prompt/triggers')
-const { firedActions, triggerMcpServers, prependNotesWithProvenance } = require('../prompt/actions')
+const { actionsForPrompt, triggerMcpServers, prependNotesWithProvenance } = require('../prompt/actions')
 
 const addUsage = (total, usage) => {
   if (!usage) return total
@@ -122,8 +121,8 @@ const runOneTurn = async ({
     : undefined
   const textOnly = Array.isArray(tools) && tools.length === 0
   // Each trigger declares whether it applies only to the first prompt or every message.
-  const fired = textOnly ? [] : firedActions(findTriggers(prompt, { first }), session.provider,
-    { model: settings.model, mode: logicalMode, messageType })
+  const fired = actionsForPrompt(prompt, { first, textOnly, provider: session.provider,
+    workspaceId: session.workspaceId, model: settings.model, mode: logicalMode, messageType })
   const previousTools = session.providerConfiguration?.tools
   const extraMcpServers = [...(previousTools?.mcpServers || []).filter(server => !['harness_agents', MEMORY_SERVER_NAME].includes(server.name))]
   for (const server of triggerMcpServers(fired, session)) {
@@ -283,7 +282,8 @@ const runOneTurn = async ({
     }
 
     let assembled = await rewritePromptWithProvenance(provenance.supplied(prompt, { ...promptProvenance, messageType }),
-      { cwd: settings.cwd, first, terse, firstMessageInstructions, provider: session.provider, ...promptContext() })
+      { cwd: settings.cwd, first, terse, firstMessageInstructions, provider: session.provider,
+        workspaceId: session.workspaceId, textOnly, ...promptContext() })
     if (runId) assembled.userItemId = `user:${runId}`
     if (assembled.text !== prompt) onPromptRewrite?.(assembled.text, assembled)
     assembled = await prependNotesWithProvenance(fired, { ...session, ...promptContext() }, assembled)
@@ -363,8 +363,9 @@ const runOneTurn = async ({
           messageType: steer.promptProvenance?.messageType ?? 'user' })
         const context = { ...promptContext(), messageType: source.messageType }
         const rewritten = await rewritePromptWithProvenance(source,
-          { cwd: settings.cwd, first: false, provider: session.provider, ...context })
-        const actions = textOnly ? [] : firedActions(findTriggers(steer.text, { first: false }), session.provider, context)
+          { cwd: settings.cwd, first: false, provider: session.provider, workspaceId: session.workspaceId, textOnly, ...context })
+        const actions = actionsForPrompt(steer.text, { ...context, first: false, textOnly,
+          provider: session.provider, workspaceId: session.workspaceId })
         return prependNotesWithProvenance(actions, { ...session, ...context }, rewritten)
       }))
       messageType = sources.some(source => source.messageType === 'user') ? 'user' : 'agent'
