@@ -86,7 +86,7 @@ const recoverSession = (sessionId, writeDir, { excludeRunId } = {}) => {
   const patch = {}
   if (latestUsage) patch.providerUsage = latestUsage.value
   if (recoveryError) patch.lastError = recoveryError
-  if (['running', 'awaiting_input'].includes(session.status) || interrupted) patch.status = 'paused'
+  if (!excludeRunId && (['running', 'awaiting_input'].includes(session.status) || interrupted)) patch.status = 'paused'
   if (Object.keys(patch).length) updateSession(sessionId, patch, writeDir)
   // A durable marker covers a crash between repairing a run and its totals/index.
   const recovered = changed || retryRecovery ? rebuildTotals(sessionId, writeDir) : loadSession(sessionId, writeDir)

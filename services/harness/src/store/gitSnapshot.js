@@ -4,6 +4,7 @@ const path = require('path')
 
 const HARNESS_GIT_NAME = 'harness'
 const HARNESS_GIT_EMAIL = 'harness@localhost'
+const SNAPSHOT_TIMEOUT_MS = 60000
 
 // True only when `cwd` itself is a git work tree (has a `.git` dir or file).
 // Nested paths inside some parent repo do not count.
@@ -44,9 +45,13 @@ const runGit = (cwd, args) => {
     env: gitEnv(),
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: SNAPSHOT_TIMEOUT_MS,
   })
   if (result.error) {
-    throw new Error(`git not available: ${result.error.message}`)
+    const detail = result.error.code === 'ETIMEDOUT'
+      ? `timed out after ${SNAPSHOT_TIMEOUT_MS / 1000} seconds`
+      : result.error.message
+    throw new Error(`git ${args.join(' ')} failed: ${detail}`)
   }
   return result
 }
@@ -60,17 +65,20 @@ const failGit = (args, result) => {
 
 // If `cwd` is a git repo, stage everything and commit. No-op when the tree is
 // already clean or `cwd` is not a repo. Throws if git operations fail.
-const snapshotUnlocked = (cwd, { message } = {}) => {
+const snapshotUnlocked = (cwd, { message, onProgress = () => {} } = {}) => {
   if (!isGitRepo(cwd)) return { committed: false, reason: 'not-a-repo' }
 
+  onProgress(`git snapshot: staging changes in ${cwd}`)
   const add = runGit(cwd, ['add', '--all'])
   if (add.status !== 0) failGit(['add', '--all'], add)
 
+  onProgress('git snapshot: checking staged changes')
   const diff = runGit(cwd, ['diff', '--cached', '--quiet'])
   if (diff.status === 0) return { committed: false, reason: 'clean' }
   if (diff.status !== 1) failGit(['diff', '--cached', '--quiet'], diff)
 
   const msg = message || 'harness: snapshot before agent run'
+  onProgress('git snapshot: committing staged changes')
   const commit = runGit(cwd, ['commit', '--quiet', '--message', msg])
   if (commit.status !== 0) failGit(['commit'], commit)
 
@@ -82,14 +90,18 @@ const snapshotUnlocked = (cwd, { message } = {}) => {
 
 // Sessions sharing a checkout may run concurrently. Serialize only Git's
 // staging/commit transaction, never the agent runs themselves.
-const snapshotIfGitRepo = (cwd, options) => {
+const snapshotIfGitRepo = (cwd, options = {}) => {
   if (!isGitRepo(cwd)) return { committed: false, reason: 'not-a-repo' }
   const result = runGit(cwd, ['rev-parse', '--git-path', 'harness-snapshot.lock'])
   if (result.status !== 0) failGit(['rev-parse'], result)
   const fd = fs.openSync(path.resolve(cwd, result.stdout.trim()), 'a', 0o600)
   try {
-    const locked = spawnSync('flock', ['3'], { stdio: ['ignore', 'pipe', 'pipe', fd] })
-    if (locked.error || locked.status !== 0) throw new Error('Could not lock the workspace Git snapshot')
+    options.onProgress?.(`git snapshot: waiting for the workspace lock in ${cwd}`)
+    const locked = spawnSync('flock', [`--wait=${SNAPSHOT_TIMEOUT_MS / 1000}`, '3'], { stdio: ['ignore', 'pipe', 'pipe', fd] })
+    if (locked.error || locked.status !== 0) {
+      const detail = locked.error?.message || (locked.status === 1 ? 'timed out waiting for another snapshot' : `exit ${locked.status}`)
+      throw new Error(`Could not lock the workspace Git snapshot: ${detail}`)
+    }
     return snapshotUnlocked(cwd, options)
   } finally { fs.closeSync(fd) }
 }

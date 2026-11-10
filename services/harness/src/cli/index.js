@@ -4,7 +4,6 @@ const Harness = require('../harness/Harness')
 const sessionStore = require('../store/sessionStore')
 const { createDriver, listProviders } = require('../agents/driver')
 const { resolveWorkDir } = require('../store/workDir')
-const { snapshotIfGitRepo } = require('../store/gitSnapshot')
 const workspaceStore = require('../store/workspaceStore')
 const registry = require('../registry')
 const prompts = require('../prompts')
@@ -161,30 +160,7 @@ const handleTurn = async (action, sessionId, flags) => {
     process.exit(0)
   }
 
-  // Attach before the snapshot, which can fail before the provider starts.
-  const { runDaemon, attachLog } = require('../harness/daemon')
-  attachLog(sessionId, config.writeDir)
-  try {
-    const entry = registry.turnMode(run.mode, run.plugin)
-    if ((!session.parentRunId || session.childKind === 'workflow' || sessionStore.loadSession(sessionId, config.writeDir)?.delegationDetached) && entry?.snapshot) {
-      const cwd = workspaceStore.resolveSessionCwd(session, config.writeDir)
-      const snap = snapshotIfGitRepo(cwd, {
-        message: `harness: snapshot before ${action} ${run.id}`,
-      })
-      if (snap.committed) {
-        process.stderr.write(`git snapshot ${snap.hash} in ${cwd}\n`)
-      }
-    }
-  } catch (err) {
-    const message = `${action}: git snapshot failed: ${err && err.message}`
-    require('../store/eventLog').append(sessionId, { type: 'error', runId: run.id, message }, config.writeDir)
-    sessionStore.updateRun(sessionId, run.id, { status: 'error', error: message, endedAt: Date.now() }, config.writeDir)
-    sessionStore.updateSession(sessionId, {
-      status: 'error', lastError: { message, runId: run.id, at: Date.now() },
-    }, config.writeDir)
-    return fail(message, 1)
-  }
-
+  const { runDaemon } = require('../harness/daemon')
   await runDaemon({
     sessionId,
     runId: run.id,
