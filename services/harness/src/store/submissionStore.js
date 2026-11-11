@@ -1,12 +1,11 @@
-const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
-const { spawnSync } = require('child_process')
 const config = require('../config')
 const paths = require('./paths')
 const imageStore = require('./imageStore')
 const { readJson, writeJson } = require('./jsonFile')
 const { identity, ownerAlive } = require('./sessionLock')
+const fileLock = require('./fileLock')
 
 const owner = { pid: process.pid, identity: identity(), token: crypto.randomUUID() }
 const active = new Set()
@@ -27,17 +26,18 @@ const canonical = (value) => {
   return JSON.stringify(value)
 }
 
-// A separate short-lived flock protects receipts across overlapping API processes.
+// A separate short-lived lock protects receipts across overlapping API processes.
 // Never hold the run lock or a receipt lock during spellcheck or execution.
 const withLock = (sessionId, writeDir, fn) => {
-  const fd = fs.openSync(path.join(paths.sessionDir(sessionId, writeDir), 'submissions.lock'), 'a', 0o600)
+  let lock
   try {
-    const lock = spawnSync('flock', ['--wait=1', '3'], { stdio: ['ignore', 'pipe', 'pipe', fd] })
-    if (lock.error || lock.status !== 0) {
-      throw Object.assign(new Error('Could not lock submissions; retry with the same submission id'), { status: 503 })
-    }
+    lock = fileLock.acquire(path.join(paths.sessionDir(sessionId, writeDir), 'submissions.lock'))
+  } catch (cause) {
+    throw Object.assign(new Error(`Could not lock submissions; retry with the same submission id: ${cause.message}`), { status: 503 })
+  }
+  try {
     return fn()
-  } finally { fs.closeSync(fd) }
+  } finally { lock.release() }
 }
 
 const abandoned = (sessionId, record, writeDir) => record.status === 'received' && (

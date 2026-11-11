@@ -1,12 +1,12 @@
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
-const { spawnSync } = require('child_process')
 const config = require('../config')
 const paths = require('../store/paths')
 const store = require('../store/sessionStore')
 const { readJson, readJsonAsync, writeJson } = require('../store/jsonFile')
 const locks = require('../store/sessionLock')
+const fileLock = require('../store/fileLock')
 const questions = require('../store/questionStore')
 const registry = require('../registry')
 const { getUiSettings } = require('../store/uiSettings')
@@ -21,13 +21,19 @@ const withLock = (sessionId, runId, fn, { nonblock = false } = {}) => {
   const file = fileFor(sessionId, runId)
   if (heldRecordLocks.has(file)) return fn(file)
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  const fd = fs.openSync(`${file}.lock`, 'a', 0o600)
+  let lock
   try {
-    const result = spawnSync('flock', [nonblock ? '--nonblock' : '--wait=1', '3'], { stdio: ['ignore', 'pipe', 'pipe', fd] })
-    if (result.error || result.status !== 0) throw Object.assign(new Error('Child records are busy; retry shortly'), { status: result.error ? 500 : 409 })
+    lock = fileLock.acquire(`${file}.lock`, { nonblock })
+  } catch (cause) {
+    throw Object.assign(new Error(cause.code === 'LOCK_BUSY' ? 'Child records are busy; retry shortly' : `Could not lock child records: ${cause.message}`), { status: cause.code === 'LOCK_BUSY' ? 409 : 500 })
+  }
+  try {
     heldRecordLocks.add(file)
     return fn(file)
-  } finally { heldRecordLocks.delete(file); fs.closeSync(fd) }
+  } finally {
+    heldRecordLocks.delete(file)
+    lock.release()
+  }
 }
 
 const pendingDir = () => path.join(config.writeDir, 'delegation-pending')

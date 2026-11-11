@@ -1,9 +1,12 @@
 const fs = require('fs')
 const path = require('path')
-const { spawnSync } = require('child_process')
 const paths = require('./paths')
+const fileLock = require('./fileLock')
 
+const HARNESS_LOCK_FILE = process.env.HARNESS_LOCK_FILE
 const held = new Map()
+let inheritedClaimed = false
+delete process.env.HARNESS_LOCK_FILE
 
 const identity = (pid = process.pid) => {
   try {
@@ -19,8 +22,8 @@ const ownerAlive = (owner) => {
   try { process.kill(owner.pid, 0); return true } catch (err) { return err.code === 'EPERM' }
 }
 
-// flock locks the inherited open-file description. Keeping our descriptor open
-// retains the lock after flock exits; the kernel releases it on process death.
+// An inherited pipe keeps the s6-setlock holder alive across daemon handoff.
+// The holder releases the lock when every owner's pipe closes, including death.
 // Never unlink the lock file: another process may already have it open.
 const lockPath = (sessionId, writeDir) => path.join(paths.sessionDir(sessionId, writeDir), 'session.lock')
 
@@ -36,7 +39,7 @@ const acquire = (sessionId, writeDir, { exclusive = false } = {}) => {
     return existing
   }
   if (!fs.existsSync(paths.sessionFile(sessionId, writeDir))) throw new Error(`session not found: ${sessionId}`)
-  const inherited = process.env.HARNESS_LOCK_FILE === file
+  const inherited = HARNESS_LOCK_FILE === file && !inheritedClaimed
   if (!inherited) {
     let owner
     try { owner = JSON.parse(fs.readFileSync(paths.daemonPid(sessionId, writeDir), 'utf8')) } catch (err) { if (err.code !== 'ENOENT') throw err }
@@ -48,24 +51,25 @@ const acquire = (sessionId, writeDir, { exclusive = false } = {}) => {
       }
     }
   }
-  const fd = inherited ? 3 : fs.openSync(file, 'a', 0o600)
-  if (!inherited) {
-    const result = spawnSync('flock', ['--nonblock', '3'], { stdio: ['ignore', 'pipe', 'pipe', fd] })
-    if (result.error || result.status !== 0) {
-      fs.closeSync(fd)
-      const err = new Error(result.error ? `Cannot lock session: ${result.error.message}` : `Session ${sessionId} already has an active run`)
-      err.status = result.error ? 500 : 409
-      throw err
-    }
+  let lease
+  try {
+    lease = inherited ? fileLock.fromDescriptors(3, 4) : fileLock.acquire(file, { nonblock: true })
+  } catch (cause) {
+    const busy = cause.code === 'LOCK_BUSY'
+    throw Object.assign(new Error(busy ? `Session ${sessionId} already has an active run` : `Cannot lock session: ${cause.message}`), { status: busy ? 409 : 500 })
   }
-  delete process.env.HARNESS_LOCK_FILE
+  if (inherited) inheritedClaimed = true
+  let transferred = false
   const lock = {
     exclusive,
-    spawnOptions: () => ({ stdio: ['ignore', 'ignore', 'ignore', fd], env: { ...process.env, HARNESS_LOCK_FILE: file } }),
+    spawnOptions: () => {
+      transferred = true
+      return { stdio: ['ignore', 'ignore', 'ignore', lease.fd, lease.statusFd], env: { ...process.env, HARNESS_LOCK_FILE: file } }
+    },
     release: () => {
       if (held.get(file) !== lock) return
       held.delete(file)
-      fs.closeSync(fd)
+      lease.release({ wait: !transferred })
     },
   }
   held.set(file, lock)

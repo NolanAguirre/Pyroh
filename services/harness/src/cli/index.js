@@ -51,6 +51,8 @@ Codex session options (with --provider codex):
   --approval-policy <policy>     on-request | never (default)
   --web-search <mode>            disabled | cached (default) | live
 
+File locking: requires s6-setlock (s6), mkfifo, and cat on PATH.
+
 Codex runtime: install the Codex CLI and run codex login before use.
   HARNESS_CODEX_BIN              Executable path (default: PATH, then Linux desktop bundle)
   HARNESS_CODEX_HOME             Optional persistent Codex home; otherwise use CLI state

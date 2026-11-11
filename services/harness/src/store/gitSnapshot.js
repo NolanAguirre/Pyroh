@@ -1,6 +1,7 @@
 const { spawnSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
+const fileLock = require('./fileLock')
 
 const HARNESS_GIT_NAME = 'harness'
 const HARNESS_GIT_EMAIL = 'harness@localhost'
@@ -94,16 +95,17 @@ const snapshotIfGitRepo = (cwd, options = {}) => {
   if (!isGitRepo(cwd)) return { committed: false, reason: 'not-a-repo' }
   const result = runGit(cwd, ['rev-parse', '--git-path', 'harness-snapshot.lock'])
   if (result.status !== 0) failGit(['rev-parse'], result)
-  const fd = fs.openSync(path.resolve(cwd, result.stdout.trim()), 'a', 0o600)
+  options.onProgress?.(`git snapshot: waiting for the workspace lock in ${cwd}`)
+  let lock
   try {
-    options.onProgress?.(`git snapshot: waiting for the workspace lock in ${cwd}`)
-    const locked = spawnSync('flock', [`--wait=${SNAPSHOT_TIMEOUT_MS / 1000}`, '3'], { stdio: ['ignore', 'pipe', 'pipe', fd] })
-    if (locked.error || locked.status !== 0) {
-      const detail = locked.error?.message || (locked.status === 1 ? 'timed out waiting for another snapshot' : `exit ${locked.status}`)
-      throw new Error(`Could not lock the workspace Git snapshot: ${detail}`)
-    }
+    lock = fileLock.acquire(path.resolve(cwd, result.stdout.trim()), { timeout: SNAPSHOT_TIMEOUT_MS })
+  } catch (cause) {
+    const detail = cause.code === 'LOCK_BUSY' ? 'timed out waiting for another snapshot' : cause.message
+    throw new Error(`Could not lock the workspace Git snapshot: ${detail}`)
+  }
+  try {
     return snapshotUnlocked(cwd, options)
-  } finally { fs.closeSync(fd) }
+  } finally { lock.release() }
 }
 
 module.exports = { snapshotIfGitRepo, isGitRepo }
