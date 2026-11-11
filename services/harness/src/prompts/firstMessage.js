@@ -34,7 +34,7 @@ const FIRST_MESSAGE_TEMPLATES = [
   {
     id: 'codeOnly',
     name: 'Write code only',
-    template: 'Make the requested changes and stop. The user builds, runs, and verifies.\nNo builds, servers, tests, linters, migrations, curl checks, or verification scripts unless the user asks in that message. Do not re-read the code in place of a lint pass.\nException: this restriction does not apply to Blender 3D modeling work. Apply and run modeling scripts, geometry detection and fitting algorithms, scene changes, previews, renders, and relevant checks as needed to complete the requested modeling task, without requiring a separate request to run or apply them. The restriction still applies to unrelated application and infrastructure code.',
+    template: 'Make the requested changes and stop. The user builds, runs, and verifies.\nNo builds, servers, tests, linters, migrations, curl checks, or verification scripts unless the user asks in that message. Do not re-read the code in place of a lint pass.',
   },
   {
     id: 'documentationOnRequest',
