@@ -4,6 +4,7 @@ import { sessionIdPaths } from './triggers/sessionIdPaths.js'
 import { makefileRules } from './triggers/makefileRules.js'
 import { makefileConventions } from './triggers/makefileConventions.js'
 import { toolkitTerminology } from './triggers/toolkitTerminology.js'
+import { bootstrapServices } from './triggers/bootstrapServices.js'
 import { javascriptConventions } from './triggers/javascriptConventions.js'
 
 // Keep command matching and help text together as the command list grows.
@@ -62,7 +63,7 @@ export const parseInputCommand = (text) => {
 // scope: 'message' applies to every user message (prompts, follow-ups,
 // queued messages, steers, answers); 'first' only to the first prompt sent
 // to a new agent or subagent.
-export const TRIGGERS = [devIds, devIdPaths, sessionIdPaths, makefileRules, makefileConventions, toolkitTerminology]
+export const TRIGGERS = [devIds, devIdPaths, sessionIdPaths, makefileRules, makefileConventions, toolkitTerminology, bootstrapServices]
 
 export const inScope = (trigger, { first = true } = {}) => first || trigger.scope !== 'first'
 

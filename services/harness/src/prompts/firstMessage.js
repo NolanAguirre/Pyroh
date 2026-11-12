@@ -12,19 +12,9 @@ const FIRST_MESSAGE_TEMPLATES = [
     template: 'Start backend services without watching or automatic reload in both direct commands and root make start; omit Node --watch from default dev/start scripts.',
   },
   {
-    id: 'localReverseProxy',
-    name: 'Local reverse proxy',
-    template: 'Use nginx for local reverse proxying instead of Vite proxy.',
-  },
-  {
     id: 'sqitchMigrations',
     name: 'Sqitch migrations',
     template: 'Use Sqitch within db/<project>. Do not implement revert or verify scripts; leave them empty.',
-  },
-  {
-    id: 'bootstrapServices',
-    name: 'Bootstrap services',
-    template: 'When adding a new service, run bootstrap service add <name> --type=nodejs from the repository root, then implement the service inside the generated services/<name>/ directory. Use bootstrap for the service scaffold, Makefile, environment directories, and port allocation instead of creating them manually.\nAdd the appropriate repeatable support options: --support=http, --support=fs, --support=db, or --support=python. Check bootstrap service add --help for current options and prerequisites. For database support, first create the matching database with bootstrap db add <name> --support=<backend>.',
   },
   {
     id: 'javascriptConventions',

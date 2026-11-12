@@ -58,6 +58,16 @@ Continue useful coordination while children run. Never poll, sleep, or wait for 
   },
   ...FIRST_MESSAGE_TEMPLATES,
   {
+    id: 'bootstrapServices',
+    activation: { kind: 'Text trigger', condition: 'A prompt indicating service creation, such as “new service”, “add a service”, or “bootstrap service add”. Applies to matching first messages and follow-ups.' },
+    name: 'Bootstrap services',
+    group: 'flags',
+    description: 'Prepended to matching service-creation requests with bootstrap scaffolding instructions.',
+    usedBy: ['prompt/actions.js'],
+    vars: [],
+    template: 'When adding a new service, run bootstrap service add <name> --type=nodejs from the repository root, then implement the service inside the generated services/<name>/ directory. Use bootstrap for the service scaffold, Makefile, environment directories, and port allocation instead of creating them manually.\nAdd the appropriate repeatable support options: --support=http, --support=fs, --support=db, or --support=python. Check bootstrap service add --help for current options and prerequisites. For database support, first create the matching database with bootstrap db add <name> --support=<backend>.',
+  },
+  {
     id: 'toolkitTerminology',
     activation: { kind: 'Text trigger', condition: 'The first message contains the word “toolkit” (case-insensitive). Skipped on follow-ups and steers.' },
     name: 'Toolkit terminology',

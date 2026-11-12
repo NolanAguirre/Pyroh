@@ -35,6 +35,7 @@ const instructionAction = id => {
 }
 
 const actions = {
+  bootstrapServices: instructionAction('bootstrapServices'),
   toolkitTerminology: instructionAction('toolkitTerminology'),
   makefileRules: instructionAction('makefileRules'),
   makefileConventions: instructionAction('makefileConventions'),
