@@ -61,6 +61,7 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange,
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const selected = prompt
+  const excluded = prompt.enabled === false
   const applicableProviders = prompt.applicableProviders || []
   const activation = prompt.activation
   const messageTypes = selected.messageTypes ?? selected.defaultMessageTypes ?? []
@@ -113,11 +114,12 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange,
   }
 
   return (
-    <DevScope id="n3wtq8l" state={{ id: prompt.id, provider, model, mode, editing: draft != null, saving }}>
+    <DevScope id="n3wtq8l" state={{ id: prompt.id, provider, model, mode, editing: draft != null, saving, excluded }}>
+      <div className={excluded ? 'registry__prompt-card registry__prompt-card--excluded' : 'registry__prompt-card'}>
       <Card>
         <CardHeader>
           <strong>{prompt.name}</strong> <code className="registry__id">{prompt.id}</code>
-          {prompt.enabled === false && <Badge size="small">Excluded by overlay</Badge>}
+          {excluded && <Badge size="small">Excluded by overlay</Badge>}
         </CardHeader>
         <CardSection>
           <p className="registry__flag-desc">{prompt.description}</p>
@@ -232,6 +234,7 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange,
           </div>
         </CardSection>
       </Card>
+      </div>
     </DevScope>
   )
 }

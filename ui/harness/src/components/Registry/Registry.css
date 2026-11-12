@@ -272,6 +272,10 @@
   min-width: 0;
 }
 
+.registry__prompt-card--excluded {
+  opacity: 0.45;
+}
+
 .registry__prompt-applicability {
   display: flex;
   align-items: center;
