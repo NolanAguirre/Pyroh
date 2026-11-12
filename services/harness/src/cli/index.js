@@ -54,7 +54,7 @@ Codex session options (with --provider codex):
 File locking: requires s6-setlock (s6), mkfifo, and cat on PATH.
 
 Codex runtime: install the Codex CLI and run codex login before use.
-  HARNESS_CODEX_BIN              Executable path (default: PATH, then Linux desktop bundle)
+  HARNESS_CODEX_BIN              Executable path (default: PATH, then the ChatGPT desktop bundle)
   HARNESS_CODEX_HOME             Optional persistent Codex home; otherwise use CLI state
   HARNESS_CODEX_API_KEY          Optional API key; uses write-dir/codex-api by default
                                 Set HARNESS_CODEX_HOME to override that location.

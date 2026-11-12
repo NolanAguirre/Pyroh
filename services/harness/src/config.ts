@@ -24,6 +24,18 @@ const resolveWorkBase = () => {
   return path.resolve(expandHome(raw))
 }
 
+// ChatGPT.app on macOS ships the CLI under Resources; the Linux desktop
+// bundle puts the same binary at a fixed path outside PATH.
+const codexBinFallbacks = (): string[] => {
+  if (process.platform === 'linux') return ['/usr/lib/chatgpt/resources/codex']
+  if (process.platform !== 'darwin') return []
+  const relative = path.join('Contents', 'Resources', 'codex-cli', 'bin', 'codex')
+  return [
+    path.join('/Applications/ChatGPT.app', relative),
+    path.join(os.homedir(), 'Applications', 'ChatGPT.app', relative),
+  ]
+}
+
 const resolveBin = (envName: string, name: string, fallbacks: string[] = []): string => {
   const explicit = (process.env[envName] || '').trim()
   if (explicit) return expandHome(explicit)
@@ -81,8 +93,7 @@ const config: HarnessConfiguration = {
     : path.resolve(__dirname, '..', '..', '..', 'db', 'harness', 'harness.sqlite'),
   cursorApiKey: (process.env.CURSOR_API_KEY || '').trim(),
   // The desktop bundles Codex without necessarily adding it to service PATHs.
-  codexBin: resolveBin('HARNESS_CODEX_BIN', 'codex',
-    process.platform === 'linux' ? ['/usr/lib/chatgpt/resources/codex'] : []),
+  codexBin: resolveBin('HARNESS_CODEX_BIN', 'codex', codexBinFallbacks()),
   grokBin: resolveBin('HARNESS_GROK_BIN', 'grok', [path.join(os.homedir(), '.local', 'bin', 'grok')]),
   // Unset uses the Claude Code binary bundled with the Agent SDK, which matches its protocol version.
   claudeBin: (process.env.HARNESS_CLAUDE_BIN || '').trim() ? expandHome(process.env.HARNESS_CLAUDE_BIN.trim()) : null,
