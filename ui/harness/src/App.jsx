@@ -22,7 +22,7 @@ import useTranscriptFontSize from './useTranscriptFontSize'
 import api from './api'
 import './App.css'
 
-const HARNESS_WORKSPACE = { name: 'harness', cwdPatterns: [/\/ui\/harness\/?$/, /\/harness\/?$/], label: 'the harness workspace' }
+const HARNESS_WORKSPACE = { name: 'Pyroh', cwdPatterns: [/\/Pyroh\/?$/], label: 'Pyroh' }
 const MOBILE_QUERY = '(max-width: 768px)'
 
 restoreStoredWorkspace()

@@ -30,6 +30,37 @@
   flex-shrink: 0;
 }
 
+.workspace-terminal__tabs {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  min-width: 0;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+}
+
+.workspace-terminal__tabs > .dev-scope {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.workspace-terminal__tabs .workspace-terminal__strip {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  box-shadow: none;
+}
+
+.workspace-terminal__tabs .workspace-terminal__add {
+  flex-shrink: 0;
+  align-self: center;
+  width: 32px;
+  margin: 0 4px;
+  padding: 0;
+  font-size: 18px;
+}
+
 .workspace-terminal__body {
   position: relative;
   flex: 1;
@@ -40,7 +71,8 @@
 .workspace-terminal__message {
   margin: 0;
   padding: 8px;
-  height: 100%;
+  flex-shrink: 0;
+  max-height: 80px;
   box-sizing: border-box;
   overflow: auto;
   overflow-wrap: anywhere;
