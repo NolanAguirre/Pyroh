@@ -7,11 +7,6 @@ const FIRST_MESSAGE_TEMPLATES = [
     template: 'Always work in the existing local project directory. Do not create Git worktrees unless the user explicitly requests one.',
   },
   {
-    id: 'backendWatching',
-    name: 'Backend watching',
-    template: 'Start backend services without watching or automatic reload in both direct commands and root make start; omit Node --watch from default dev/start scripts.',
-  },
-  {
     id: 'sqitchMigrations',
     name: 'Sqitch migrations',
     template: 'Use Sqitch within db/<project>. Do not implement revert or verify scripts; leave them empty.',
