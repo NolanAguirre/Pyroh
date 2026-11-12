@@ -5,4 +5,4 @@
 [engine "pg"]
 	target = local
 [target "local"]
-	uri = db:pg://postgres@localhost:5432/analytics
+	uri = db:pg://${PGUSER}@${PGHOST}:${PGPORT}/${PGDATABASE}

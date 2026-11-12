@@ -11,7 +11,85 @@
 	services.nginx.start services.nginx.stop services.nginx.reload services.nginx.status services.nginx.test services.nginx.render
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_.-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-32s %s\n", $$1, $$2}'
+	@printf '%s\n' '  help                             Show this help'
+	@printf '%s\n' '  services.harness.install         Install harness service deps'
+	@printf '%s\n' '  services.harness.start           Start the harness API server'
+	@printf '%s\n' '  services.harness.cli             Run the harness CLI (ARGS="...")'
+	@printf '%s\n' '  services.harness.models          List cursor models'
+	@printf '%s\n' '  services.harness.models.refresh  Refresh provider model lists (src/agents/models.json)'
+	@printf '%s\n' '  services.harness.tool-stats      Harness tool-call analytics (ARGS="...")'
+	@printf '%s\n' '  services.harness.index.rebuild   Rebuild the harness SQLite session index'
+	@printf '%s\n' '  services.spellcheck.install      Install spellcheck node deps and python venv'
+	@printf '%s\n' '  services.spellcheck.install.js   Install spellcheck node dependencies'
+	@printf '%s\n' '  services.spellcheck.install.python Install spellcheck Python dependencies'
+	@printf '%s\n' '  services.spellcheck.install.model Prefetch the spellcheck model weights'
+	@printf '%s\n' '  services.spellcheck.build        Run the spellcheck build if configured'
+	@printf '%s\n' '  services.spellcheck.start        Start the spellcheck HTTP service'
+	@printf '%s\n' '  services.spellcheck.consumer     Run the spellcheck GPU queue consumer'
+	@printf '%s\n' '  services.spellcheck.package      Package spellcheck API and consumer releases'
+	@printf '%s\n' '  services.spellcheck.deploy       Deploy spellcheck to workstation (REMOTE_TARGET override supported)'
+	@printf '%s\n' '  services.spellcheck.help         Show spellcheck service commands'
+	@printf '%s\n' '  services.categorizer.install     Install categorizer node deps and python venv'
+	@printf '%s\n' '  services.categorizer.install.js  Install categorizer node deps only'
+	@printf '%s\n' '  services.categorizer.install.python Create the categorizer venv and install its python deps'
+	@printf '%s\n' '  services.categorizer.install.model Prefetch the categorizer model weights'
+	@printf '%s\n' '  services.categorizer.start       Start the categorizer HTTP service'
+	@printf '%s\n' '  services.categorizer.consumer    Run the categorizer GPU queue consumer'
+	@printf '%s\n' '  services.analytics.install       Install analytics service deps'
+	@printf '%s\n' '  services.analytics.build         analytics: Run the configured build'
+	@printf '%s\n' '  services.analytics.start         Start the analytics service in the foreground'
+	@printf '%s\n' '  services.analytics.sync          Rescan sessions and compute stale metrics (SESSION=<id> optional)'
+	@printf '%s\n' '  services.analytics.backfill      Recompute stale results for a metric (METRIC=<name>, FORCE=1 for all)'
+	@printf '%s\n' '  services.mcp-memory.install      mcp-memory: Install dependencies'
+	@printf '%s\n' '  services.mcp-memory.build        mcp-memory: Run the configured build'
+	@printf '%s\n' '  services.mcp-memory.start        mcp-memory: Start the memory MCP server'
+	@printf '%s\n' '  services.mcp-memory.help         mcp-memory: Show service help'
+	@printf '%s\n' '  services.memory.install          memory: Install dependencies'
+	@printf '%s\n' '  services.memory.build            memory: Run the configured build'
+	@printf '%s\n' '  services.memory.start            memory: Start the foreground memory CRUD API'
+	@printf '%s\n' '  services.memory.help             memory: Show service help'
+	@printf '%s\n' '  services.mcpdevid.install        mcpdevid: Install dependencies'
+	@printf '%s\n' '  services.mcpdevid.build          mcpdevid: Run the configured build'
+	@printf '%s\n' '  services.mcpdevid.start          mcpdevid: Start the dev id MCP server'
+	@printf '%s\n' '  services.mcpdevid.import         mcpdevid: Import dev ids from repos (REPOS="~/a ~/b")'
+	@printf '%s\n' '  services.mcpdevid.reclaim        mcpdevid: Free unused prefetched ids older than 24h (REPOS="~/a ~/b")'
+	@printf '%s\n' '  services.mcpdevid.help           mcpdevid: Show service help'
+	@printf '%s\n' '  ui.harness.setup                 Set up the harness UI component-library checkout'
+	@printf '%s\n' '  ui.harness.install               Install harness UI deps'
+	@printf '%s\n' '  ui.harness.dev                   Start the harness UI dev server'
+	@printf '%s\n' '  ui.harness.build                 Build the harness UI'
+	@printf '%s\n' '  ui.harness.lint                  Lint the harness UI'
+	@printf '%s\n' '  ui.harness.preview               Preview the harness UI build'
+	@printf '%s\n' '  services.nginx.start             Start nginx in front of the harness stack'
+	@printf '%s\n' '  services.nginx.stop              Stop the harness nginx'
+	@printf '%s\n' '  services.nginx.reload            Reload the nginx config'
+	@printf '%s\n' '  services.nginx.status            Show whether nginx is running'
+	@printf '%s\n' '  services.nginx.test              Validate the nginx config'
+	@printf '%s\n' '  services.nginx.render            Render machines.json into nginx machine routing'
+	@printf '%s\n' '  services.terminal.install        terminal: Install dependencies'
+	@printf '%s\n' '  services.terminal.build          terminal: Run the configured build'
+	@printf '%s\n' '  services.terminal.start          terminal: Start the foreground API server'
+	@printf '%s\n' '  services.terminal.stop-host      terminal: Stop the pty host (kills all shells)'
+	@printf '%s\n' '  services.terminal.host           terminal: Run the pty host in the foreground for debugging'
+	@printf '%s\n' '  services.terminal.help           terminal: Show service help'
+	@printf '%s\n' '  services.editor.install          editor: Install dependencies'
+	@printf '%s\n' '  services.editor.build            editor: Run the configured build'
+	@printf '%s\n' '  services.editor.start            editor: Start the foreground API server'
+	@printf '%s\n' '  services.editor.help             editor: Show service help'
+	@printf '%s\n' '  services.git.install             git: Install dependencies'
+	@printf '%s\n' '  services.git.build               git: Run the configured build'
+	@printf '%s\n' '  services.git.start               git: Start the foreground API server'
+	@printf '%s\n' '  services.git.help                git: Show service help'
+	@printf '%s\n' '  install                          Install all services and UIs, including python venvs'
+	@printf '%s\n' '  install.js                       Install only JS packages across all services and UIs'
+	@printf '%s\n' '  install.py                       Install python venvs for the GPU services'
+	@printf '%s\n' '  start                            Start the harness stack and stop its child process groups on exit'
+	@printf '%s\n' '  db.analytics.init                Create the analytics database'
+	@printf '%s\n' '  db.analytics.render              Render analytics Sqitch config using env-dir'
+	@printf '%s\n' '  db.analytics.deploy              Deploy pending analytics Sqitch changes'
+	@printf '%s\n' '  db.analytics.status              Show analytics Sqitch status'
+	@printf '%s\n' '  db.analytics.verify              Run analytics Sqitch verify scripts'
+	@printf '%s\n' '  db.analytics.revert              Refuse revert (forward-only)'
 
 services.harness.install: ## Install harness service deps
 	$(MAKE) -C services/harness install
@@ -268,16 +346,19 @@ start: ## Start the harness stack and stop its child process groups on exit
 	wait
 
 # Sqitch database db/analytics
-.PHONY: help db.analytics.help db.analytics.init db.analytics.deploy db.analytics.status db.analytics.verify db.analytics.revert
+.PHONY: help db.analytics.help db.analytics.init db.analytics.render db.analytics.deploy db.analytics.status db.analytics.verify db.analytics.revert
 
 help: db.analytics.help
 
 db.analytics.help:
-	@echo 'db/analytics: db.analytics.init db.analytics.deploy db.analytics.status db.analytics.verify db.analytics.revert'
+	@echo 'db/analytics: db.analytics.init db.analytics.render db.analytics.deploy db.analytics.status db.analytics.verify db.analytics.revert'
 	@$(MAKE) --no-print-directory -C db/analytics help
 
 db.analytics.init: ## Create the analytics database
 	$(MAKE) -C db/analytics init
+
+db.analytics.render: ## Render analytics Sqitch config using env-dir
+	$(MAKE) -C db/analytics render
 
 db.analytics.deploy: ## Deploy pending analytics Sqitch changes
 	$(MAKE) -C db/analytics deploy

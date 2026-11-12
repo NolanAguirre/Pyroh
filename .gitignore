@@ -43,6 +43,10 @@ tmp/
 *.sqlite-wal
 *.sqlite-shm
 
+# generated Sqitch configuration
+/db/analytics/sqitch.config
+/db/analytics/sqitch.config.??????
+
 # editor and os
 .DS_Store
 .idea/
