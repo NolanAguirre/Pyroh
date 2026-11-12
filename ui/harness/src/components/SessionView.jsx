@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Button, DevScope, ImageAttachments, Popup, SplitPane, useSpeechRecognition } from 'component-library'
 import { INPUT_COMMANDS, parseInputCommand } from 'prompt-triggers'
 import PromptInput from '../common/PromptInput'
@@ -51,6 +51,15 @@ const saveForkRetry = (sessionId, retry) => {
   }
 }
 
+// SessionView remounts per session, so transcript scroll lives outside the component.
+const sessionScroll = new Map()
+const SCROLL_BOTTOM_SLACK = 32
+const readSessionScroll = (node) => {
+  const max = node.scrollHeight - node.clientHeight
+  const top = node.scrollTop
+  return { top, pinned: max - top <= SCROLL_BOTTOM_SLACK }
+}
+
 const SessionView = ({ devId, sessionId, initialSession, providers = [], workspaces = [], sessions = [], modes: registryModes, onChanged, onCreated, onOpenFile, transcriptFontSize }) => {
   const { events, session: liveSession, runs, children, queuedMessages, submissions, questions, pendingQuestions, connected } = useSessionEvents(sessionId)
   const session = liveSession || initialSession
@@ -65,6 +74,9 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const promptLocked = useRef(Boolean(savedSubmission))
   const acceptSpeech = useRef(true)
   const forkRetry = useRef({ sessionId, retry: loadForkRetry(sessionId) })
+  const scrollRef = useRef(null)
+  const savedScroll = useRef(sessionScroll.get(sessionId) || null)
+  const scrollRestored = useRef(!savedScroll.current)
   const [spawnMode, setSpawnMode] = useState('agent')
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState('')
@@ -215,6 +227,37 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
   const shownQuestions = ModePanel && filter
     ? questions.filter((question) => shownRuns.some((run) => run.id === question.runId))
     : questions
+  const scrollReady = Boolean(session)
+
+  useLayoutEffect(() => {
+    const node = scrollRef.current
+    const saved = savedScroll.current
+    if (!node || !saved || scrollRestored.current) return
+    const max = node.scrollHeight - node.clientHeight
+    if (saved.pinned) {
+      if (!connected) return
+      node.scrollTop = max
+    } else if (!connected && saved.top > max) {
+      return
+    } else {
+      node.scrollTop = saved.top
+    }
+    scrollRestored.current = true
+  }, [connected, shownEvents, shownRuns, shownQuestions, pendingQuestions.length, children.length])
+
+  useEffect(() => {
+    const node = scrollRef.current
+    if (!node) return undefined
+    const onScroll = () => {
+      if (!scrollRestored.current) return
+      sessionScroll.set(sessionId, readSessionScroll(node))
+    }
+    node.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      if (scrollRestored.current) sessionScroll.set(sessionId, readSessionScroll(node))
+      node.removeEventListener('scroll', onScroll)
+    }
+  }, [sessionId, scrollReady])
 
   const refresh = () => {
     if (onChanged) onChanged()
@@ -379,7 +422,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                 <ChildRuns devId="dyrp8jw" session={session} runs={runs} children={children} />
               </div>
             )}
-            <div className="session-view__scroll">
+            <div className="session-view__scroll" ref={scrollRef}>
             {session.parentSessionId && (
               <p className="hint">
                 {session.childKind === 'workflow' && <>{session.name || `Workflow step${session.workflow?.phase ? ` · Phase ${session.workflow.phase}` : ''}${session.workflow?.step ? ` · ${session.workflow.step}` : ''}`} · </>}
