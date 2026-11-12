@@ -25,7 +25,7 @@ const composePromptWithProvenance = (prompt, { mode = 'agent', logicalMode = mod
     const content = prompts.text(id, provider, context)
     if (content) parts.push(provenance.section('system', `${id} instructions`, content))
   }
-  if (instructions) parts.push(provenance.section('system', 'Harness, plugin and delegation instructions', instructions))
+  if (instructions && context.messageType !== 'agent') parts.push(provenance.section('system', 'Harness, plugin and delegation instructions', instructions))
   return provenance.prepend(parts, provenance.supplied(text, promptProvenance))
 }
 
