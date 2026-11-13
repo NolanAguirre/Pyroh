@@ -1,0 +1,31 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd -P)
+state=${STATE_PATH:-$HOME/.s6craft-tools}/bootstrap
+repo="$state/repos/${root##*/}"
+
+if [ ! -f "$repo/path" ] || [ "$(cat "$repo/path")" != "$root" ]; then
+    echo 'Register the harness repository with bootstrap before registering Kanban.' >&2
+    exit 1
+fi
+
+cd "$root"
+port allocate discover
+
+# Use the toolkit bootstrap lock when publishing database metadata.
+exec 9>>"$state/lock"
+flock -x 9
+entry="$repo/databases/kanban"
+if [ ! -e "$entry" ]; then
+    umask 077
+    pending=$(mktemp -d "$repo/databases/.kanban.XXXXXX")
+    trap 'rm -rf "$pending"' 0
+    trap 'exit 1' HUP INT TERM
+    printf '%s\n' postgres > "$pending/engine"
+    # This matches the portable socket default without storing credentials.
+    printf '%s\n' 'postgres:///kanban?host=/var/run/postgresql' > "$pending/database_url"
+    mv "$pending" "$entry"
+fi
+
+printf '%s\n' 'Registered harness Kanban service and database.'

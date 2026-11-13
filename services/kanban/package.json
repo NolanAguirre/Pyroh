@@ -1,0 +1,17 @@
+{
+  "name": "kanban",
+  "version": "0.1.0",
+  "description": "kanban service",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "engines": { "node": ">=22.13.0" },
+  "dependencies": { "pg": "^8.13.0", "postgraphile": "^4.14.0" },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "private": true
+}

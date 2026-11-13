@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+cd "$(dirname "$0")/.."
+
+: "${DATABASE_URL:?Set DATABASE_URL in services/kanban/env-dir}"
+case "$DATABASE_URL" in
+    postgres://*|postgresql://*) target="db:pg:${DATABASE_URL#*:}" ;;
+    *) echo 'DATABASE_URL must be a PostgreSQL URL' >&2; exit 2 ;;
+esac
+
+command=${1:-deploy}
+if [ "$#" -gt 0 ]; then
+    shift
+fi
+case "$command" in
+    deploy|status) exec sqitch "$command" --target "$target" "$@" ;;
+    *) echo 'usage: scripts/sqitch [deploy|status] [options...]' >&2; exit 2 ;;
+esac

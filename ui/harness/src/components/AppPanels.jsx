@@ -6,6 +6,7 @@ import CodeStatsView from './CodeStats/CodeStatsView'
 import RegistryView from './Registry/RegistryView'
 import MemoriesView from './Memories/MemoriesView'
 import api from '../api'
+import KanbanView from '../pages/KanbanView'
 
 // Panels come from the registry; `?view=` holds the open panel id.
 export const EDITOR_PANEL = 'editor'
@@ -30,6 +31,9 @@ export const createPanelComponents = ({
   onCreated,
   closePanel,
 }) => ({
+  kanban: () => {
+    return <KanbanView devId="c2yy0pk" onBack={() => closePanel('kanban')} />
+  },
   analytics: () => (
     <AnalyticsView
       devId="moxixrf"

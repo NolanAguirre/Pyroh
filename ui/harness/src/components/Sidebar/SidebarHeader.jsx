@@ -29,7 +29,8 @@ const SidebarHeader = ({
   onMaxSubagentDepth,
   settingsError,
   hotkeySettings,
-}) => (
+}) => {
+  return (
   <DevScope id="t8w3n6p">
     <div className="sidebar__header">
       <div className="sidebar__header-actions">
@@ -49,6 +50,13 @@ const SidebarHeader = ({
         </Popup>
         {panels.map((panel) => {
           // `main` panels toggle inside the layout; `page` panels replace it.
+          if (panel.id === 'kanban') return (
+            <Button key={panel.id} devId="8j9wmbj" variant={view === panel.id ? 'primary' : 'secondary'} size="sm"
+              title={panel.title || panel.label} aria-label={panel.label} aria-pressed={view === panel.id}
+              onClick={() => onOpenPanel?.(panel.id)}>
+              <Icon d={ICONS.kanban} />
+            </Button>
+          )
           const toggle = panel.placement === 'main'
           const open = view === panel.id
           return (
@@ -87,6 +95,7 @@ const SidebarHeader = ({
       </div>
     </div>
   </DevScope>
-)
+  )
+}
 
 export default SidebarHeader

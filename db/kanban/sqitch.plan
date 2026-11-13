@@ -1,0 +1,8 @@
+%syntax-version=1.0.0
+%project=kanban
+
+v1.000.0 2026-09-08T00:00:00Z Nolan <nolan@localhost> # Boards, columns, cards, and ordering
+v1.001.0 [v1.000.0] 2026-09-08T00:00:01Z Nolan <nolan@localhost> # Task comments and replies
+v1.002.0 [v1.001.0] 2026-09-08T00:00:02Z Nolan <nolan@localhost> # Name-based users and creator attribution
+v1.003.0 [v1.002.0] 2026-11-04T00:00:00Z Nolan <nolan@localhost> # Card archiving outside column ordering
+v1.004.0 [v1.003.0] 2026-11-13T00:00:00Z Nolan <nolan@localhost> # Case-insensitive text columns for harness integration

@@ -302,6 +302,7 @@ install: ## Install all services and UIs, including python venvs
 	$(MAKE) services.terminal.install
 	$(MAKE) services.editor.install
 	$(MAKE) services.git.install
+	$(MAKE) services.kanban.install
 	$(MAKE) services.categorizer.install
 	$(MAKE) services.analytics.install
 	$(MAKE) services.mcp-memory.install
@@ -314,6 +315,7 @@ install.js: ## Install only JS packages across all services and UIs
 	$(MAKE) services.terminal.install
 	$(MAKE) services.editor.install
 	$(MAKE) services.git.install
+	$(MAKE) services.kanban.install
 	$(MAKE) services.categorizer.install.js
 	$(MAKE) services.analytics.install
 	$(MAKE) services.mcp-memory.install
@@ -328,6 +330,7 @@ start: SHELL := /bin/bash
 start: ## Start the harness stack and stop its child process groups on exit
 	@$(MAKE) db.harness.deploy
 	@$(MAKE) db.mcpdevid.deploy
+	@$(MAKE) db.kanban.deploy
 	@pids=""; \
 	cleanup() { trap '' INT TERM; for pid in $$pids; do kill -TERM -- -$$pid 2>/dev/null || true; done; wait || true; }; \
 	trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM; \
@@ -336,6 +339,7 @@ start: ## Start the harness stack and stop its child process groups on exit
 	s6-setsid $(MAKE) -C services/terminal start & pids="$$pids $$!"; \
 	s6-setsid $(MAKE) -C services/editor start & pids="$$pids $$!"; \
 	s6-setsid $(MAKE) -C services/git start & pids="$$pids $$!"; \
+	s6-setsid $(MAKE) -C services/kanban start & pids="$$pids $$!"; \
 	s6-setsid $(MAKE) -C services/categorizer start & pids="$$pids $$!"; \
 	s6-setsid $(MAKE) -C services/categorizer consumer & pids="$$pids $$!"; \
 	s6-setsid $(MAKE) -C services/analytics start & pids="$$pids $$!"; \
@@ -419,3 +423,32 @@ db.mcpdevid.verify:
 
 db.mcpdevid.revert:
 	$(MAKE) -C db/mcpdevid revert
+
+# Kanban shares the harness UI and nginx entry point.
+.PHONY: services.kanban.help services.kanban.install services.kanban.start db.kanban.help db.kanban.deploy db.kanban.status infrastructure.kanban.register
+
+help: services.kanban.help db.kanban.help
+
+services.kanban.help:
+	@echo 'services/kanban: services.kanban.install services.kanban.start'
+	@echo 'infrastructure/kanban: infrastructure.kanban.register (register toolkit ports and database)'
+	@$(MAKE) --no-print-directory -C services/kanban help
+
+services.kanban.install:
+	$(MAKE) -C services/kanban install
+
+services.kanban.start:
+	$(MAKE) -C services/kanban start
+
+db.kanban.help:
+	@echo 'db/kanban: db.kanban.deploy db.kanban.status'
+	@$(MAKE) --no-print-directory -C db/kanban help
+
+db.kanban.deploy:
+	$(MAKE) -C db/kanban deploy
+
+db.kanban.status:
+	$(MAKE) -C db/kanban status
+
+infrastructure.kanban.register:
+	$(MAKE) -C infrastructure/kanban register
