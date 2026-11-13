@@ -518,6 +518,10 @@ const api = {
     const target = fsTarget(workspace)
     return post(at(target.machine, '/api/git/pull'), target.body({}))
   },
+  gitRebase: (workspace) => {
+    const target = fsTarget(workspace)
+    return post(at(target.machine, '/api/git/rebase'), target.body({}))
+  },
   gitFetch: (workspace) => {
     const target = fsTarget(workspace)
     return post(at(target.machine, '/api/git/fetch'), target.body({}))

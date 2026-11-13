@@ -233,6 +233,15 @@ const pull = async ({ workspace }) => {
   return { output: [stdout, stderr].join('\n').trim(), status: await status({ workspace }) }
 }
 
+const rebase = async ({ workspace }) => {
+  const top = await repoTop(workspace)
+  const current = await readStatus(top)
+  if (!current.branch) throw httpError(409, 'Cannot rebase a detached HEAD')
+  if (!current.upstream) throw httpError(409, 'No upstream branch')
+  const { stdout, stderr } = await run(top, ['pull', '--rebase'], { timeout: NETWORK_TIMEOUT })
+  return { output: [stdout, stderr].join('\n').trim(), status: await status({ workspace }) }
+}
+
 const fetch = async ({ workspace }) => {
   const top = await repoTop(workspace)
   const { stdout, stderr } = await run(top, ['fetch', '--all', '--prune'], { timeout: NETWORK_TIMEOUT })
@@ -291,4 +300,4 @@ const log = async ({ workspace, limit }) => {
   return { commits }
 }
 
-module.exports = { status, branches, checkout, stage, unstage, discard, commit, push, pull, fetch, diff, log }
+module.exports = { status, branches, checkout, stage, unstage, discard, commit, push, pull, rebase, fetch, diff, log }

@@ -113,6 +113,7 @@ const useGitRepo = (workspaceId) => {
   const commit = (message, amend) => run('commit', () => api.gitCommit(workspaceId, { message, amend }), { reload: true })
   const push = () => run('push', () => api.gitPush(workspaceId), { reload: true })
   const pull = () => run('pull', () => api.gitPull(workspaceId), { reload: true })
+  const rebase = () => run('rebase', () => api.gitRebase(workspaceId), { reload: true })
   const fetchRemotes = () => run('fetch', () => api.gitFetch(workspaceId), { reload: true })
   const checkout = (branch, options) => run('checkout', () => api.gitCheckout(workspaceId, branch, options), { reload: true })
 
@@ -135,6 +136,7 @@ const useGitRepo = (workspaceId) => {
     commit,
     push,
     pull,
+    rebase,
     fetchRemotes,
     checkout,
   }

@@ -87,6 +87,9 @@ const GitTopbar = ({
             <Button devId="7di69ic" variant="secondary" size="sm" title="Pull (fast-forward only)" loading={busy === 'pull'} disabled={Boolean(busy) || !status.upstream} onClick={repo.pull}>
               Pull{behind ? ` ↓${behind}` : ''}
             </Button>
+            <Button devId="w6p3n8c" variant="secondary" size="sm" title="Pull with rebase onto upstream" loading={busy === 'rebase'} disabled={Boolean(busy) || !status.upstream || !status.branch} onClick={repo.rebase}>
+              Rebase
+            </Button>
             <Button
               devId="bzzdqr8"
               variant={ahead || (!status.upstream && status.branch) ? 'primary' : 'secondary'}

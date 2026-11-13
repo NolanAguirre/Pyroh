@@ -78,6 +78,10 @@ router.post('/pull', route(async (req, res) => {
   res.json(await gitRepo.pull({ workspace: bodyOf(req).workspace }))
 }))
 
+router.post('/rebase', route(async (req, res) => {
+  res.json(await gitRepo.rebase({ workspace: bodyOf(req).workspace }))
+}))
+
 router.post('/fetch', route(async (req, res) => {
   res.json(await gitRepo.fetch({ workspace: bodyOf(req).workspace }))
 }))
