@@ -133,6 +133,6 @@
   }
 
   .ui-settings-panel {
-    height: min(520px, calc(100vh - 32px));
+    height: min(512px, calc(100vh - 32px));
   }
 }
