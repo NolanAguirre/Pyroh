@@ -67,6 +67,7 @@ const UiSettingsForm = ({ devId, transcriptFontSize, onTranscriptFontSize, maxSu
             <Tab>Remotes</Tab>
           </TabList>
         </TabsDisplay>
+        <div className="ui-settings__body">
         {tab === 2 ? <RemoteSettings /> : tab === 1 ? <HotkeySettings {...hotkeySettings} /> : <>
         <DevScope id="p4c8n2s" state={{ spellcheck }}>
           <p className="field">
@@ -121,6 +122,7 @@ const UiSettingsForm = ({ devId, transcriptFontSize, onTranscriptFontSize, maxSu
         {namingError ? <p className="hint hint--error" role="alert">{namingError}</p> : null}
         {error ? <p className="hint hint--error" role="alert">{error}</p> : null}
         </>}
+        </div>
       </form>
     </DevScope>
   )

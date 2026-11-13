@@ -131,4 +131,8 @@
     width: calc(100vw - 16px);
     padding: 16px;
   }
+
+  .ui-settings-panel {
+    height: min(520px, calc(100vh - 32px));
+  }
 }
