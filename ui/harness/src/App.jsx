@@ -19,6 +19,8 @@ import useWorkspaceSessions from './useWorkspaceSessions'
 import useRunningJobs, { ACTIVE_JOB } from './useRunningJobs'
 import useRegistry from './useRegistry'
 import useTranscriptFontSize from './useTranscriptFontSize'
+import useHotkeys from './useHotkeys'
+import useNewChatHotkey from './useNewChatHotkey'
 import api from './api'
 import './App.css'
 
@@ -84,6 +86,7 @@ const App = () => {
   }, [])
 
   const { transcriptFontSize, changeTranscriptFontSize, maxSubagentDepth, changeMaxSubagentDepth, settingsError } = useTranscriptFontSize()
+  const hotkeySettings = useHotkeys()
   const leaveSession = () => go(activeWorkspaceId, null, { replace: true })
   const {
     sessions,
@@ -200,6 +203,13 @@ const App = () => {
     closePanel,
   })
   const activePanel = registry.panels.find((panel) => panel.id === view && PANEL_COMPONENTS[panel.id]) || null
+  const hotkeyError = useNewChatHotkey({
+    enabled: hotkeySettings.ready && !activePanel,
+    binding: hotkeySettings.hotkeys.newChat,
+    workspace,
+    providers,
+    onCreated,
+  })
 
   const sidebar = (
     <SessionsSidebar
@@ -238,11 +248,13 @@ const App = () => {
       maxSubagentDepth={maxSubagentDepth}
       onMaxSubagentDepth={changeMaxSubagentDepth}
       settingsError={settingsError}
+      hotkeySettings={hotkeySettings}
     />
   )
 
   const mainPane = (
     <main className="app__main">
+      {hotkeyError && <p className="hint hint--error" role="alert">{hotkeyError}</p>}
       {activePanel?.placement === 'main' ? (
         PANEL_COMPONENTS[activePanel.id]()
       ) : activeId ? (

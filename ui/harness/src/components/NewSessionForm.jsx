@@ -10,6 +10,7 @@ import api from '../api'
 import CodexSettings from './CodexSettings'
 import GrokSettings from './GrokSettings'
 import ClaudeSettings from './ClaudeSettings'
+import { DEFAULT_PROVIDER, DEFAULT_CODEX_SETTINGS, DEFAULT_GROK_SETTINGS, DEFAULT_CLAUDE_SETTINGS } from '../newSessionDefaults'
 
 const NewSessionForm = ({
   devId,
@@ -24,11 +25,11 @@ const NewSessionForm = ({
   onCreated,
 }) => {
   const [workspaceId, setWorkspaceId] = useState(defaults.workspaceId || workspace?.id || '')
-  const [provider, setProvider] = useState(defaults.provider || 'codex')
+  const [provider, setProvider] = useState(defaults.provider || DEFAULT_PROVIDER)
   const [model, setModel] = useState(defaults.model || '')
-  const [codex, setCodex] = useState({ reasoningEffort: 'high', sandbox: 'danger-full-access', approvalPolicy: 'never', webSearch: 'cached', ...defaults.codex })
-  const [grok, setGrok] = useState({ reasoningEffort: '', ...defaults.grok })
-  const [claude, setClaude] = useState({ reasoningEffort: '', permissionMode: 'bypassPermissions', ...defaults.claude })
+  const [codex, setCodex] = useState({ ...DEFAULT_CODEX_SETTINGS, ...defaults.codex })
+  const [grok, setGrok] = useState({ ...DEFAULT_GROK_SETTINGS, ...defaults.grok })
+  const [claude, setClaude] = useState({ ...DEFAULT_CLAUDE_SETTINGS, ...defaults.claude })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 

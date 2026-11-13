@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { DevScope, FormRange, FormToggle } from 'component-library'
+import { DevScope, FormRange, FormToggle, Tab, TabList, TabsDisplay } from 'component-library'
 import api from '../api'
+import HotkeySettings from './HotkeySettings'
 
 const MIN_TRANSCRIPT_FONT_SIZE = 12
 const MAX_TRANSCRIPT_FONT_SIZE = 24
 
-const UiSettingsForm = ({ devId, transcriptFontSize, onTranscriptFontSize, maxSubagentDepth, onMaxSubagentDepth, error }) => {
+const UiSettingsForm = ({ devId, transcriptFontSize, onTranscriptFontSize, maxSubagentDepth, onMaxSubagentDepth, error, hotkeySettings }) => {
+  const [tab, setTab] = useState(0)
   const [spellcheck, setSpellcheck] = useState(null)
   // Whether the categorizer is configured, and the saved on/off choice.
   const [namingAvailable, setNamingAvailable] = useState(null)
@@ -57,6 +59,13 @@ const UiSettingsForm = ({ devId, transcriptFontSize, onTranscriptFontSize, maxSu
           <h2>Settings</h2>
           <p className="hint">Global settings are saved on disk.</p>
         </div>
+        <TabsDisplay index={tab} select={setTab}>
+          <TabList>
+            <Tab>General</Tab>
+            <Tab>Hotkeys</Tab>
+          </TabList>
+        </TabsDisplay>
+        {tab === 1 ? <HotkeySettings {...hotkeySettings} /> : <>
         <DevScope id="p4c8n2s" state={{ spellcheck }}>
           <p className="field">
             <span className="field__label">Spellcheck</span>
@@ -109,6 +118,7 @@ const UiSettingsForm = ({ devId, transcriptFontSize, onTranscriptFontSize, maxSu
         </DevScope>
         {namingError ? <p className="hint hint--error" role="alert">{namingError}</p> : null}
         {error ? <p className="hint hint--error" role="alert">{error}</p> : null}
+        </>}
       </form>
     </DevScope>
   )

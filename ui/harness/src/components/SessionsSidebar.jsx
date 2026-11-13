@@ -47,6 +47,7 @@ const SessionsSidebar = ({
   maxSubagentDepth = 2,
   onMaxSubagentDepth,
   settingsError = '',
+  hotkeySettings,
 }) => {
   const { filteredSessions, shownSessions, hiddenArchived, sessionsToArchive, showMoreArchived } = useSidebarSessions({
     sessions,
@@ -146,6 +147,7 @@ const SessionsSidebar = ({
           maxSubagentDepth={maxSubagentDepth}
           onMaxSubagentDepth={onMaxSubagentDepth}
           settingsError={settingsError}
+          hotkeySettings={hotkeySettings}
         />
 
         <WorkspaceSection

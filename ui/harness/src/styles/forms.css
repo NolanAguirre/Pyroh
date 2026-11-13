@@ -24,6 +24,22 @@
   margin: 4px 0 0;
 }
 
+.ui-settings__hotkeys {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 340px;
+}
+
+.ui-settings__hotkeys .hint {
+  margin: 0;
+}
+
+.ui-settings__hotkey-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .new-session-panel {
   background: var(--bg-elev);
   border: 1px solid var(--border);

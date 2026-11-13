@@ -28,6 +28,7 @@ const SidebarHeader = ({
   maxSubagentDepth,
   onMaxSubagentDepth,
   settingsError,
+  hotkeySettings,
 }) => (
   <DevScope id="t8w3n6p">
     <div className="sidebar__header">
@@ -40,6 +41,7 @@ const SidebarHeader = ({
             maxSubagentDepth={maxSubagentDepth}
             onMaxSubagentDepth={onMaxSubagentDepth}
             error={settingsError}
+            hotkeySettings={hotkeySettings}
           />
           <Button variant="secondary" size="sm" devId="k4m8q2w" title="Settings" aria-label="Settings">
             <Icon d={ICONS.settings} />
