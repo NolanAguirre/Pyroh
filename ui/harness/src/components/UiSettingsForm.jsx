@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { DevScope, FormRange, FormToggle, Tab, TabList, TabsDisplay } from 'component-library'
 import api from '../api'
 import HotkeySettings from './HotkeySettings'
+import RemoteSettings from './RemoteSettings'
 
 const MIN_TRANSCRIPT_FONT_SIZE = 12
 const MAX_TRANSCRIPT_FONT_SIZE = 24
@@ -63,9 +64,10 @@ const UiSettingsForm = ({ devId, transcriptFontSize, onTranscriptFontSize, maxSu
           <TabList>
             <Tab>General</Tab>
             <Tab>Hotkeys</Tab>
+            <Tab>Remotes</Tab>
           </TabList>
         </TabsDisplay>
-        {tab === 1 ? <HotkeySettings {...hotkeySettings} /> : <>
+        {tab === 2 ? <RemoteSettings /> : tab === 1 ? <HotkeySettings {...hotkeySettings} /> : <>
         <DevScope id="p4c8n2s" state={{ spellcheck }}>
           <p className="field">
             <span className="field__label">Spellcheck</span>

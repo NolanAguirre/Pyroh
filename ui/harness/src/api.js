@@ -105,9 +105,9 @@ const tagGroup = (group, machine) => (machine && group ? {
 
 // Runs `fn(machine)` on every machine; unreachable machines are skipped.
 const eachMachine = async (fn) => {
-  const { machines } = await loadMachines()
-  if (!machines.length) return [await fn(null)]
-  const results = await Promise.allSettled(machines.map(fn))
+  const { self, machines } = await loadMachines()
+  const targets = self && machines.includes(self) ? machines : [null, ...machines]
+  const results = await Promise.allSettled(targets.map(fn))
   const ok = results.filter((result) => result.status === 'fulfilled').map((result) => result.value)
   if (!ok.length) throw results[0].reason
   return ok
@@ -185,6 +185,16 @@ const listTerminalItems = async (kind, key, tag, workspace, { all = false } = {}
 
 const api = {
   loadMachines,
+  getRemotes: () => fetch(at(null, '/api/remotes'), { cache: 'no-store' }).then(json),
+  setRemotes: async (config) => {
+    const result = await send('PUT', at(null, '/api/remotes'), config).then(json)
+    machinesRequest = Promise.resolve({
+      self: result.config.self,
+      machines: result.config.machines.map(({ name }) => name),
+    })
+    window.dispatchEvent(new Event('pyroh:remotes-changed'))
+    return result
+  },
   machineOf: (id) => splitId(id).machine,
   // Tags a record streamed from `sessionId`'s machine (SSE payloads).
   adoptSession: (sessionId, session) => tagSession(session, splitId(sessionId).machine),

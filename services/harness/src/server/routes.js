@@ -23,8 +23,17 @@ const { correctText } = require('../spellcheck')
 const questionStore = require('../store/questionStore')
 const workspaceStore = require('../store/workspaceStore')
 const checkpointStore = require('../store/checkpointStore')
+const remotes = require('./remotes')
 
 const router = express.Router()
+
+router.get('/remotes', (_req, res) => {
+  res.set('Cache-Control', 'no-store').json({ config: remotes.read() })
+})
+
+router.put('/remotes', async (req, res) => {
+  res.json(await remotes.save(req.body))
+})
 
 router.post('/sessions/:id/prompt-evaluation', require('../routes/evaluatePrompt'))
 

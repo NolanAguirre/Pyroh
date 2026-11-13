@@ -7,23 +7,33 @@ const NewWorkspaceForm = ({ devId, popup, onCreated }) => {
   const [name, setName] = useState('')
   const [cwd, setCwd] = useState('')
   const [machines, setMachines] = useState([])
+  const [self, setSelf] = useState(null)
+  const [machinesRevision, setMachinesRevision] = useState(0)
   const [machine, setMachine] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
   useEffect(() => {
     let cancelled = false
-    api.loadMachines().then(({ self, machines: list }) => {
-      if (cancelled || !list.length) return
+    const load = () => api.loadMachines().then(({ self: local, machines: list }) => {
+      if (cancelled) return
       setMachines(list)
-      setMachine(list.includes(self) ? self : list[0])
+      setSelf(local)
+      setMachine((current) => list.includes(current) ? current : list.includes(local) ? local : null)
+      setCwd('')
+      setMachinesRevision((value) => value + 1)
     })
-    return () => { cancelled = true }
+    load()
+    window.addEventListener('pyroh:remotes-changed', load)
+    return () => {
+      cancelled = true
+      window.removeEventListener('pyroh:remotes-changed', load)
+    }
   }, [])
 
   const changeMachine = (next) => {
     setCwd('')
-    setMachine(next)
+    setMachine(next || null)
   }
 
   const submit = async () => {
@@ -58,7 +68,10 @@ const NewWorkspaceForm = ({ devId, popup, onCreated }) => {
               <span className="field__label">Machine</span>
               <SelectDisplay
                 selected={machine || ''}
-                options={machines.map((item) => ({ value: item }))}
+                options={[
+                  ...(!self ? [{ value: '', displayValue: 'Local' }] : []),
+                  ...machines.map((item) => ({ value: item })),
+                ]}
                 select={changeMachine}
               />
             </label>
@@ -80,9 +93,7 @@ const NewWorkspaceForm = ({ devId, popup, onCreated }) => {
         <DevScope id="hr2w8q4">
           <div className="field">
             <span className="field__label">Working Directory</span>
-            {(!machines.length || machine) && (
-              <WorkDirPicker devId="hr8n4j6" machine={machine} onChange={setCwd} />
-            )}
+            {machinesRevision > 0 && <WorkDirPicker key={`${machinesRevision}:${machine || ''}`} devId="hr8n4j6" machine={machine} onChange={setCwd} />}
           </div>
         </DevScope>
 

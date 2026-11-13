@@ -3,9 +3,17 @@
 // list (machines.public.json). A missing machines.json means single-machine mode.
 const fs = require('fs')
 const path = require('path')
+const net = require('net')
 
 const NAME = /^[a-z0-9_-]+$/
-const HOST = /^[A-Za-z0-9.:[\]-]+$/
+const HOST = /^(?:[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?|\[[0-9a-fA-F:]+\])(?::([0-9]+))?$/
+
+const validHost = (host) => {
+  if (typeof host !== 'string') return false
+  const match = HOST.exec(host)
+  if (!match || (match[1] && (Number(match[1]) < 1 || Number(match[1]) > 65535))) return false
+  return !host.startsWith('[') || net.isIP(host.slice(1, host.indexOf(']'))) === 6
+}
 
 const source = path.join(__dirname, 'machines.json')
 
@@ -19,15 +27,23 @@ const readSource = () => {
 }
 
 const validate = (config) => {
-  const machines = Array.isArray(config.machines) ? config.machines : []
+  if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('machine config must be an object')
+  if (!Array.isArray(config.machines)) throw new Error('machines must be a list')
+  const machines = config.machines.map((machine) => {
+    if (!machine || typeof machine !== 'object') throw new Error('invalid machine entry')
+    return { name: machine.name, host: machine.host }
+  })
   const seen = new Set()
   machines.forEach(({ name, host }) => {
-    if (!NAME.test(name || '')) throw new Error(`invalid machine name: ${name}`)
-    if (!HOST.test(host || '')) throw new Error(`invalid host for ${name}: ${host}`)
+    if (typeof name !== 'string' || !NAME.test(name)) throw new Error(`invalid machine name: ${name}`)
+    if (!validHost(host)) throw new Error(`invalid host for ${name}: use a hostname or IP with an optional port`)
     if (seen.has(name)) throw new Error(`duplicate machine: ${name}`)
     seen.add(name)
   })
-  if (config.resolver && !HOST.test(config.resolver)) throw new Error(`invalid resolver: ${config.resolver}`)
+  if (config.resolver && !validHost(config.resolver)) throw new Error(`invalid resolver: ${config.resolver}`)
+  if (!config.resolver && machines.some(({ host }) => !net.isIP(host.startsWith('[') ? host.slice(1, host.indexOf(']')) : host.split(':')[0]))) {
+    throw new Error('A DNS resolver is required for machine hostnames. Use an IP address to connect without DNS.')
+  }
   if (config.self && !seen.has(config.self)) throw new Error(`self is not a listed machine: ${config.self}`)
   return { machines, resolver: config.resolver || null, self: config.self || null }
 }
@@ -49,7 +65,11 @@ const renderConf = ({ machines, resolver }) => [
 const renderPublic = ({ machines, self }) =>
   `${JSON.stringify({ self, machines: machines.map(({ name }) => name) }, null, 2)}\n`
 
-const config = validate(readSource())
-fs.writeFileSync(path.join(__dirname, 'machines.conf'), renderConf(config))
-fs.writeFileSync(path.join(__dirname, 'machines.public.json'), renderPublic(config))
-console.log(`machines: ${config.machines.map(({ name }) => name).join(', ') || '(none)'}`)
+if (require.main === module) {
+  const config = validate(readSource())
+  fs.writeFileSync(path.join(__dirname, 'machines.conf'), renderConf(config))
+  fs.writeFileSync(path.join(__dirname, 'machines.public.json'), renderPublic(config))
+  console.log(`machines: ${config.machines.map(({ name }) => name).join(', ') || '(none)'}`)
+}
+
+module.exports = { readSource, validate, renderConf, renderPublic }
