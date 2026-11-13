@@ -28,7 +28,8 @@ const start = () => {
   sessionIndex.waitForInitialSeed(new Promise(resolve => { reconciled = resolve }))
   const app = createApp()
   let stopMaintenance = () => {}
-  const server = app.listen(config.port, config.host, () => {
+  const server = app.listen(config.port, config.host, (err) => {
+    if (err) throw err
     process.stdout.write(`harness API listening on http://${config.host}:${config.port}\n`)
     process.stdout.write(`write-dir: ${config.writeDir}\n`)
     stopMaintenance = startMaintenance({ onReconciled: reconciled })
