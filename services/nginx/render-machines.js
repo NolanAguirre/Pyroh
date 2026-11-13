@@ -37,11 +37,11 @@ const renderConf = ({ machines, resolver }) => [
   ...(resolver ? [`resolver ${resolver} valid=30s;`] : []),
   'map $request_uri $machine_host {',
   '    default "";',
-  ...machines.map(({ name, host }) => `    ~^/m/${name}/ ${host};`),
+  ...machines.map(({ name, host }) => `    ~^/(?:harness/)?m/${name}/ ${host};`),
   '}',
   'map $request_uri $machine_path {',
   '    default /;',
-  '    ~^/m/[A-Za-z0-9_-]+(/.*) $1;',
+  '    ~^/(?:harness/)?m/[A-Za-z0-9_-]+(/.*) $1;',
   '}',
   '',
 ].join('\n')
