@@ -86,6 +86,9 @@ const useWorkspaceSessions = (activeWorkspaceId, activeId, leaveSession, searchi
   }, [loadSessions])
 
   const addSession = (session) => {
+    // Older list requests may not include the session just created.
+    sessionsRequest.current += 1
+    inFlight.current = null
     setSessions((prev) => [session, ...prev.filter((item) => item.id !== session.id)])
     setSessionsReadyFor(activeWorkspaceId)
   }

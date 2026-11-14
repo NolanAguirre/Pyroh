@@ -332,10 +332,8 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards }) => {
                   const columnCount = activeCards(column).filter(matchesCard).length
                   return <DevScope key={column.id} id="crlq97n" state={{ column: column.id, collapsed }}>
                   <section className={`kanban__column${collapsed ? ' kanban__column--collapsed' : ''} ${dropTarget === column.id ? 'kanban__drop-target' : ''}`} aria-label={column.title} onDragOver={(event) => dragOver(event, column.id)} onDrop={(event) => drop(event, column.id)}>
-                  {collapsed ? <button type="button" className="kanban__column-collapsed" aria-expanded="false" aria-label={`Expand ${column.title}`} title={column.title} disabled={busy} onClick={() => toggleColumn(column.id)}>
+                  {collapsed ? <button type="button" className="kanban__column-collapsed" aria-expanded="false" aria-label={`Expand ${column.title}, ${columnCount} cards`} title={`${column.title} (${columnCount})`} disabled={busy} onClick={() => toggleColumn(column.id)}>
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
-                    <span className="kanban__column-collapsed-title">{column.title}</span>
-                    <span className="kanban__column-collapsed-count">{columnCount}</span>
                   </button> : <>
                   <div className="kanban__column-heading"><h2>{column.title} <span>{columnCount}</span></h2><button type="button" className="kanban__icon-button" aria-expanded="true" aria-label={`Collapse ${column.title}`} disabled={busy} onClick={() => toggleColumn(column.id)}><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg></button><DevScope id="rweodgf"><button className="kanban__icon-button" aria-label={`Edit ${column.title}`} disabled={busy} onClick={() => openEditor('boardColumn', column)}>•••</button></DevScope></div>
                   <div className="kanban__column-order"><DevScope id="z9ie0cx"><button disabled={busy || columnIndex === 0} aria-label={`Move ${column.title} left`} onClick={() => change(() => moveColumn(column.id, columns[columnIndex - 1].id, activeId))}>←</button></DevScope><DevScope id="nwp8rty"><button disabled={busy || columnIndex === columns.length - 1} aria-label={`Move ${column.title} right`} onClick={() => change(() => moveColumn(column.id, columns[columnIndex + 2]?.id || null, activeId))}>→</button></DevScope></div>
@@ -367,8 +365,10 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards }) => {
                       </li></DevScope>)}
                     </ul></FoldContent>
                   </Fold></DevScope>}
+                  </>}
                   </section>
-                </DevScope>)}
+                </DevScope>
+                })}
                 {board && <Button variant="secondary" disabled={busy} onClick={() => openEditor('boardColumn')} devId="dkl7jve">+ Add column</Button>}
               </div>
             </DevScope>}
