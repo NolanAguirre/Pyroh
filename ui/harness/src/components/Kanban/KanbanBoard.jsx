@@ -9,12 +9,15 @@ import KanbanQuery from './KanbanQuery'
 
 
 
-const Editor = ({ devId, user, editor, columns, hierarchy, busy, error, onSave, onDelete, onArchive, onOpenCard, onCommentChange, popup }) => {
+const Editor = ({ devId, user, editor, boards, hierarchy, busy, error, onSave, onDelete, onArchive, onOpenCard, onCommentChange, popup }) => {
   const [title, setTitle] = useState(editor.item.title || '')
   const [description, setDescription] = useState(editor.item.description || '')
+  const [boardId, setBoardId] = useState(editor.boardId || '')
   const [columnId, setColumnId] = useState(editor.item.columnId || '')
   const [parentId, setParentId] = useState(editor.item.parentId || '')
   const [epic, setEpic] = useState(Boolean(editor.item.epic))
+  const columns = boards.find((board) => board.id === boardId)?.boardColumnsByBoardId.nodes || []
+  const validColumn = editor.kind !== 'card' || columns.some((column) => column.id === columnId)
   const children = hierarchy.getChildren(editor.item.id)
   const epicLocked = children.length > 0
   const parents = hierarchy.getParents(editor.item.id)
@@ -25,7 +28,7 @@ const Editor = ({ devId, user, editor, columns, hierarchy, busy, error, onSave, 
     <div role="dialog" aria-modal="true" aria-label={`${editor.item.id ? 'Edit' : 'New'} ${noun}`}>
     <form onSubmit={(event) => {
       event.preventDefault()
-      if (title.trim()) onSave({ title: title.trim(), description, columnId, parentId: parentId || null, epic: epicLocked || epic })
+      if (title.trim() && validColumn) onSave({ title: title.trim(), description, columnId, parentId: parentId || null, epic: epicLocked || epic })
     }}>
       {editor.kind !== 'card' && <h2>{editor.item.id ? `Edit ${noun}` : `New ${noun}`}</h2>}
       <fieldset disabled={busy}>
@@ -46,9 +49,19 @@ const Editor = ({ devId, user, editor, columns, hierarchy, busy, error, onSave, 
                 <p id="kanban-parent-help" className="kanban__comments-empty">{children.length
                   ? 'This task has children. Remove or reassign them, including archived children, before choosing a parent.'
                   : 'Choose an epic to nest this task under it. Choose No parent to remove the relationship.'}</p>
-                <label>Column<DevScope id="ntbho75"><select value={columnId} onChange={(event) => setColumnId(event.target.value)}>
+                <label>Board<select value={boardId} onChange={(event) => {
+                  const destinationId = event.target.value
+                  const destinationColumns = boards.find((board) => board.id === destinationId)?.boardColumnsByBoardId.nodes || []
+                  setBoardId(destinationId)
+                  setColumnId(destinationColumns[0]?.id || '')
+                }}>
+                  {boards.map((board) => <option key={board.id} value={board.id}>{board.title}</option>)}
+                </select></label>
+                <label>Column<DevScope id="ntbho75"><select required disabled={!columns.length} value={validColumn ? columnId : ''} onChange={(event) => setColumnId(event.target.value)}>
+                  {!validColumn && <option value="">{columns.length ? 'Choose a column' : 'No columns available'}</option>}
                   {columns.map((column) => <option key={column.id} value={column.id}>{column.title}</option>)}
                 </select></DevScope></label>
+                {!columns.length && <p className="kanban__comments-empty" role="status">This board has no columns. Add a column to it or choose another board before saving.</p>}
               </FoldContent>
             </Fold>
           </div>
@@ -60,7 +73,7 @@ const Editor = ({ devId, user, editor, columns, hierarchy, busy, error, onSave, 
           {editor.kind === 'card' && editor.item.id && <Button type="button" variant="secondary" size="sm" onClick={onArchive} devId="ilzmmz9">{editor.item.archivedAt ? 'Restore card' : 'Archive card'}</Button>}
           <span />
           <Button type="button" variant="secondary" size="sm" onClick={popup.close} devId="43vqubf">Cancel</Button>
-          <Button type="submit" size="sm" disabled={!title.trim()} devId="wd0pmd7">{busy ? 'Saving…' : 'Save'}</Button>
+          <Button type="submit" size="sm" disabled={!title.trim() || !validColumn} devId="wd0pmd7">{busy ? 'Saving…' : 'Save'}</Button>
         </div>
       </fieldset>
     </form>
@@ -193,11 +206,10 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = 
   const columns = board?.boardColumnsByBoardId.nodes || []
   const task = route.taskId ? columns.flatMap((column) => column.cardsByColumnId.nodes).find((card) => card.id === route.taskId) : null
   const localItem = editorKind === 'board' ? boards.find((item) => item.id === editorId) : columns.find((item) => item.id === editorId)
-  const localEditor = editorKind ? { kind: editorKind, item: localItem || { columnId: newColumnId } } : null
+  const localEditor = editorKind ? { kind: editorKind, item: localItem || { columnId: newColumnId }, boardId: activeId } : null
   const editor = route.taskId ? (task ? { kind: 'card', item: task, boardId: activeId } : null) : localEditor
   const routeError = route.invalid ? 'This page could not be found.' : route.boardId && !board
     ? 'This board could not be found.' : route.taskId && !task ? 'This task could not be found on this board.' : ''
-  const editorColumns = editor?.boardId ? boards.find((item) => item.id === editor.boardId)?.boardColumnsByBoardId.nodes || [] : columns
   const visibleBoards = view === 'matrix' ? boards : board ? [board] : []
   const cardCount = visibleBoards.reduce((total, item) => total + item.boardColumnsByBoardId.nodes.reduce((count, column) => count + activeCards(column).length, 0), 0)
   const matchingCount = visibleBoards.reduce((total, item) => total + item.boardColumnsByBoardId.nodes.reduce((count, column) => count + activeCards(column).filter(matchesCard).length, 0), 0)
@@ -233,7 +245,7 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = 
     setError('')
     if (route.taskId) navigateTo({})
   }
-  const change = async (operation, { close = false } = {}) => {
+  const change = async (operation, { close = false, boardId } = {}) => {
     if (mutationLock.current) return
     mutationLock.current = true
     setBusy(true)
@@ -247,7 +259,10 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = 
           const deletedId = result.deleteBoard.board?.id
           if (deletedId === activeId) navigateTo({ boardId: boards.find((item) => item.id !== deletedId)?.id || '' }, { replace: true })
         }
-        else if (close) closeEditor()
+        else if (close) {
+          if (boardId && boardId !== activeId && !scopedBoardId) navigateTo({ boardId }, { replace: true })
+          else closeEditor()
+        }
       }
       return result
     } catch (failure) {
@@ -265,21 +280,25 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = 
     if (kind === 'card' && item.id) navigateTo({ boardId, taskId: item.id })
     else setEditor({ kind, item })
   }
-  const save = ({ title, description, columnId, parentId, epic }) => change(() => {
-    const { kind, item } = editor
-    if (kind === 'card') {
-      if (parentId) {
-        const parent = hierarchy.getCard(parentId)
-        if (!parent || parent.id === item.id || parent.parentId || !parent.epic) throw new Error('Choose an epic as the parent, or remove the parent.')
-        if (hierarchy.getChildren(item.id).length) throw new Error('A task with children, including archived children, cannot have a parent.')
+  const save = ({ title, description, columnId, parentId, epic }) => {
+    const destination = editor.kind === 'card' ? boards.find((board) => board.boardColumnsByBoardId.nodes.some((column) => column.id === columnId)) : null
+    return change(() => {
+      const { kind, item } = editor
+      if (kind === 'card') {
+        if (!destination) throw new Error('Choose a board with a valid column before saving.')
+        if (parentId) {
+          const parent = hierarchy.getCard(parentId)
+          if (!parent || parent.id === item.id || parent.parentId || !parent.epic) throw new Error('Choose an epic as the parent, or remove the parent.')
+          if (hierarchy.getChildren(item.id).length) throw new Error('A task with children, including archived children, cannot have a parent.')
+        }
+        if (!epic && hierarchy.getChildren(item.id).length) throw new Error('A task with children must stay an epic.')
+        return saveCard(item, title, description, columnId, user.id, destination.id, parentId, Boolean(epic))
       }
-      if (!epic && hierarchy.getChildren(item.id).length) throw new Error('A task with children must stay an epic.')
-      return saveCard(item, title, description, columnId, user.id, editor.boardId || activeId, parentId, Boolean(epic))
-    }
-    const type = kind === 'board' ? 'Board' : 'BoardColumn'
-    if (item.id) return mutate(`update${type}ById`, `Update${type}ByIdInput`, { id: item.id, [`${kind}Patch`]: { title } }, undefined, kind === 'board' ? undefined : activeId)
-    return mutate(`create${type}`, `Create${type}Input`, { [kind]: { title, ...(kind === 'boardColumn' ? { boardId: activeId } : {}) } }, undefined, kind === 'board' ? undefined : activeId)
-  }, { close: true })
+      const type = kind === 'board' ? 'Board' : 'BoardColumn'
+      if (item.id) return mutate(`update${type}ById`, `Update${type}ByIdInput`, { id: item.id, [`${kind}Patch`]: { title } }, undefined, kind === 'board' ? undefined : activeId)
+      return mutate(`create${type}`, `Create${type}Input`, { [kind]: { title, ...(kind === 'boardColumn' ? { boardId: activeId } : {}) } }, undefined, kind === 'board' ? undefined : activeId)
+    }, { close: true, boardId: destination?.id })
+  }
   const remove = ({ kind, item }) => {
     const noun = kind === 'boardColumn' ? 'column' : kind
     const contents = kind === 'board' ? ' and all its columns and cards' : kind === 'boardColumn' ? ' and all its cards' : ''
@@ -405,7 +424,7 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = 
           </main>
           </BoardLayout>
           <PopupDisplay backdropDevId="v3varah" closeDevId="dhzhr12" contentDevId="tsk9wm9" devId="2foeazy" isOpen={Boolean(editor)} close={() => { if (!busy) closeEditor() }} lockScroll={!scopedBoardId} panelClassName="kanban__editor">
-            {editor ? <Editor devId="z22w4qd" user={user} key={`${editor.kind}-${editor.item.id || 'new'}`} editor={editor} columns={editorColumns} hierarchy={hierarchy} busy={busy} error={error} onSave={save} onDelete={() => remove(editor)} onArchive={() => toggleArchive(editor.item, { close: !editor.item.archivedAt })} onOpenCard={(boardId, item) => openEditor('card', item, boardId)} onCommentChange={change} /> : <span />}
+            {editor ? <Editor devId="z22w4qd" user={user} key={`${editor.kind}-${editor.item.id || 'new'}`} editor={editor} boards={boards} hierarchy={hierarchy} busy={busy} error={error} onSave={save} onDelete={() => remove(editor)} onArchive={() => toggleArchive(editor.item, { close: !editor.item.archivedAt })} onOpenCard={(boardId, item) => openEditor('card', item, boardId)} onCommentChange={change} /> : <span />}
           </PopupDisplay>
         </div>
       </DevScope>

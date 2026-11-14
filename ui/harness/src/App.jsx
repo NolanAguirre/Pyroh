@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   createHarnessPlugin,
   DevInspector,
@@ -26,7 +26,8 @@ import useNewChatHotkey from './useNewChatHotkey'
 import api from './api'
 import './App.css'
 
-const HARNESS_WORKSPACE = { name: 'Pyroh', cwdPatterns: [/\/Pyroh\/?$/], label: 'Pyroh' }
+const HARNESS_WORKSPACE = { name: 'harness', cwdPatterns: [/\/harness\/?$/], label: 'harness' }
+const harnessPlugin = createHarnessPlugin({ client: api, workspace: HARNESS_WORKSPACE })
 const MOBILE_QUERY = '(max-width: 768px)'
 
 restoreStoredWorkspace()
@@ -34,9 +35,6 @@ restoreStoredWorkspace()
 const App = () => {
   const { url, navigate } = useBrowserLocation()
   const { workspaceId: activeWorkspaceId, sessionId: activeId, view, file, term } = selectionFromUrl(url)
-  const harnessPlugin = useMemo(() => createHarnessPlugin({
-    client: api, workspace: HARNESS_WORKSPACE, preferredWorkspaceId: activeWorkspaceId,
-  }), [activeWorkspaceId])
   const mobile = useMediaQuery(MOBILE_QUERY)
   const [mobilePane, setMobilePane] = useState(() => (activeId ? MOBILE_CHAT : MOBILE_SESSIONS))
   const showChat = () => setMobilePane(MOBILE_CHAT)

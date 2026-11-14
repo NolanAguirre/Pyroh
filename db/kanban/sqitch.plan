@@ -9,3 +9,4 @@ v1.004.0 [v1.003.0] 2026-11-13T00:00:00Z Nolan <nolan@localhost> # Case-insensit
 v1.005.0 [v1.004.0] 2026-11-14T02:35:24Z nolan <nolan@nolan> # Task parent relationships
 v1.006.0 [v1.005.0] 2026-11-14T16:57:16Z nolan <nolan@nolan> # Workspace board association by external id
 v1.007.0 [v1.006.0] 2026-11-14T21:18:00Z nolan <nolan@nolan> # Mark tasks as epics for nesting
+v1.008.0 [v1.007.0] 2026-11-14T21:19:00Z nolan <nolan@nolan> # Move cards between boards
