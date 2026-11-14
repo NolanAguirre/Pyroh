@@ -322,7 +322,7 @@ const collect = (current, writeDir, cutoff) => {
   }
   const sourcesForContext = new Map([...sessions.values()].map(session => [session.id, locate(session.id)]))
   for (const agent of agents) sourcesForContext.set(agent.id, locate(agent.id))
-  const context = createContextAnalysis([...sourcesForContext.values()].filter(Boolean), writeDir, cutoff)
+  const context = createContextAnalysis([...sourcesForContext.values()].filter(Boolean), writeDir, cutoff, agents)
   return { source, agents, warnings: [...warnings], excluded, cutoff, context }
 }
 
@@ -367,22 +367,24 @@ const analyzeSubagents = (session, writeDir, assumptions = {}) => {
   const lines = [
     '## Subagent analysis',
     '', ...comparison(data, assumptions, summaries).flatMap(line => [line, '']),
-    '| Agent | Model turns | Current context | Input tokens |',
-    '| --- | ---: | ---: | ---: |',
+    '| Agent | Model turns | Current context | Input tokens | Turn basis |',
+    '| --- | ---: | ---: | ---: | --- |',
     ...data.agents.filter(agent => agent.rows.length).map(agent => {
       const summary = summaries.get(agent.id)
       const label = `${agent.depth ? 'Subagent' : 'Coordinator'} ${agent.session.name || agent.id} (${agent.session.provider || agent.rows[0].provider})`
-      return `| ${cell(label)} | ${estimate(summary.turns, summary.turnsEstimated)} | ${estimate(summary.current, summary.currentEstimated)} | ${metric(aggregate(agent.rows).input)} |`
+      return `| ${cell(label)} | ${estimate(summary.turns, summary.turnsEstimated)} | ${estimate(summary.current, summary.currentEstimated)} | ${metric(aggregate(agent.rows).input)} | ${cell(summary.turnBasis)} |`
     }),
     '',
-    '~ means estimated. Measured turns use reconciled model requests; tool calls are not turns.',
+    '~ means estimated. Measured turns use reconciled model requests; tool calls are not turns. Estimates cover work recorded so far, not remaining work.',
+    'Turn estimates use provider-reported counts, input divided by reported or calibrated context, or measured history from the same provider (preferring the same model). With no suitable evidence, the rough fallback assumes 8,000 input tokens/turn, or 3 turns/run when input is missing. Estimates never fall below observed response counts.',
   ]
-  if (data.agents.some(agent => agent.rows.some(row => row.provider === 'cursor'))) {
-    lines.push('', `Cursor: current context ≈ transcript characters × average tokens/character from ${data.context.samples} GPT/Claude agents. Estimated turns ≈ input tokens ÷ average context, assuming even growth from the run’s starting context to its ending context. Observed response IDs provide a lower bound.`,
+  if (data.agents.some(agent => summaries.get(agent.id).currentEstimated
+    || summaries.get(agent.id).turnsEstimated)) {
+    lines.push('', `Transcript context estimates use average tokens/character from ${data.context.samples} eligible GPT/Claude agents and assume even context growth within each run. Turn estimates remain available without calibration.`,
       'Calibration excludes known compaction, context resets, inherited history, incomplete data, and agents above 2M reported tokens. Hidden compaction and provider differences can still skew estimates.')
-    const reasons = [...new Set(data.agents.filter(agent => agent.session.provider === 'cursor')
+    const reasons = [...new Set(data.agents.filter(agent => agent.rows.length)
       .map(agent => summaries.get(agent.id).reason).filter(Boolean))]
-    if (reasons.length) lines.push(`Unavailable estimates: ${reasons.map(cell).join(' ')}`)
+    if (reasons.length) lines.push(`Context calibration limits: ${reasons.map(cell).join(' ')}`)
   }
   if (data.warnings.length) lines.push('', `Coverage: ${data.warnings.slice(0, 2).map(cell).join(' ')}${data.warnings.length > 2 ? ` (${data.warnings.length - 2} more gaps.)` : ''}`)
   return lines.join('\n')

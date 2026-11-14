@@ -20,7 +20,7 @@ export const INPUT_COMMANDS = [
     type: 'analyze-subagent',
     usage: 'analyze subagent [shared=<tokens>] [requests=<count>] [output=<tokens>]',
     label: 'Analyze subagents',
-    description: 'Show whether subagents likely saved tokens, with turns, context, and a short explanation. Cursor context and turns are estimated from eligible GPT/Claude transcripts; compacted agents and agents above 2M tokens are excluded. Optional assumptions: shared context deduction (default 0), combined requests, and combined output.',
+    description: 'Show whether subagents likely saved tokens, with turns, context, and a short explanation. Turns use measured requests or labeled estimates from provider counts, context, and history, with a rough fallback when data is missing. Transcript context calibration excludes compacted agents and agents above 2M tokens. Optional assumptions: shared context deduction (default 0), combined requests, and combined output.',
     pattern: /^analyze\s+subagent(?:\s+(.*))?$/i,
     arguments: (match) => ({ assumptions: (match[1] || '').trim() }),
   },
