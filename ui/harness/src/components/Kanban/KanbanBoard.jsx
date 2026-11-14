@@ -168,6 +168,8 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards }) => {
   }
   const [dragged, setDragged] = useState(null)
   const [dropTarget, setDropTarget] = useState(null)
+  const [collapsedIds, setCollapsedIds] = useState([])
+  const toggleColumn = (id) => setCollapsedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
   const mutationLock = useRef(false)
   const columns = board?.boardColumnsByBoardId.nodes || []
   const task = route.taskId ? columns.flatMap((column) => column.cardsByColumnId.nodes).find((card) => card.id === route.taskId) : null
@@ -325,9 +327,17 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards }) => {
             {view === 'matrix' && boards.length > 0 && <ProjectMatrix devId="dg0n347" boards={boards} hierarchy={hierarchy} busy={busy} matchesCard={matchesCard} searching={Boolean(query)} onSelectBoard={selectBoard} onOpenCard={(boardId, item) => openEditor('card', item, boardId)} onMoveCard={(cardId, columnId, beforeCardId, boardId) => change(() => moveCard(cardId, columnId, beforeCardId, boardId))} />}
             {view === 'board' && <DevScope id="4aob8se">
               <div className="kanban__board-canvas" aria-busy={busy}>
-                {columns.map((column, columnIndex) => <DevScope key={column.id} id="crlq97n" state={{ column: column.id }}>
-                  <section className={`kanban__column ${dropTarget === column.id ? 'kanban__drop-target' : ''}`} aria-label={column.title} onDragOver={(event) => dragOver(event, column.id)} onDrop={(event) => drop(event, column.id)}>
-                  <div className="kanban__column-heading"><h2>{column.title} <span>{activeCards(column).filter(matchesCard).length}</span></h2><DevScope id="rweodgf"><button className="kanban__icon-button" aria-label={`Edit ${column.title}`} disabled={busy} onClick={() => openEditor('boardColumn', column)}>•••</button></DevScope></div>
+                {columns.map((column, columnIndex) => {
+                  const collapsed = !query && collapsedIds.includes(column.id)
+                  const columnCount = activeCards(column).filter(matchesCard).length
+                  return <DevScope key={column.id} id="crlq97n" state={{ column: column.id, collapsed }}>
+                  <section className={`kanban__column${collapsed ? ' kanban__column--collapsed' : ''} ${dropTarget === column.id ? 'kanban__drop-target' : ''}`} aria-label={column.title} onDragOver={(event) => dragOver(event, column.id)} onDrop={(event) => drop(event, column.id)}>
+                  {collapsed ? <button type="button" className="kanban__column-collapsed" aria-expanded="false" aria-label={`Expand ${column.title}`} title={column.title} disabled={busy} onClick={() => toggleColumn(column.id)}>
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+                    <span className="kanban__column-collapsed-title">{column.title}</span>
+                    <span className="kanban__column-collapsed-count">{columnCount}</span>
+                  </button> : <>
+                  <div className="kanban__column-heading"><h2>{column.title} <span>{columnCount}</span></h2><button type="button" className="kanban__icon-button" aria-expanded="true" aria-label={`Collapse ${column.title}`} disabled={busy} onClick={() => toggleColumn(column.id)}><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg></button><DevScope id="rweodgf"><button className="kanban__icon-button" aria-label={`Edit ${column.title}`} disabled={busy} onClick={() => openEditor('boardColumn', column)}>•••</button></DevScope></div>
                   <div className="kanban__column-order"><DevScope id="z9ie0cx"><button disabled={busy || columnIndex === 0} aria-label={`Move ${column.title} left`} onClick={() => change(() => moveColumn(column.id, columns[columnIndex - 1].id, activeId))}>←</button></DevScope><DevScope id="nwp8rty"><button disabled={busy || columnIndex === columns.length - 1} aria-label={`Move ${column.title} right`} onClick={() => change(() => moveColumn(column.id, columns[columnIndex + 2]?.id || null, activeId))}>→</button></DevScope></div>
                   <div className="kanban__cards">
                     {activeCards(column).map((card, index) => matchesCard(card) && <DevScope key={card.id} id="wtikblu" state={{ card: card.id }}>
