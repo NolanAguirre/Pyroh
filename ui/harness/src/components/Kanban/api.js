@@ -1,9 +1,9 @@
 import { client } from './client'
 
 const USER_FIELDS = '__typename id name'
-const CARD_FIELDS = `__typename id title description columnId parentId epic archivedAt userByAuthorId { ${USER_FIELDS} }`
+const CARD_FIELDS = `__typename id title description columnId parentId epic position archivedAt userByAuthorId { ${USER_FIELDS} }`
 const COLUMN_FIELDS = `__typename id title cardsByColumnId(orderBy: [POSITION_ASC, ID_ASC]) { nodes { ${CARD_FIELDS} } }`
-const BOARD_FIELDS = `__typename id title boardColumnsByBoardId(orderBy: [POSITION_ASC, ID_ASC]) { nodes { ${COLUMN_FIELDS} } }`
+const BOARD_FIELDS = `__typename id title epicRowsByBoardId(orderBy: [POSITION_ASC, ID_ASC]) { nodes { __typename id epicId position } } boardColumnsByBoardId(orderBy: [POSITION_ASC, ID_ASC]) { nodes { ${COLUMN_FIELDS} } }`
 const REPLY_FIELDS = `__typename id body createdAt userByAuthorId { ${USER_FIELDS} }`
 const COMMENT_FIELDS = `__typename id cardId body createdAt userByAuthorId { ${USER_FIELDS} }
   commentRepliesByCommentId(orderBy: [CREATED_AT_ASC, ID_ASC]) { nodes { ${REPLY_FIELDS} } }`
@@ -35,6 +35,10 @@ export const mutate = async (field, type, input, selection, boardId) => {
 }
 export const moveCard = (cardId, targetColumnId, beforeCardId, boardId) => mutate('moveCard', 'MoveCardInput',
   { cardId, targetColumnId, beforeCardId }, undefined, boardId)
+export const moveTask = (cardId, targetColumnId, parentCardId, beforeCardId, boardId) => mutate('moveTask', 'MoveTaskInput',
+  { cardId, targetColumnId, parentCardId, beforeCardId }, undefined, boardId)
+export const moveEpicRow = (targetBoardId, epicCardId, beforeEpicId) => mutate('moveEpicRow', 'MoveEpicRowInput',
+  { targetBoardId, epicCardId, beforeEpicId }, 'epicRow { __typename id epicId position }', targetBoardId)
 export const archiveCard = (cardId, boardId) => mutate('archiveCard', 'ArchiveCardInput', { cardId }, undefined, boardId)
 export const restoreCard = (cardId, boardId) => mutate('restoreCard', 'RestoreCardInput', { cardId }, undefined, boardId)
 export const moveColumn = (columnId, beforeColumnId, boardId) => mutate('moveColumn', 'MoveColumnInput',

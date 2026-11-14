@@ -1,11 +1,12 @@
 import { Children, useEffect, useMemo, useRef, useState } from 'react'
 import { readRoute, routeUrl } from './navigation'
-import { BOARDS_QUERY, archiveCard, mutate, moveCard, moveColumn, restoreCard, saveCard } from './api'
+import { BOARDS_QUERY, archiveCard, mutate, moveCard, moveColumn, moveTask, moveEpicRow, restoreCard, saveCard } from './api'
 import TaskComments from './TaskComments'
 import CardRelationships from './CardRelationships'
 import { createCardHierarchy } from './hierarchy'
-import { Button, PopupDisplay, OrderDisplay, Matrix, FormInput, DevScope, Fold, FoldTrigger, FoldContent, SplitPane, useBrowserLocation } from 'component-library'
+import { Button, PopupDisplay, Matrix, FormInput, DevScope, Fold, FoldTrigger, FoldContent, SplitPane, useBrowserLocation } from 'component-library'
 import KanbanQuery from './KanbanQuery'
+import KanbanRows from './KanbanRows'
 
 
 
@@ -90,8 +91,6 @@ const rememberedBoard = () => {
 }
 // Columns load every card; ordering only applies to the active ones.
 const activeCards = (column) => column.cardsByColumnId.nodes.filter((card) => !card.archivedAt)
-const archivedCards = (column) => column.cardsByColumnId.nodes.filter((card) => card.archivedAt)
-  .sort((a, b) => b.archivedAt.localeCompare(a.archivedAt))
 const columnKey = (column) => column.title.trim().toLowerCase()
 
 const ProjectMatrix = ({ devId, boards, hierarchy, busy, matchesCard, searching, onSelectBoard, onOpenCard, onMoveCard }) => {
@@ -137,7 +136,8 @@ const ProjectMatrix = ({ devId, boards, hierarchy, busy, matchesCard, searching,
     // Dropping on the same stage background keeps the card where it is.
     const unchanged = !beforeCardId && dragged && stageIds.has(dragged.columnId)
     if (dragged && !busy && dragged.boardId === project.id && targetColumnId && dragged.cardId !== beforeCardId && !unchanged) {
-      onMoveCard(dragged.cardId, targetColumnId, beforeCard?.id || null, project.id)
+      const sameScope = beforeCard && (beforeCard.parentId || null) === (draggedCard.parentId || null) && (draggedCard.parentId || beforeCard.epic === draggedCard.epic)
+      onMoveCard(dragged.cardId, targetColumnId, sameScope ? beforeCard.id : null, project.id)
     }
     clearDrag()
   }
@@ -192,21 +192,17 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = 
   const [error, setError] = useState('')
   const [editorKind, setEditorKind] = useState('')
   const [editorId, setEditorId] = useState('')
-  const [newColumnId, setNewColumnId] = useState('')
+  const [newCard, setNewCard] = useState({})
   const setEditor = (value) => {
     setEditorKind(value?.kind || '')
     setEditorId(value?.item?.id || '')
-    setNewColumnId(value?.item?.columnId || '')
+    setNewCard(value?.item || {})
   }
-  const [dragged, setDragged] = useState(null)
-  const [dropTarget, setDropTarget] = useState(null)
-  const [collapsedIds, setCollapsedIds] = useState([])
-  const toggleColumn = (id) => setCollapsedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
   const mutationLock = useRef(false)
   const columns = board?.boardColumnsByBoardId.nodes || []
   const task = route.taskId ? columns.flatMap((column) => column.cardsByColumnId.nodes).find((card) => card.id === route.taskId) : null
   const localItem = editorKind === 'board' ? boards.find((item) => item.id === editorId) : columns.find((item) => item.id === editorId)
-  const localEditor = editorKind ? { kind: editorKind, item: localItem || { columnId: newColumnId }, boardId: activeId } : null
+  const localEditor = editorKind ? { kind: editorKind, item: localItem || newCard, boardId: activeId } : null
   const editor = route.taskId ? (task ? { kind: 'card', item: task, boardId: activeId } : null) : localEditor
   const routeError = route.invalid ? 'This page could not be found.' : route.boardId && !board
     ? 'This board could not be found.' : route.taskId && !task ? 'This task could not be found on this board.' : ''
@@ -309,25 +305,6 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = 
   }
   // Archived cards leave the column order; restoring appends them to the end.
   const toggleArchive = (card, options) => change(() => (card.archivedAt ? restoreCard : archiveCard)(card.id, editor?.boardId || activeId), options)
-  const reorderCard = (column, cardId, direction) => {
-    const cards = activeCards(column)
-    const index = cards.findIndex((card) => card.id === cardId)
-    change(() => moveCard(cardId, column.id, cards[index + (direction === 'up' ? -1 : 2)]?.id || null, activeId))
-  }
-  const drop = (event, columnId, beforeCardId = null) => {
-    event.preventDefault()
-    event.stopPropagation()
-    if (dragged && !busy) change(() => moveCard(dragged, columnId, beforeCardId, activeId))
-    setDragged(null)
-    setDropTarget(null)
-  }
-  const dragOver = (event, target) => {
-    if (!dragged || busy) return
-    event.preventDefault()
-    event.stopPropagation()
-    event.dataTransfer.dropEffect = 'move'
-    setDropTarget(target)
-  }
   return (
     <DevScope id={devId} state={{ board: activeId, busy }}>
         <div className="kanban__workspace">
@@ -374,53 +351,13 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = 
             {query && matchingCount === 0 && <p className="kanban__search-empty" role="status">No matching cards. Try another search or clear the search.</p>}
             {!board && !error && !routeError && <div className="kanban__empty-state"><span aria-hidden="true">▥</span><h2>A little space to get things done.</h2><p>Create a board for your next project.</p><Button onClick={() => openEditor('board')} devId="gh69869">Create a board</Button></div>}
             {view === 'matrix' && boards.length > 0 && <ProjectMatrix devId="dg0n347" boards={boards} hierarchy={hierarchy} busy={busy} matchesCard={matchesCard} searching={Boolean(query)} onSelectBoard={selectBoard} onOpenCard={(boardId, item) => openEditor('card', item, boardId)} onMoveCard={(cardId, columnId, beforeCardId, boardId) => change(() => moveCard(cardId, columnId, beforeCardId, boardId))} />}
-            {view === 'board' && <DevScope id="4aob8se">
-              <div className="kanban__board-canvas" aria-busy={busy}>
-                {columns.map((column, columnIndex) => {
-                  const collapsed = !query && collapsedIds.includes(column.id)
-                  const columnCount = activeCards(column).filter(matchesCard).length
-                  return <DevScope key={column.id} id="crlq97n" state={{ column: column.id, collapsed }}>
-                  <section className={`kanban__column${collapsed ? ' kanban__column--collapsed' : ''} ${dropTarget === column.id ? 'kanban__drop-target' : ''}`} aria-label={column.title} onDragOver={(event) => dragOver(event, column.id)} onDrop={(event) => drop(event, column.id)}>
-                  {collapsed ? <button type="button" className="kanban__column-collapsed" aria-expanded="false" aria-label={`Expand ${column.title}, ${columnCount} cards`} title={`${column.title} (${columnCount})`} disabled={busy} onClick={() => toggleColumn(column.id)}>
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
-                  </button> : <>
-                  <div className="kanban__column-heading"><h2>{column.title} <span>{columnCount}</span></h2><DevScope id="rweodgf"><button className="kanban__icon-button" aria-label={`Edit ${column.title}`} disabled={busy} onClick={() => openEditor('boardColumn', column)}>•••</button></DevScope><button type="button" className="kanban__icon-button" aria-expanded="true" aria-label={`Collapse ${column.title}`} disabled={busy} onClick={() => toggleColumn(column.id)}><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg></button></div>
-                  <div className="kanban__column-order"><DevScope id="z9ie0cx"><button disabled={busy || columnIndex === 0} aria-label={`Move ${column.title} left`} onClick={() => change(() => moveColumn(column.id, columns[columnIndex - 1].id, activeId))}>←</button></DevScope><DevScope id="nwp8rty"><button disabled={busy || columnIndex === columns.length - 1} aria-label={`Move ${column.title} right`} onClick={() => change(() => moveColumn(column.id, columns[columnIndex + 2]?.id || null, activeId))}>→</button></DevScope></div>
-                  <div className="kanban__cards">
-                    {activeCards(column).map((card, index) => matchesCard(card) && <DevScope key={card.id} id="wtikblu" state={{ card: card.id }}>
-                      <article className={`kanban__task-card ${dragged === card.id ? 'kanban__dragging' : ''} ${dropTarget === card.id ? 'kanban__drop-before' : ''}`} draggable={!busy} onDragStart={(event) => { setDragged(card.id)
-      event.dataTransfer.effectAllowed = 'move'
-      event.dataTransfer.setData('text/plain', card.id) }} onDragEnd={() => { setDragged(null)
-      setDropTarget(null) }} onDragOver={(event) => dragOver(event, card.id)} onDrop={(event) => drop(event, column.id, card.id)}>
-                        <DevScope id="azspmti">
-                          <button className="kanban__card-content" disabled={busy} onClick={() => openEditor('card', card)}><span>{card.title}</span>{card.description && <small>{card.description}</small>}<small>By {card.userByAuthorId?.name || 'Unknown author'}</small></button>
-                        </DevScope>
-                        <CardRelationships card={card} hierarchy={hierarchy} busy={busy} onOpenCard={(boardId, item) => openEditor('card', item, boardId)} />
-                        <div className="kanban__card-footer"><span className="kanban__card-hint">{card.description ? '≡ Description' : 'Drag to move'}</span><span className="kanban__card-actions"><DevScope id="rsyskc2"><button className="kanban__icon-button" aria-label={`Archive ${card.title}`} disabled={busy} onClick={() => toggleArchive(card)}><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="5" rx="1" /><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" /><path d="M10 12h4" /></svg></button></DevScope><OrderDisplay id={card.id} order={index + 1} totalCount={activeCards(column).length} updating={busy} move={(id, direction) => reorderCard(column, id, direction)} /></span></div>
-                      </article>
-                    </DevScope>)}
-                    {!activeCards(column).some(matchesCard) && <div className="kanban__empty-column">{query ? 'No matching cards' : 'Drop a card here'}</div>}
-                  </div>
-                  <Button variant="ghost" size="sm" disabled={busy} onClick={() => openEditor('card', { columnId: column.id })} devId="3ops9cl">+ Add card</Button>
-                  {archivedCards(column).some(matchesCard) && <DevScope id="91zejt6"><Fold>
-                    <FoldTrigger>Archived {archivedCards(column).filter(matchesCard).length}</FoldTrigger>
-                    <FoldContent><ul className="kanban__archived-cards">
-                      {archivedCards(column).map((card) => matchesCard(card) && <DevScope key={card.id} id="6lulof0" state={{ card: card.id }}><li>
-                        <div className="kanban__archived-details">
-                        <button className="kanban__archived-title" disabled={busy} onClick={() => openEditor('card', card)}>{card.title}</button>
-                        <CardRelationships card={card} hierarchy={hierarchy} busy={busy} onOpenCard={(boardId, item) => openEditor('card', item, boardId)} />
-                        </div>
-                        <Button variant="ghost" size="sm" disabled={busy} onClick={() => toggleArchive(card)} aria-label={`Restore ${card.title}`} devId="kowenq7">Restore</Button>
-                      </li></DevScope>)}
-                    </ul></FoldContent>
-                  </Fold></DevScope>}
-                  </>}
-                  </section>
-                </DevScope>
-                })}
-                {board && <Button variant="secondary" disabled={busy} onClick={() => openEditor('boardColumn')} devId="dkl7jve">+ Add column</Button>}
-              </div>
-            </DevScope>}
+            {view === 'board' && board && <KanbanRows key={board.id} board={board} hierarchy={hierarchy} busy={busy} searching={Boolean(query)} matchesCard={matchesCard}
+              onOpenCard={(boardId, item) => openEditor('card', item, boardId)} onNewCard={(item) => openEditor('card', item)}
+              onEditColumn={(column) => openEditor('boardColumn', column)} onNewColumn={() => openEditor('boardColumn')}
+              onMoveColumn={(columnId, beforeColumnId) => change(() => moveColumn(columnId, beforeColumnId, activeId))} onArchive={toggleArchive}
+              onMoveCard={(cardId, columnId, beforeCardId) => change(() => moveCard(cardId, columnId, beforeCardId, activeId))}
+              onMoveTask={(cardId, columnId, parentId, beforeCardId) => change(() => moveTask(cardId, columnId, parentId, beforeCardId, activeId))}
+              onMoveEpic={(epicId, beforeEpicId) => change(() => moveEpicRow(activeId, epicId, beforeEpicId))} />}
           </main>
           </BoardLayout>
           <PopupDisplay backdropDevId="v3varah" closeDevId="dhzhr12" contentDevId="tsk9wm9" devId="2foeazy" isOpen={Boolean(editor)} close={() => { if (!busy) closeEditor() }} lockScroll={!scopedBoardId} panelClassName="kanban__editor">
