@@ -18,8 +18,7 @@ const field = (object, names) => {
 }
 const sum = (values) => values.every(value => value !== null)
   ? values.reduce((total, value) => total + value, 0) : null
-const fmt = (value) => value === null || !Number.isFinite(value) ? 'unknown' : Math.round(value).toLocaleString('en-US')
-const cell = (text) => String(text ?? '').replace(/[|\r\n]/g, ' ').replace(/`/g, '')
+const fmt = (value) => number(value) ? `${value.toLocaleString('en-US')} tokens` : 'unavailable'
 
 // Do not use normalizeUsage's missing-field zero defaults for coverage claims.
 // These providers' adapters store inclusive input; Codex reasoning is in output.
@@ -341,10 +340,6 @@ const collect = async (current, writeDir, cutoff) => {
   return { source, agents, links: allLinks, warnings: [...warnings], excluded, cutoff }
 }
 
-const rangeText = value => `${fmt(value.estimate)} (${fmt(value.lower)} to ${value.upper === null ? 'unknown upper bound' : fmt(value.upper)})`
-const measuredText = value => value.value === null
-  ? `unknown (${fmt(value.knownSubtotal)} known, ${value.coveredRuns}/${value.runs} runs)` : fmt(value.value)
-
 const analyzeSubagents = async (sessionId, rawAssumptions = '') => {
   if (typeof sessionId !== 'string' || !sessionId.trim() || sessionId === '.' || sessionId === '..'
     || /[\\/\0]/.test(sessionId)) {
@@ -363,34 +358,23 @@ const analyzeSubagents = async (sessionId, rawAssumptions = '') => {
   fs.mkdirSync(destination, { recursive: true })
   const artifact = path.join(destination, `subagent-replay-${data.cutoff}.json`)
   fs.writeFileSync(artifact, `${JSON.stringify(replay, null, 2)}\n`)
+  const measured = replay.measured.combined.total
+  const withSubagents = measured.runs > 0 && number(measured.value) ? measured.value : null
+  const withoutSubagents = replay.replayTurns.length > 0 && number(replay.estimate.total.estimate)
+    ? replay.estimate.total.estimate : null
+  const difference = withSubagents !== null && withoutSubagents !== null
+    ? withoutSubagents - withSubagents : null
+  const conclusion = difference === null ? 'Cannot compare: a token total is unavailable.'
+    : difference === 0 ? 'Estimated comparison: tie (0 tokens difference).'
+      : `Estimated comparison: ${difference > 0 ? 'with subagents' : 'without subagents'} uses ${fmt(Math.abs(difference))} fewer.`
   const lines = [
-    '## Subagent analysis', '',
-    'Whole coordinator replay, including recursively inserted child work and all later coordinator requests.', '',
-    '| Measured usage | Input | Output | Total |',
-    '| --- | ---: | ---: | ---: |',
-    ...Object.entries(replay.measured).map(([label, values]) => `| ${label} | ${measuredText(values.input)} | ${measuredText(values.output)} | ${measuredText(values.total)} |`),
+    `With subagents: ${fmt(withSubagents)}`,
+    `Without subagents (estimated): ${fmt(withoutSubagents)}`,
     '',
-    `Replay input: ${rangeText(replay.estimate.input)}.`,
-    `Replay generated output: ${rangeText(replay.estimate.output)}.`,
-    `Replay total: ${rangeText(replay.estimate.total)}.`,
-    `Replay minus measured combined total: ${rangeText(replay.estimate.difference)}. Positive means more tokens in this scenario.`,
-    `Allocated-request sensitivity: ${replay.sensitivity.allocatedRequests.requests} synthetic requests add ${rangeText(replay.sensitivity.allocatedRequests.incrementalInput)} input tokens, for ${rangeText(replay.sensitivity.allocatedRequests.total)} total tokens. This padding is excluded from the primary replay estimate.`,
-    '',
-    `Turns: ${replay.confidenceCounts.measured} measured, ${replay.confidenceCounts.inferred} inferred, ${replay.confidenceCounts.allocated} allocated. Removed ${replay.removed.blocks} blocks and ${replay.removed.turns} requests whose recorded output was all removable.`,
-    `Coverage cutoff: ${new Date(data.cutoff).toISOString()}. ${replay.coverage.complete ? 'All replay regions have calibration coverage.' : `${replay.coverage.gapReasons.length} distinct gap reasons across ${replay.coverage.gaps.length} evidence records, ${replay.coverage.unplacedSessions.length} unplaced sessions. Unknown upper bounds remain explicit.`}`,
-    `First unsupported turn: ${replay.coverage.firstUnsupportedTurn || 'none'}.`,
-    '',
-    ...replay.tokenizer.identities.map(identity => `Tokenizer: ${cell(identity.package)} ${cell(identity.version || 'unavailable')}, ${cell(identity.encoding)}, model ${cell(identity.model)}${identity.approximation ? ' (proxy encoding)' : ''}. ${cell(identity.unavailable || identity.reason)}`),
-    'Requests are tokenized as assembled retained histories. Original-session calibration uses response input only, with signed residuals kept as uncertainty. Tool results are not generated output. Hidden reasoning counts are never appended as text.',
-    'Ranges are sensitivity estimates, not guarantees. Missing content, response boundaries, compaction or model coverage can leave the upper bound unknown. The primary point estimate covers placed recorded work without allocated request padding.',
-    'Child insertion follows spawn points, then creation time and session ID. Unique findings, instructions, refreshes, edited-file reads and the final answer remain unless exact replacement is proven.',
-    '',
-    `[Full replay evidence and assumptions](${artifact})`,
-    'The JSON includes full turns, blocks, dispositions, source links, deterministic order, run-total attribution, measured usage and calibration samples. This is a token scenario, not a quality, time or cost verdict.',
+    conclusion,
   ]
-  if (Object.keys(assumptions).length) lines.push('', 'Legacy shared/requests/output overrides are recorded in the artifact but are not applied to ordered replay.')
-  if (replay.coverage.gapReasons.length) lines.push('', ...replay.coverage.gapReasons.slice(0, 5)
-    .map(item => `- ${cell(item.reason)}${item.count > 1 ? ` (${item.count} evidence records)` : ''}`))
+  if (withoutSubagents !== null && !replay.coverage.complete) lines.push('', 'The estimate is incomplete because some evidence is missing or uncertain.')
+  lines.push('', `[Full details (JSON)](${artifact})`)
   return { report: lines.join('\n'), artifact }
 }
 
