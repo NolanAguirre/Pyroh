@@ -3,6 +3,7 @@ import { Button } from 'component-library'
 import api from '../../api'
 import TabStrip from '../TabStrip/tabStrip'
 import TerminalPanel from './TerminalPanel'
+import PreparedTerminalCommand from './PreparedTerminalCommand'
 import ensureWorkspaceTerminal from './ensureWorkspaceTerminal'
 import { DEFAULT_SIZE, connectionLabel, errorText } from './terminalUtils'
 import './Terminal.css'
@@ -19,6 +20,7 @@ const WorkspaceTerminal = ({ workspace }) => {
   const [attempt, setAttempt] = useState(0)
   const { id, cwd } = workspace
   const status = statuses[activeId]
+  const activeTerminal = terminals.find((terminal) => terminal.id === activeId)
 
   useEffect(() => {
     let cancelled = false
@@ -116,6 +118,14 @@ const WorkspaceTerminal = ({ workspace }) => {
         </Button>
       </div>
       {error && <p className="workspace-terminal__message" role="alert">{error}</p>}
+      {activeTerminal?.preparedState && (
+        <PreparedTerminalCommand
+          key={activeTerminal.id}
+          terminal={activeTerminal}
+          disabled={!status?.connected || status?.exited}
+          onChange={(next) => setTerminals((current) => current.map((item) => item.id === next.id ? next : item))}
+        />
+      )}
       <div className="workspace-terminal__body">
         {terminals.map((terminal) => (
           <TerminalPanel

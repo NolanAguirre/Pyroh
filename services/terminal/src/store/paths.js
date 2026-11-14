@@ -20,6 +20,11 @@ const terminalGroupsFile = (writeDir = config.writeDir) =>
 const terminalStartupFile = (writeDir = config.writeDir) =>
   path.join(terminalsDir(writeDir), 'startup.txt')
 
+const terminalPreparationFile = (ticket, writeDir = config.writeDir) => {
+  if (typeof ticket !== 'string' || !/^[a-f0-9]{64}$/.test(ticket)) throw Object.assign(new Error('Invalid preparation ticket'), { httpStatus: 400 })
+  return path.join(terminalsDir(writeDir), 'preparations', `${ticket}.json`)
+}
+
 const ptyHostSocket = (writeDir = config.writeDir) => path.join(terminalsDir(writeDir), 'pty-host.sock')
 
 const ptyHostPidFile = (writeDir = config.writeDir) => path.join(terminalsDir(writeDir), 'pty-host.pid')
@@ -32,6 +37,7 @@ module.exports = {
   terminalMetaFile,
   terminalGroupsFile,
   terminalStartupFile,
+  terminalPreparationFile,
   ptyHostSocket,
   ptyHostPidFile,
   ptyHostLog,

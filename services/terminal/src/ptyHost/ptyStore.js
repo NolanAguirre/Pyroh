@@ -69,6 +69,7 @@ const createPtyStore = ({ onOutput, onExit }) => {
     exited: entry.exited,
     exitCode: entry.exitCode,
     createdAt: entry.createdAt,
+    preparedState: entry.preparedState,
   })
 
   const find = (id) => {
@@ -77,7 +78,8 @@ const createPtyStore = ({ onOutput, onExit }) => {
     return entry
   }
 
-  const create = ({ workspaceId, cwd, cols, rows } = {}) => {
+  const create = ({ id, workspaceId, cwd, cols, rows, prepared = false } = {}) => {
+    if (id && data.terminals.has(id)) return summary(find(id))
     const size = { cols: clampSize(cols, DEFAULT_COLS), rows: clampSize(rows, DEFAULT_ROWS) }
     const shell = process.env.SHELL || '/bin/sh'
     const proc = pty.spawn(shell, [], {
@@ -88,7 +90,7 @@ const createPtyStore = ({ onOutput, onExit }) => {
       env: shellEnv(),
     })
     const entry = {
-      id: crypto.randomUUID(),
+      id: id || crypto.randomUUID(),
       workspaceId: workspaceId == null ? null : String(workspaceId),
       cwd,
       pty: proc,
@@ -96,6 +98,8 @@ const createPtyStore = ({ onOutput, onExit }) => {
       exited: false,
       exitCode: null,
       createdAt: Date.now(),
+      preparedState: prepared ? 'pending' : null,
+      preparedCommand: null,
       ...size,
     }
     proc.onData((chunk) => {
@@ -124,8 +128,25 @@ const createPtyStore = ({ onOutput, onExit }) => {
 
   const write = (id, chunk) => {
     const entry = find(id)
-    if (entry.exited || typeof chunk !== 'string') return
+    if (entry.exited || entry.preparedState === 'pending' || typeof chunk !== 'string') return
     entry.pty.write(chunk)
+  }
+
+  const prepare = (payload) => create({ ...payload, prepared: true })
+
+  const runPrepared = (id, command) => {
+    const entry = find(id)
+    if (!entry.preparedState) throw new Error('Terminal was not prepared')
+    if (entry.preparedState === 'submitted') {
+      if (entry.preparedCommand !== command) throw new Error('Terminal already submitted a different command')
+      return summary(entry)
+    }
+    if (entry.exited) throw new Error('Terminal has exited')
+    if (typeof command !== 'string' || !command.trim()) throw new Error('command is required')
+    entry.preparedState = 'submitted'
+    entry.preparedCommand = command
+    entry.pty.write(`${command}\r`)
+    return summary(entry)
   }
 
   const resize = (id, cols, rows) => {
@@ -161,7 +182,7 @@ const createPtyStore = ({ onOutput, onExit }) => {
     Array.from(data.terminals.keys()).forEach((id) => kill(id, 'SIGKILL'))
   }
 
-  return { create, list, snapshot, write, resize, kill, killAll }
+  return { create, prepare, runPrepared, list, snapshot, write, resize, kill, killAll }
 }
 
 module.exports = { createPtyStore, shellEnv, SERVICE_ENV_KEYS, createScrollback, clampSize }

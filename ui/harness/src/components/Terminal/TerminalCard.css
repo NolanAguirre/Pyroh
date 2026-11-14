@@ -1,0 +1,63 @@
+.terminal-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0.75rem 0;
+  border: 0.0625rem solid var(--border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: var(--bg-elev);
+}
+
+.terminal-card__header,
+.terminal-card__error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.terminal-card__title {
+  flex: 1;
+  overflow-wrap: anywhere;
+  font-size: 0.875rem;
+}
+
+.terminal-card__status,
+.terminal-card__open {
+  font-size: 0.75rem;
+}
+
+.terminal-card__status,
+.terminal-card__cwd,
+.terminal-card__message {
+  color: var(--text-dim);
+}
+
+.terminal-card__cwd,
+.terminal-card__message {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+}
+
+.terminal-card__cwd {
+  font-family: monospace;
+}
+
+.terminal-card__error {
+  color: var(--danger, #ff6b6b);
+  font-size: 0.8125rem;
+}
+
+.terminal-card__body {
+  position: relative;
+  height: 22rem;
+  min-height: 12rem;
+  min-width: 0;
+  resize: vertical;
+  overflow: hidden;
+  background: var(--terminal-bg, #1e1e1e);
+}

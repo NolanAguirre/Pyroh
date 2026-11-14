@@ -26,6 +26,27 @@ const resolveRoot = async (workspace) => {
   return fs.promises.realpath(found.cwd)
 }
 
+const resolvePreparedCwd = async (workspace, cwd = '.') => {
+  if (typeof workspace !== 'string' || !workspace) throw httpError(400, 'workspace is required')
+  if (typeof cwd !== 'string' || !cwd || path.isAbsolute(cwd)) throw httpError(400, 'cwd must be a workspace-relative directory')
+  const root = await resolveRoot(workspace)
+  const inside = (directory) => {
+    const relative = path.relative(root, directory)
+    return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+  }
+  const candidate = path.resolve(root, cwd)
+  if (!inside(candidate)) throw httpError(400, 'cwd must stay inside the workspace')
+  try {
+    const resolved = await fs.promises.realpath(candidate)
+    if (!inside(resolved)) throw httpError(400, 'cwd must stay inside the workspace, including symlinks')
+    if (!(await fs.promises.stat(resolved)).isDirectory()) throw httpError(400, 'cwd must be a directory')
+    return resolved
+  } catch (err) {
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') throw httpError(400, 'cwd directory does not exist')
+    throw err
+  }
+}
+
 const listWorkspaceIds = () => {
   try {
     return fs.readdirSync(path.join(config.writeDir, 'workspaces')).filter((id) => WORKSPACE_ID.test(id))
@@ -55,4 +76,4 @@ const findWorkspaceId = (nameOrId) => {
   return ids.includes(target) && readable(target) ? target : null
 }
 
-module.exports = { resolveRoot, findWorkspaceId }
+module.exports = { resolveRoot, resolvePreparedCwd, findWorkspaceId }

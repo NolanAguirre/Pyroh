@@ -150,6 +150,14 @@
   color: var(--text);
 }
 
+.terminal-main__content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
 .terminal-main__body {
   position: relative;
   flex: 1;

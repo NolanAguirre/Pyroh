@@ -13,6 +13,7 @@ import api from '../../api'
 import GroupNameInput from './GroupNameInput'
 import StartupForm from './StartupForm'
 import TerminalPanel from './TerminalPanel'
+import PreparedTerminalCommand from './PreparedTerminalCommand'
 import { DEFAULT_SIZE, connectionLabel, errorText } from './terminalUtils'
 import './Terminal.css'
 
@@ -381,7 +382,16 @@ const TerminalView = ({ devId, workspaces = [], workspace, workspaceId, term = n
               +
             </Button>
           </div>
-          <div className="terminal-main__body">
+          <div className="terminal-main__content">
+            {activeTerminal?.preparedState && (
+              <PreparedTerminalCommand
+                key={activeTerminal.id}
+                terminal={activeTerminal}
+                disabled={!activeStatus?.connected || activeStatus?.exited}
+                onChange={applyTerminal}
+              />
+            )}
+            <div className="terminal-main__body">
             {terminals.map((item) => (
               <TerminalPanel
                 key={item.id}
@@ -410,6 +420,7 @@ const TerminalView = ({ devId, workspaces = [], workspace, workspaceId, term = n
                 </div>
               </DevScope>
             )}
+            </div>
           </div>
         </section>
         <StatusBar devId="4g03zfy">

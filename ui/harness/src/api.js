@@ -92,6 +92,7 @@ const tagTerminal = (terminal, machine) => (machine && terminal ? {
   ...terminal,
   id: tagId(terminal.id, machine),
   workspaceId: tagId(terminal.workspaceId, machine),
+  sessionId: tagId(terminal.sessionId, machine),
   groupId: tagId(terminal.groupId, machine),
   machine,
 } : terminal)
@@ -196,6 +197,13 @@ const api = {
     return result
   },
   machineOf: (id) => splitId(id).machine,
+  adoptTerminalView: (view, sessionId, workspaceId) => {
+    const session = splitId(sessionId)
+    const workspace = splitId(workspaceId)
+    if (!session.id || !workspace.id || session.machine !== workspace.machine
+      || view.sessionId !== session.id || view.workspaceId !== workspace.id) return null
+    return { ...view, resourceId: tagId(view.resourceId, session.machine), sessionId, workspaceId }
+  },
   // Tags a record streamed from `sessionId`'s machine (SSE payloads).
   adoptSession: (sessionId, session) => tagSession(session, splitId(sessionId).machine),
   adoptSubmission: (sessionId, submission) => tagSubmission(submission, splitId(sessionId).machine),
@@ -418,6 +426,21 @@ const api = {
     return fetch(at(target.machine, `/api/editor?${target.query({ path })}`), { method: 'DELETE' }).then(empty)
   },
   listTerminals: (workspace, options) => listTerminalItems('', 'terminals', tagTerminal, workspace, options),
+  getPreparedTerminal: (terminalId, workspaceId, sessionId, { signal } = {}) => {
+    const { id, machine } = splitId(terminalId)
+    const query = new URLSearchParams({ workspace: splitId(workspaceId).id, session: splitId(sessionId).id })
+    return fetch(at(machine, `/api/terminal/${encodeURIComponent(id)}?${query}`), { signal, cache: 'no-store' })
+      .then(json)
+      .then((data) => ({ ...data, terminal: tagTerminal(data.terminal, machine) }))
+  },
+  runPreparedTerminal: (terminalId, workspaceId, sessionId, command) => {
+    const { id, machine } = splitId(terminalId)
+    return post(at(machine, `/api/terminal/${encodeURIComponent(id)}/run`), {
+      workspace: splitId(workspaceId).id,
+      session: splitId(sessionId).id,
+      command,
+    }).then((data) => ({ ...data, terminal: tagTerminal(data.terminal, machine) }))
+  },
   listTerminalGroups: (workspace, options) => listTerminalItems('/groups', 'groups', tagGroup, workspace, options),
   createTerminalGroup: (workspace, { name } = {}) => {
     const target = fsTarget(workspace)

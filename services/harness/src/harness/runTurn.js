@@ -128,7 +128,7 @@ const runOneTurn = async ({
   for (const server of triggerMcpServers(fired, session)) {
     if (!extraMcpServers.some(previous => previous.name === server.name)) extraMcpServers.push(server)
   }
-  if ((canDelegate || canManageChildren) && !textOnly) extraMcpServers.push(delegation.open(session, runId, mode))
+  if ((canDelegate || canManageChildren || (eligible && delegation.canDelegate(delegationSession))) && !textOnly) extraMcpServers.push(delegation.open(session, runId, mode))
   if (managed && session.provider === 'grok') onEvent?.({ type: 'status', status: 'Native spawning cannot be fully blocked by Grok; harness-only delegation is instructed.' })
   const allowedTools = inheritedConfiguration?.tools.list && Array.isArray(harnessTools)
     ? inheritedConfiguration.tools.list.filter(id => harnessTools.includes(id)) : harnessTools

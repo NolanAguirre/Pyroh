@@ -2,6 +2,14 @@
 const childProperties = { sessionId: { type: 'string' }, runId: { type: 'string' } }
 const childSchema = { type: 'object', properties: childProperties, required: ['sessionId', 'runId'], additionalProperties: false }
 const tools = [
+  { name: 'terminal_prepare', description: 'Prepare a live terminal card for the user to review, edit, and run once. Does not execute the command. Use a stable retryKey for retries. Workspace and session come from this authenticated MCP connection. Terminal keystrokes and output stay outside the conversation.', inputSchema: {
+    type: 'object', properties: {
+      command: { type: 'string', minLength: 1, maxLength: 65536 },
+      cwd: { type: 'string', description: 'Optional directory relative to the workspace root.' },
+      name: { type: 'string', minLength: 1, maxLength: 100 },
+      retryKey: { type: 'string', minLength: 1, maxLength: 256, description: 'Stable key for this preparation. Reuse only for the same request.' },
+    }, required: ['command', 'retryKey'], additionalProperties: false,
+  } },
   { name: 'spawn', description: 'Delegate a bounded task with context, scope, expected output, and stopping point. Assign separate files for parallel edits. Provider selection is automatic; mode defaults to the parent. At most four active children. The harness enforces depth limits. Continue independent work or end your turn; results resume you automatically.', inputSchema: {
     type: 'object', properties: { task: { type: 'string' }, retryKey: { type: 'string', minLength: 1, maxLength: 256, description: 'Stable task key; reuse only when retrying the same task.' },
       dontReturn: { type: 'boolean', description: 'Default false. True suppresses automatic results and parent resumption. Use only when neither results nor completion notice are needed; status/wait remain available.' },

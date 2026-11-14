@@ -1,5 +1,6 @@
 const express = require('express')
 const delegation = require('../harness/delegation')
+const terminalPreparation = require('../harness/terminalPreparation')
 
 const { tools } = require('../harness/delegationTools')
 const config = require('../config')
@@ -49,8 +50,10 @@ router.post('/:token', async (req, res) => {
       const schema = tool.inputSchema.properties[key]
       if (typeof value !== schema.type || (schema.enum && !schema.enum.includes(value))) throw new Error(`Invalid ${key}`)
     }
-    const result = await delegation[name](req.delegation, args)
-    return reply({ content: [{ type: 'text', text: JSON.stringify(result) }] })
+    const result = name === 'terminal_prepare'
+      ? await terminalPreparation.prepare(req.delegation, args)
+      : await delegation[name](req.delegation, args)
+    return reply({ ...(name === 'terminal_prepare' ? { structuredContent: result } : {}), content: [{ type: 'text', text: JSON.stringify(result) }] })
   } catch (err) {
     return reply({ isError: true, content: [{ type: 'text', text: err.message }] })
   }

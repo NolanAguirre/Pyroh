@@ -32,7 +32,7 @@ const renderPart = (renderPlanActions, viewerSessionId, workspaceId, onOpenFile)
   if (event.type === 'tool_call') return (
     <div key={index}>
       {event.finalReply && onOpenFile && <MessageFiles text={event.text} workspaceId={workspaceId} onOpenFile={onOpenFile} />}
-      <ToolCallBlock event={event} renderPlanActions={renderPlanActions} />
+      <ToolCallBlock event={event} renderPlanActions={renderPlanActions} sessionId={viewerSessionId} workspaceId={workspaceId} />
     </div>
   )
   return <StructuredBlock key={index} event={event} />

@@ -1,4 +1,4 @@
-const { resolveRoot, findWorkspaceId } = require('./workspaceRoot')
+const { resolveRoot, resolvePreparedCwd, findWorkspaceId } = require('./workspaceRoot')
 const paths = require('./paths')
 const startup = require('./startup')
 const { readJson, writeJson } = require('./jsonFile')
@@ -81,6 +81,7 @@ const createTerminalStore = () => {
   data.stopping = false
   data.ready = false
   data.startupRun = Promise.resolve([])
+  data.preparing = new Map()
 
   const nextName = (workspaceId) => {
     const key = workspaceId || ''
@@ -111,6 +112,11 @@ const createTerminalStore = () => {
         entry.groupId = null
       }
       entry.startup = typeof meta.startup === 'string' && meta.startup ? meta.startup : null
+      entry.sessionId = meta.sessionId || null
+      entry.preparedCommand = meta.preparedCommand ?? null
+      entry.preparedState = meta.preparedState || null
+      entry.preparedError = meta.preparedError || null
+      entry.preparedClosed = meta.preparedClosed === true
     }
     return entry
   }
@@ -138,6 +144,10 @@ const createTerminalStore = () => {
       exited: entry.exited,
       exitCode: entry.exitCode,
       createdAt: entry.createdAt,
+      sessionId: entry.sessionId || null,
+      preparedCommand: entry.preparedCommand ?? null,
+      preparedState: entry.preparedState || null,
+      preparedError: entry.preparedError || null,
     }
   }
 
@@ -167,6 +177,7 @@ const createTerminalStore = () => {
     createdAt: summary.createdAt,
     cols: summary.cols,
     rows: summary.rows,
+    preparedState: summary.preparedState || null,
   })
 
   const create = async ({ workspace, cols, rows, groupId, name, startup: startupKey, command } = {}) => {
@@ -199,6 +210,74 @@ const createTerminalStore = () => {
   }
 
   const startupKeyOf = (workspaceId, name) => `${workspaceId}/${name}`
+
+  const prepare = (ticket) => {
+    const file = paths.terminalPreparationFile(ticket)
+    if (data.preparing.has(ticket)) return data.preparing.get(ticket)
+    const perform = async () => {
+      if (data.stopping) throw httpError(503, 'Terminal service is shutting down')
+      const request = readJson(file)
+      if (!request) throw httpError(404, 'Preparation request not found')
+      const { id, workspaceId, sessionId, command, name } = request
+      const previous = readJson(paths.terminalMetaFile(id))
+      if (previous?.preparedClosed) throw httpError(410, 'Prepared terminal was closed. Use a new retryKey for a new terminal')
+      const summaries = await hostRequest('list')
+      const existing = summaries.find(item => item.id === id)
+      if (existing) {
+        if (!previous?.preparedState || existing.workspaceId !== workspaceId) throw httpError(409, 'Prepared terminal metadata does not match the host')
+        const entry = readMeta(data.terminals.get(id) || fromHost(existing))
+        data.terminals.set(id, entry)
+        return toJSON(entry)
+      }
+      // A lost host or an interrupted launch must never recreate a terminal on retry.
+      if (previous?.preparationAttempted) throw httpError(410, 'Prepared terminal is unavailable or its launch was interrupted. Use a new retryKey for a new terminal')
+      const cwd = await resolvePreparedCwd(workspaceId, request.cwd)
+      writeMeta(id, { name, nameSource: 'manual', sessionId, workspaceId, cwd,
+        preparedCommand: command, preparedState: 'pending', preparationAttempted: true })
+      const summary = await hostRequest('prepare', { id, workspaceId, cwd })
+      const entry = readMeta(fromHost(summary))
+      data.terminals.set(id, entry)
+      return toJSON(entry)
+    }
+    const pending = perform().finally(() => data.preparing.delete(ticket))
+    data.preparing.set(ticket, pending)
+    return pending
+  }
+
+  const scoped = (id, workspace, session) => {
+    if (typeof workspace !== 'string' || !workspace || typeof session !== 'string' || !session) throw httpError(400, 'workspace and session are required')
+    const entry = readMeta(find(id))
+    if (!entry.preparedState || entry.workspaceId !== workspace || entry.sessionId !== session) throw httpError(404, 'Terminal not found in this workspace and session')
+    if (entry.preparedClosed) throw httpError(410, 'Prepared terminal was closed')
+    return entry
+  }
+
+  const get = (id, workspace, session) => toJSON(scoped(id, workspace, session))
+
+  const run = async (id, { workspace, session, command } = {}) => {
+    const entry = scoped(id, workspace, session)
+    if (typeof command !== 'string' || !command.trim() || command.length > 65536 || /[\x00-\x08\x0b-\x1f\x7f]/.test(command)) throw httpError(400, 'command must contain 1–65536 characters without terminal control characters')
+    if (entry.preparedState === 'submitted') {
+      if (entry.preparedError) throw httpError(409, entry.preparedError)
+      if (command !== entry.preparedCommand) throw httpError(409, 'This terminal already submitted a different command')
+      return toJSON(entry)
+    }
+    if (entry.exited) throw httpError(409, 'Terminal has exited')
+    // Claim submission durably before touching the PTY. Never retry an uncertain write.
+    writeMeta(id, { preparedCommand: command, preparedState: 'submitted',
+      preparedError: 'Command submission has not been confirmed and will not be retried automatically' })
+    entry.preparedCommand = command
+    entry.preparedState = 'submitted'
+    try {
+      await hostRequest('runPrepared', { id, command })
+      writeMeta(id, { preparedError: null })
+    } catch (err) {
+      const preparedError = `Command submission could not be confirmed and will not be retried: ${err.message}`
+      writeMeta(id, { preparedError })
+      throw httpError(503, preparedError)
+    }
+    return toJSON(entry)
+  }
 
   // Creates every startup terminal that is not already running. Runs are
   // serialized so overlapping calls cannot start the same terminal twice.
@@ -258,7 +337,7 @@ const createTerminalStore = () => {
     if (!next) throw httpError(400, 'result is empty')
     const entry = find(id)
     readMeta(entry)
-    if (entry.nameSource === 'manual') return { terminal: toJSON(entry), applied: false }
+    if (entry.preparedState || entry.nameSource === 'manual') return { terminal: toJSON(entry), applied: false }
     writeMeta(entry.id, { name: next, nameSource: 'auto' })
     entry.name = next
     entry.nameSource = 'auto'
@@ -268,7 +347,7 @@ const createTerminalStore = () => {
 
   // Names the terminal once, from the first command that says something about it.
   const watchCommands = (entry, chunk) => {
-    if (entry.nameRequested) return
+    if (entry.preparedState || entry.nameRequested) return
     const command = entry.input.feed(chunk).find(isNameable)
     if (!command) return
     entry.nameRequested = true
@@ -286,6 +365,8 @@ const createTerminalStore = () => {
 
   const kill = async (id) => {
     const entry = find(id)
+    readMeta(entry)
+    if (entry.preparedState) writeMeta(id, { preparedClosed: true })
     data.terminals.delete(id)
     entry.clients.forEach((socket) => socket.close(1000, 'Terminal closed'))
     entry.clients.clear()
@@ -303,6 +384,7 @@ const createTerminalStore = () => {
     }
     if (!message || entry.exited) return
     if (message.type === 'input' && typeof message.data === 'string') {
+      if (entry.preparedState === 'pending') return
       hostClient.request('write', { id: entry.id, data: message.data }).catch(() => {})
       watchCommands(entry, message.data)
     } else if (message.type === 'resize') {
@@ -421,7 +503,7 @@ const createTerminalStore = () => {
     hostClient.close()
   }
 
-  return { init, create, list, rename, autoName, setGroup, kill, attach, shutdown, runStartup }
+  return { init, create, prepare, get, run, list, rename, autoName, setGroup, kill, attach, shutdown, runStartup }
 }
 
 module.exports = createTerminalStore()

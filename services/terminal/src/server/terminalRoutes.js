@@ -84,4 +84,8 @@ router.delete('/:id', route(async (req, res) => {
   res.status(204).end()
 }))
 
+router.use(require('../routes/prepareTerminal'))
+router.use(require('../routes/getTerminal'))
+router.use(require('../routes/runTerminal'))
+
 module.exports = router

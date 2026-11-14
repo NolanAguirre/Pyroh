@@ -2,8 +2,12 @@ import { Badge, DevScope, Fold, FoldTrigger, FoldContent } from 'component-libra
 import { errorText } from './errorText'
 import { isPlanTool, planMarkdown, planView } from './plan'
 import PlanMarkdown from './PlanMarkdown'
+import { terminalView } from './harnessView'
+import TerminalCard from '../Terminal/TerminalCard'
 
-const ToolCallBlock = ({ event, renderPlanActions }) => {
+const ToolCallBlock = ({ event, renderPlanActions, sessionId, workspaceId }) => {
+  const view = terminalView(event, sessionId, workspaceId)
+  if (view) return <TerminalCard key={view.resourceId} view={view} />
   if (event.automaticPlan || isPlanTool(event.name)) {
     const view = planView(event)
     const plan = planMarkdown(view)

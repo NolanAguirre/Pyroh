@@ -33,6 +33,8 @@ const createPtyHost = () => {
 
   const handlers = {
     create: (payload) => store.create(payload),
+    prepare: (payload) => store.prepare(payload),
+    runPrepared: ({ id, command }) => store.runPrepared(id, command),
     list: () => store.list(),
     snapshot: ({ id }) => store.snapshot(id),
     write: ({ id, data: chunk }) => store.write(id, chunk),
