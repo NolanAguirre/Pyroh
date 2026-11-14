@@ -11,6 +11,11 @@ const transcriptVars = [
 const TEMPLATES = [
   {
     id: 'delegationParent',
+    versions: [{
+      id: 'delegationGrokSubagent',
+      matches: ({ model, child, canDelegate, mode }) => child === true && canDelegate === true
+        && mode !== 'leader' && typeof model === 'string' && model.startsWith('grok'),
+    }],
     activation: { kind: 'First message', condition: 'First prompt of a new agent conversation where delegation is available.' },
     name: 'Subagent: parent guidance',
     group: 'subagents',
@@ -18,6 +23,23 @@ const TEMPLATES = [
     usedBy: ['prompt/rewrite.js', 'harness/delegation.js guidance'],
     vars: [],
     template: "Use only harness_agents spawn/status/wait/stop for delegation.\nUse grok-4.7 for fact-finding only; use inherit for judgment and implementation. Inherit preserves the parent provider, model, and settings.\nOnly use subagents for two or more substantial, independent tasks that can run in parallel. Otherwise, do the work yourself. Use at most two children at once. Children must not delegate. Do not split small tasks to justify delegation.\nGive each child a clear task, context, scope, expected output, and stopping point. Share the existing directory; assign separate files for edits. Do not create worktrees.\nRequest exact-symbol searches and brief findings with paths, evidence, and gaps. Use results directly. Do not duplicate child work or start dependent work before results arrive. Stop a child before taking over.\nUse a stable retryKey per task. Set dontReturn: true only if you need neither results nor completion notice; it disables automatic delivery and resumption.\nContinue independent work while children run. Never poll, sleep, or wait for completion. When only child work remains, report completed and pending work, then end your turn. Children keep running; results resume you automatically unless dontReturn is true. Continue then.",
+  },
+  {
+    id: 'delegationGrokSubagent',
+    activation: { kind: 'Context condition', condition: 'Spawning-capable subagents using a model id starting with grok, outside Leader mode.' },
+    name: 'Subagent: Grok spawning guidance',
+    group: 'subagents',
+    description: 'Separate spawning guidance for Grok subagents across providers. Reapplied when delegation mode changes.',
+    usedBy: ['harness/delegation.js guidance'],
+    vars: [],
+    template: `You are a subagent. Stay within your assigned task. Return findings to your parent after your own child work finishes, then stop.
+You may spawn children using harness_agents when available. Use only harness_agents spawn/status/wait/stop for delegation.
+Use grok-4.7 for fact-finding only; use inherit for judgment and implementation. Inherit preserves the parent provider, model, and settings.
+Only use subagents for two or more substantial, independent tasks that can run in parallel. Otherwise, do the work yourself. Use at most two children at once. Your children must not delegate. Do not split small tasks to justify delegation.
+Give each child a clear task, context, scope, expected output, and stopping point. Share the existing directory; assign separate files for parallel edits. Do not create worktrees.
+Request exact-symbol searches and brief findings with paths, evidence, and gaps. Use results directly. Do not duplicate child work or start dependent work before results arrive. Stop a child before taking over its unfinished scope.
+Use a stable retryKey per task. Set dontReturn: true only if you need neither results nor completion notice; it disables automatic delivery and resumption.
+Continue independent work while children run. Never poll, sleep, or wait for completion. When only child work remains, report completed and pending work, then end your turn. Children keep running; results resume you automatically unless dontReturn is true. Continue then.`,
   },
   {
     id: 'delegationLeader',

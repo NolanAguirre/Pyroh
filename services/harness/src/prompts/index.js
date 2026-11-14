@@ -28,6 +28,9 @@ const get = (id) => {
   return entry
 }
 
+const selectVersion = (id, context = {}) =>
+  byId.get(id)?.versions?.find(({ matches }) => matches(context))?.id ?? id
+
 // Every provider registers every prompt. Trigger patterns stay shared;
 // text and message targeting can be overridden at each registry scope.
 const providers = new Map()
@@ -137,8 +140,9 @@ const resolvedText = (id, provider, context = {}) => {
     ? editText(selectedEdit(id, provider, context)) ?? defaultText(id, provider, context) : entry.template)
 }
 const text = (id, provider, context = {}) => {
-  if (!overlays.resolve(context, provider).entries.has(id)) throw new Error(`prompts: unknown prompt ${id}`)
-  return appliesTo(id, provider, context) ? resolvedText(id, provider, context) : ''
+  const versionId = selectVersion(id, context)
+  if (!overlays.resolve(context, provider).entries.has(versionId)) throw new Error(`prompts: unknown prompt ${versionId}`)
+  return appliesTo(versionId, provider, context) ? resolvedText(versionId, provider, context) : ''
 }
 const render = (id, vars = {}, provider, context = {}) =>
   text(id, provider, context).replace(PLACEHOLDER, (_, key) => (vars[key] == null ? '' : String(vars[key])))
@@ -263,4 +267,4 @@ const modelScopes = (catalog = {}) => {
 }
 const savedModes = () => [...new Set(Object.values(loadOverrides().$models).flatMap((entry) => Object.keys(entry.modes)))]
 
-module.exports = { get, text, render, renderWithProvenance, focusWithProvenance, focusBlock, directoryLines, list, setOverride, registerProvider, modelScopes, savedModes, appliesTo }
+module.exports = { get, selectVersion, text, render, renderWithProvenance, focusWithProvenance, focusBlock, directoryLines, list, setOverride, registerProvider, modelScopes, savedModes, appliesTo }

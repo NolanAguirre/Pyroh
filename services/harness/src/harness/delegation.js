@@ -526,11 +526,12 @@ const guidance = (provider, child = false, { session, canDelegate: enabled, mode
   const maxDepth = getUiSettings(config.writeDir).maxSubagentDepth
   const allowed = enabled ?? (session ? canSpawn(session) : !child && maxDepth > 0)
   const prompts = require('../prompts')
-  const context = { model: model || require('../prompt/context').sessionModel(session), mode: mode ?? session?.mode, messageType }
+  const context = { model: model || require('../prompt/context').sessionModel(session), mode: mode ?? session?.mode, messageType, child, canDelegate: allowed }
   if (!allowed) return prompts.text('delegationChild', provider, context)
   if (!child && context.mode === 'leader') return prompts.text('delegationLeader', provider, context)
-  const scope = child ? 'Stay within your assigned task. Return findings to your parent after any child work finishes, then stop.' : ''
-  return [scope, prompts.text('delegationParent', provider, context)].filter(Boolean).join('\n\n')
+  const id = prompts.selectVersion('delegationParent', context)
+  const scope = child && id === 'delegationParent' ? 'Stay within your assigned task. Return findings to your parent after any child work finishes, then stop.' : ''
+  return [scope, prompts.text(id, provider, context)].filter(Boolean).join('\n\n')
 }
 
 const withDeliveryLock = (sessionId, fn) => withLock(sessionId, 'delivery', fn)
