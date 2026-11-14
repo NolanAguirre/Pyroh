@@ -11,6 +11,6 @@ export const createCardHierarchy = (boards) => {
   }
   const getCard = (id) => cardsById.get(id)
   const getChildren = (id) => childrenById.get(id) || []
-  const getParents = (id) => getChildren(id).length ? [] : cards.filter((card) => card.id !== id && !card.parentId)
+  const getParents = (id) => getChildren(id).length ? [] : cards.filter((card) => card.id !== id && card.epic && !card.parentId)
   return { getCard, getChildren, getParents }
 }

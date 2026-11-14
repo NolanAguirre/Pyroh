@@ -1,7 +1,7 @@
 import { client } from './client'
 
 const USER_FIELDS = '__typename id name'
-const CARD_FIELDS = `__typename id title description columnId parentId archivedAt userByAuthorId { ${USER_FIELDS} }`
+const CARD_FIELDS = `__typename id title description columnId parentId epic archivedAt userByAuthorId { ${USER_FIELDS} }`
 const COLUMN_FIELDS = `__typename id title cardsByColumnId(orderBy: [POSITION_ASC, ID_ASC]) { nodes { ${CARD_FIELDS} } }`
 const BOARD_FIELDS = `__typename id title boardColumnsByBoardId(orderBy: [POSITION_ASC, ID_ASC]) { nodes { ${COLUMN_FIELDS} } }`
 const REPLY_FIELDS = `__typename id body createdAt userByAuthorId { ${USER_FIELDS} }`
@@ -50,10 +50,10 @@ export const addReply = async (commentId, body, authorId) => client.mutate({
   }`,
   variables: { input: { commentReply: { commentId, body, authorId } }, commentId },
 })
-export const saveCard = (card, title, description, columnId, authorId, boardId, parentId) => {
-  if (!card.id) return mutate('createCard', 'CreateCardInput', { card: { title, description, columnId, authorId, parentId } }, undefined, boardId)
+export const saveCard = (card, title, description, columnId, authorId, boardId, parentId, epic) => {
+  if (!card.id) return mutate('createCard', 'CreateCardInput', { card: { title, description, columnId, authorId, parentId, epic } }, undefined, boardId)
   return mutate('saveCardWithParent', 'SaveCardWithParentInput', {
-    cardId: card.id, cardTitle: title, cardDescription: description, targetColumnId: columnId, parentCardId: parentId,
+    cardId: card.id, cardTitle: title, cardDescription: description, targetColumnId: columnId, parentCardId: parentId, cardEpic: epic,
   }, undefined, boardId)
 }
 export const signIn = (name) => mutate('signIn', 'SignInInput', { userName: name }, `user { ${USER_FIELDS} }`)

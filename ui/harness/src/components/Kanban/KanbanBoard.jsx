@@ -14,7 +14,9 @@ const Editor = ({ devId, user, editor, columns, hierarchy, busy, error, onSave, 
   const [description, setDescription] = useState(editor.item.description || '')
   const [columnId, setColumnId] = useState(editor.item.columnId || '')
   const [parentId, setParentId] = useState(editor.item.parentId || '')
+  const [epic, setEpic] = useState(Boolean(editor.item.epic))
   const children = hierarchy.getChildren(editor.item.id)
+  const epicLocked = children.length > 0
   const parents = hierarchy.getParents(editor.item.id)
   const unavailableParent = parentId && !parents.some((card) => card.id === parentId)
   const noun = editor.kind === 'boardColumn' ? 'column' : editor.kind
@@ -23,25 +25,33 @@ const Editor = ({ devId, user, editor, columns, hierarchy, busy, error, onSave, 
     <div role="dialog" aria-modal="true" aria-label={`${editor.item.id ? 'Edit' : 'New'} ${noun}`}>
     <form onSubmit={(event) => {
       event.preventDefault()
-      if (title.trim()) onSave({ title: title.trim(), description, columnId, parentId: parentId || null })
+      if (title.trim()) onSave({ title: title.trim(), description, columnId, parentId: parentId || null, epic: epicLocked || epic })
     }}>
-      <h2>{editor.item.id ? `Edit ${noun}` : `New ${noun}`}</h2>
-      {editor.kind === 'card' && editor.item.id && <p className="kanban__comments-empty">Created by {editor.item.userByAuthorId?.name || 'Unknown author'}{editor.item.archivedAt && ' · Archived'}</p>}
+      {editor.kind !== 'card' && <h2>{editor.item.id ? `Edit ${noun}` : `New ${noun}`}</h2>}
       <fieldset disabled={busy}>
-        <label>Title<DevScope id="ox3tq2n"><input autoFocus required maxLength={200} value={title} onChange={(event) => setTitle(event.target.value)} /></DevScope></label>
+        <label className={editor.kind === 'card' ? 'kanban__editor-title' : undefined}>Title<DevScope id="ox3tq2n"><input autoFocus required maxLength={200} value={title} onChange={(event) => setTitle(event.target.value)} /></DevScope></label>
         {editor.kind === 'card' && <>
           <DevScope id="dw8r404"><label>Description<textarea rows={7} maxLength={20000} placeholder="Add a little more detail…" value={description} onChange={(event) => setDescription(event.target.value)} /></label></DevScope>
-          <label>Column<DevScope id="ntbho75"><select value={columnId} onChange={(event) => setColumnId(event.target.value)}>
-            {columns.map((column) => <option key={column.id} value={column.id}>{column.title}</option>)}
-          </select></DevScope></label>
-          <label>Parent task<select value={parentId} onChange={(event) => setParentId(event.target.value)} aria-describedby="kanban-parent-help">
-            <option value="">No parent (root task)</option>
-            {unavailableParent && <option value={parentId} disabled>Current parent cannot be kept — remove it</option>}
-            {parents.map((card) => <option key={card.id} value={card.id}>{card.title} · {card.boardTitle}{card.archivedAt ? ' · Archived' : ''}</option>)}
-          </select></label>
-          <p id="kanban-parent-help" className="kanban__comments-empty">{children.length
-            ? 'This task is an epic. Remove or reassign its children, including archived children, before choosing a parent.'
-            : 'Choose a root task to make this its child. Choose No parent to remove the relationship.'}</p>
+          <div className="kanban__advanced">
+            <Fold>
+              <FoldTrigger>Advanced</FoldTrigger>
+              <FoldContent>
+                <label className="kanban__editor-epic">Epic<input type="checkbox" checked={epicLocked || epic} disabled={epicLocked} onChange={(event) => setEpic(event.target.checked)} aria-describedby="kanban-epic-help" /></label>
+                <p id="kanban-epic-help" className="kanban__comments-empty">Only epics appear when nesting a task under a parent.</p>
+                <label>Parent task<select value={parentId} onChange={(event) => setParentId(event.target.value)} aria-describedby="kanban-parent-help">
+                  <option value="">No parent (root task)</option>
+                  {unavailableParent && <option value={parentId} disabled>Current parent cannot be kept — remove it</option>}
+                  {parents.map((card) => <option key={card.id} value={card.id}>{card.title} · {card.boardTitle}{card.archivedAt ? ' · Archived' : ''}</option>)}
+                </select></label>
+                <p id="kanban-parent-help" className="kanban__comments-empty">{children.length
+                  ? 'This task has children. Remove or reassign them, including archived children, before choosing a parent.'
+                  : 'Choose an epic to nest this task under it. Choose No parent to remove the relationship.'}</p>
+                <label>Column<DevScope id="ntbho75"><select value={columnId} onChange={(event) => setColumnId(event.target.value)}>
+                  {columns.map((column) => <option key={column.id} value={column.id}>{column.title}</option>)}
+                </select></DevScope></label>
+              </FoldContent>
+            </Fold>
+          </div>
           {editor.item.id && <CardRelationships card={hierarchy.getCard(editor.item.id) || editor.item} hierarchy={hierarchy} busy={busy} onOpenCard={onOpenCard} expanded />}
         </>}
         {error && <p role="alert" className="kanban__error">{error}</p>}
@@ -57,6 +67,7 @@ const Editor = ({ devId, user, editor, columns, hierarchy, busy, error, onSave, 
     {editor.kind === 'card' && (editor.item.id
       ? <TaskComments devId="d6klsew" user={user} cardId={editor.item.id} busy={busy} onChange={onCommentChange} />
       : <p className="kanban__comments-empty">Save this card to add comments.</p>)}
+    {editor.kind === 'card' && editor.item.id && <p className="kanban__comments-empty kanban__created">Created by {editor.item.userByAuthorId?.name || 'Unknown author'}{editor.item.archivedAt && ' · Archived'}</p>}
     </div>
     </DevScope>
   )
@@ -254,15 +265,16 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = 
     if (kind === 'card' && item.id) navigateTo({ boardId, taskId: item.id })
     else setEditor({ kind, item })
   }
-  const save = ({ title, description, columnId, parentId }) => change(() => {
+  const save = ({ title, description, columnId, parentId, epic }) => change(() => {
     const { kind, item } = editor
     if (kind === 'card') {
       if (parentId) {
         const parent = hierarchy.getCard(parentId)
-        if (!parent || parent.id === item.id || parent.parentId) throw new Error('Choose another root task as the parent, or remove the parent.')
+        if (!parent || parent.id === item.id || parent.parentId || !parent.epic) throw new Error('Choose an epic as the parent, or remove the parent.')
         if (hierarchy.getChildren(item.id).length) throw new Error('A task with children, including archived children, cannot have a parent.')
       }
-      return saveCard(item, title, description, columnId, user.id, editor.boardId || activeId, parentId)
+      if (!epic && hierarchy.getChildren(item.id).length) throw new Error('A task with children must stay an epic.')
+      return saveCard(item, title, description, columnId, user.id, editor.boardId || activeId, parentId, Boolean(epic))
     }
     const type = kind === 'board' ? 'Board' : 'BoardColumn'
     if (item.id) return mutate(`update${type}ById`, `Update${type}ByIdInput`, { id: item.id, [`${kind}Patch`]: { title } }, undefined, kind === 'board' ? undefined : activeId)
