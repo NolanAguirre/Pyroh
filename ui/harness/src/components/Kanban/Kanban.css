@@ -64,6 +64,15 @@
 .kanban__archived-title { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 0.25rem 0.125rem; color: #c5ccd6; font: inherit; font-size: .8125rem; cursor: pointer; overflow-wrap: anywhere; }
 .kanban__archived-title:hover:not(:disabled) { color: inherit; text-decoration: underline; }
 .kanban__card-hint { font-size: .75rem; color: #c5ccd6; }
+.kanban__relationships { display: grid; gap: .375rem; padding: 0 .875rem .75rem; font-size: .8125rem; color: #c5ccd6; }
+.kanban__relationship-link { width: fit-content; max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; }
+.kanban__relationship-link:hover:not(:disabled) { text-decoration: underline; }
+.kanban__relationship-link:disabled { opacity: .6; }
+.kanban__relationships--expanded { margin-top: 1.25rem; padding: 1rem 0 0; border-top: .0625rem solid #5a6374; gap: .75rem; }
+.kanban__relationships h3 { margin: 0; font-size: .9375rem; }
+.kanban__relationship-list { display: grid; gap: .5rem; list-style: none; margin: 0; padding: 0; }
+.kanban__archived-details { flex: 1; min-width: 0; }
+.kanban__archived-details .kanban__relationships { padding: .25rem .125rem; font-size: .75rem; }
 .kanban__task-card .order { display: flex; align-items: center; gap: 0.25rem; }
 .kanban__task-card .order__position { display: none; }
 .kanban__task-card .order__btn { border: 0; background: #252830; color: #f2f4f7; border-radius: 0.1875rem; padding: 0.3125rem 0.4375rem; font-size: .75rem; }
