@@ -1,181 +1,267 @@
 const fs = require('fs')
 const path = require('path')
-const usageStore = require('../store/usageStore')
 const { readRecordPrompt } = require('../store/recordPrompt')
-const { parseInputCommand } = require('../prompt/triggers')
+const { fingerprint, freeze } = require('./replayTokenizer')
 
-const MAX_CALIBRATION_TOKENS = 2_000_000
-const DEFAULT_INPUT_PER_TURN = 8_000
-const DEFAULT_TURNS_PER_RUN = 3
-const positive = value => Number.isFinite(value) && value > 0
+const known = value => Number.isSafeInteger(value) && value >= 0
+const text = value => value == null ? '' : typeof value === 'string' ? value : JSON.stringify(value)
+const total = values => values.every(known) ? values.reduce((sum, value) => sum + value, 0) : null
 const median = values => {
-  const sorted = values.filter(positive).sort((a, b) => a - b)
-  const middle = Math.floor(sorted.length / 2)
-  return sorted.length ? (sorted[middle] + sorted[Math.floor((sorted.length - 1) / 2)]) / 2 : null
-}
-const size = value => value == null ? 0 : (typeof value === 'string' ? value : JSON.stringify(value)).length
-const compacted = event => ['compacting', 'awaiting_update'].includes(event.context?.status)
-  || /^(?:Context compacted|Compacting context)/i.test(event.status || '')
-  || /compact/i.test(event.message?.subtype || event.message?.type || '')
-
-// Count conversation content, not JSON envelopes, telemetry, or duplicate stream
-// snapshots. A single latest context/character pair gives each agent one vote.
-const readProfile = ({ session, dir }, writeDir, cutoff) => {
-  const runs = new Map()
-  let events
-  let total = 0
-  let usageKnown = true
-  try {
-    events = fs.readFileSync(path.join(dir, 'events.jsonl'), 'utf8').split('\n')
-      .filter(line => line.trim()).map(line => JSON.parse(line))
-      .filter(event => Number.isFinite(event.ts) && event.ts <= cutoff)
-    const usage = new Map(usageStore.listRunUsage(session.id, writeDir, dir).map(entry => [entry.runId, entry.usage]))
-    for (const { record, file } of usageStore.runRecords(session.id, writeDir, dir)) {
-      if (record.startedAt > cutoff || record.localCommand || record.workflow) continue
-      const prompt = readRecordPrompt(record, file)
-      if (parseInputCommand(prompt)) continue
-      const reported = usage.get(record.id) ?? record.usage
-      const tokens = usageStore.normalizeUsage(reported, record.provider || session.provider)
-      const input = reported?.inputTokens ?? reported?.input_tokens ?? reported?.input
-      const output = reported?.outputTokens ?? reported?.output_tokens ?? reported?.output
-      if (!Number.isFinite(input) || !Number.isFinite(output) || input < 0 || output < 0
-        || !Number.isFinite(record.endedAt) || record.endedAt > cutoff || record.transcriptStatus === 'incomplete') usageKnown = false
-      if (!tokens) usageKnown = false
-      else total += tokens.input + tokens.output
-      runs.set(record.id, { record, prompt, start: null, end: null, contexts: [] })
-    }
-  } catch {
-    return { runs, reason: 'Transcript or usage is incomplete.' }
-  }
-  const captured = new Set(events.filter(event => event.type === 'provider_prompt').map(event => event.runId))
-  for (const [runId, run] of runs) {
-    if (!captured.has(runId)) events.push({ type: 'provider_prompt', runId, text: run.prompt, ts: run.record.startedAt })
-  }
-  events.sort((a, b) => a.ts - b.ts)
-  const items = new Map()
-  const textRuns = new Set()
-  const snapshots = []
-  const threads = new Set()
-  let chars = 0
-  let sequence = 0
-  let hasCompaction = false
-  let lastContext = null
-  const replace = (key, value) => {
-    chars += size(value) - size(items.get(key))
-    items.set(key, value)
-  }
-  for (const event of events) {
-    if (compacted(event)) hasCompaction = true
-    const run = runs.get(event.runId)
-    if (!run) continue
-    if (event.providerAgentId) threads.add(event.providerAgentId)
-    if (event.context?.providerAgentId) threads.add(event.context.providerAgentId)
-    const id = event.itemId || event.toolUseId || `anonymous-${sequence++}`
-    const key = `${event.runId}:${event.type}:${id}`
-    if (event.type === 'provider_prompt') {
-      replace(`${event.runId}:prompt:${event.captureId || id}`, event.text)
-      if (run.start === null) run.start = chars
-    } else if (['text', 'thinking'].includes(event.type)) {
-      replace(key, event.delta && !event.replace ? (items.get(key) || '') + (event.text || '') : event.text)
-      if (event.type === 'text' && event.text) textRuns.add(event.runId)
-    } else if (event.type === 'result' && !textRuns.has(event.runId)) {
-      replace(`${event.runId}:result`, event.result)
-    } else if (event.type === 'user' && !captured.has(event.runId)) {
-      replace(key, event.text)
-    } else if (event.type === 'tool_call') {
-      for (const field of ['name', 'input', 'output']) {
-        if (event[field] !== undefined) replace(`${key}:${field}`, event[field])
-      }
-      if (event.outputDelta !== undefined) replace(`${key}:output`, (items.get(`${key}:output`) || '') + event.outputDelta)
-    } else if (event.type === 'context') {
-      const used = event.context?.usedTokens
-      if (positive(used)) {
-        if (lastContext && used < lastContext * 0.75) hasCompaction = true
-        lastContext = used
-        run.contexts.push(used)
-        snapshots.push({ used, chars, runId: event.runId })
-      }
-    }
-    run.end = chars
-  }
-  const latestRun = [...runs.values()].sort((a, b) => (a.record.startedAt || 0) - (b.record.startedAt || 0)).at(-1)
-  const context = snapshots.at(-1)
-  const reason = hasCompaction ? 'Compaction detected.'
-    : session.fork || threads.size > 1 ? 'Inherited or reset context cannot be matched to this transcript.'
-      : total > MAX_CALIBRATION_TOKENS || (session.totals?.tokens?.total || 0) > MAX_CALIBRATION_TOKENS
-        ? 'Agent exceeds 2M reported tokens.' : null
-  return { session, runs, chars, context, reason, usageKnown,
-    provider: latestRun?.record.provider || session.provider }
+  const sorted = values.filter(value => value > 0).sort((a, b) => a - b)
+  return sorted.length ? sorted[Math.floor(sorted.length / 2)] : null
 }
 
-const createContextAnalysis = (sources, writeDir, cutoff, agents = []) => {
-  const profiles = new Map(sources.filter(source => source.dir).map(source =>
-    [source.session.id, readProfile(source, writeDir, cutoff)]))
-  const samples = [...profiles.values()].filter(profile => !profile.reason && profile.usageKnown
-    && ['codex', 'claude'].includes(profile.provider) && positive(profile.context?.chars)
-    && positive(profile.context?.used) && profile.context.used <= MAX_CALIBRATION_TOKENS
-    && [...profile.runs.values()].every(run => (run.record.provider || profile.session.provider) === profile.provider))
-  const ratio = samples.length ? samples.reduce((sum, profile) => sum + profile.context.used / profile.context.chars, 0) / samples.length : null
-  const history = agents.flatMap(agent => agent.rows).filter(row => positive(row.requests)
-    && row.requestFields?.includes('input') && positive(row.input))
-  const describe = (agent) => {
-    const profile = profiles.get(agent.id)
-    const selected = agent.rows.map(row => ({ row, run: profile?.runs.get(row.id) }))
-    const last = selected.at(-1)
-    const knownContext = profile?.context && profile.context.runId === last?.row.id ? profile.context.used : null
-    const canEstimate = profile && !profile.reason && profile.usageKnown && ratio !== null
-    const current = knownContext ?? (canEstimate && positive(last?.run?.end) ? last.run.end * ratio : null)
-    const rows = selected.map(({ row, run }) => {
-      const measured = row.requests > 0 && row.requestFields?.includes('input') && row.input !== null
-      const providerHistory = history.filter(item => item.provider === row.provider)
-      const modelHistory = providerHistory.filter(item => item.model === row.model)
-      const peers = modelHistory.length ? modelHistory : providerHistory
-      const historicalInput = median(peers.map(item => item.input / item.requests))
-      const historicalTurns = median(peers.map(item => item.requests))
-      const contexts = run?.contexts || []
-      const reportedContext = contexts.length ? contexts.reduce((total, value) => total + value, 0) / contexts.length : null
-      const transcriptContext = canEstimate && positive(run?.start) && positive(run?.end)
-        ? (run.start + run.end) / 2 * ratio : null
-      const avg = measured ? row.input / row.requests
-        : reportedContext ?? transcriptContext ?? historicalInput ?? DEFAULT_INPUT_PER_TURN
-      const segments = row.requestEvidence?.segments || []
-      const reported = segments.length && segments.every(segment => Number.isSafeInteger(segment.reportedModelRequests)
-        && segment.reportedModelRequests >= 0)
-        ? segments.reduce((total, segment) => total + segment.reportedModelRequests, 0) : null
-      let basis = 'measured requests'
-      let turns = row.requests
-      if (turns == null) {
-        if (positive(reported)) {
-          turns = reported
-          basis = 'provider-reported turns (unreconciled)'
-        } else if (positive(row.input)) {
-          turns = row.input / avg
-          basis = reportedContext !== null ? 'input ÷ average reported context'
-            : transcriptContext !== null ? 'input ÷ calibrated transcript context'
-              : historicalInput !== null ? `input ÷ median input/turn from ${peers.length} measured runs`
-                : 'rough fallback: input ÷ 8,000 tokens/turn'
-        } else {
-          turns = historicalTurns ?? DEFAULT_TURNS_PER_RUN
-          basis = historicalTurns !== null ? `median turns from ${peers.length} measured runs`
-            : 'rough fallback: 3 turns/run'
-        }
-        // Observed response IDs are a lower bound, never an exact count.
-        const observed = row.requestEvidence?.observed || 0
-        if (observed > Math.round(turns)) basis += ' (raised to observed response count)'
-        turns = Math.max(1, observed, Math.round(turns))
-      }
-      return { turns, avg: measured ? avg : turns > 0 && row.input !== null ? row.input / turns : avg,
-        estimated: row.requests == null, basis }
+const readTranscript = (dir, cutoff, warnings) => {
+  if (!dir) return []
+  let phases = []
+  try { phases = fs.readdirSync(dir, { withFileTypes: true }).filter(entry => entry.isDirectory() && /^phase-/.test(entry.name)).map(entry => entry.name).sort() }
+  catch (error) { warnings.add(`Cannot discover phase transcripts in ${dir}: ${error.message}`) }
+  const events = []
+  const copies = new Map()
+  for (const file of [path.join(dir, 'events.jsonl'), ...phases.map(phase => path.join(dir, phase, 'events.jsonl'))]) {
+    let lines
+    try { lines = fs.readFileSync(file, 'utf8').split('\n') }
+    catch (error) {
+      if (error.code !== 'ENOENT' || file === path.join(dir, 'events.jsonl')) warnings.add(`Transcript unavailable: ${file} (${error.code || error.message})`)
+      continue
+    }
+    lines.forEach((line, index) => {
+      if (!line.trim()) return
+      let event
+      try { event = JSON.parse(line) }
+      catch { warnings.add(`Unreadable transcript record: ${file}:${index + 1}`); return }
+      if (!known(event.ts)) { warnings.add(`Transcript timestamp missing: ${file}:${index + 1}`); return }
+      if (event.ts > cutoff) return
+      const hash = fingerprint(event)
+      const source = { file, line: index + 1, link: `${file}:${index + 1}` }
+      const copy = copies.get(hash)
+      if (copy && copy.source.file !== file) { copy.sources.push(source); return }
+      const entry = { event, source, sources: [source], fingerprint: hash }
+      copies.set(hash, entry)
+      events.push(entry)
     })
-    const turns = rows.length && rows.every(row => row.turns !== null) ? rows.reduce((sum, row) => sum + row.turns, 0) : null
-    const avg = turns > 0 && rows.every(row => row.avg !== null)
-      ? rows.reduce((sum, row) => sum + row.avg * row.turns, 0) / turns : null
-    return { current, currentEstimated: knownContext === null && current !== null,
-      turns, turnsEstimated: rows.some(row => row.estimated), avg,
-      turnBasis: [...new Set(rows.map(row => row.basis))].join(', '),
-      reason: profile?.reason || (!samples.length ? 'No eligible GPT/Claude context samples.' : null) }
   }
-  return { samples: samples.length, describe }
+  events.sort((a, b) => a.event.ts - b.event.ts || a.source.file.localeCompare(b.source.file) || a.source.line - b.source.line)
+  return events.map((entry, order) => freeze({ ...entry, order }))
 }
 
-module.exports = { createContextAnalysis }
+const responseKey = (event, row) => event.requestKey || JSON.stringify([row.provider,
+  row.provider === 'claude' ? 'message' : event.evidenceScopeId || event.providerRunId || event.runId || event.segmentId || row.id,
+  event.requestId])
+const responseRecords = (row, events) => {
+  const records = new Map()
+  const accept = (record, source, order) => {
+    if (!record.requestId || record.parentToolUseId || record.nested) return
+    const key = responseKey(record, row)
+    const previous = records.get(key)
+    const sources = [...(previous?.sources || []), source].filter(Boolean)
+    const orders = [...(previous?.orders || []), ...(known(order) ? [order] : [])]
+    const keepFinal = previous?.record.status === 'completed' && record.status !== 'completed'
+    records.set(key, { key, record: keepFinal ? previous.record : { ...previous?.record, ...record }, sources, orders,
+      starts: [...(previous?.starts || []), ...(record.status === 'streaming' && known(order) ? [order] : [])],
+      ends: [...(previous?.ends || []), ...(record.status === 'completed' && known(order) ? [order] : [])] })
+  }
+  for (const segment of row.requestEvidence?.segments || []) {
+    for (const record of segment.requestRecords || []) accept(record, { file: row.file, field: `modelRequests.segments.${segment.segmentId}.${record.requestId}` })
+  }
+  for (const entry of events) if (entry.event.type === 'model_request') accept(entry.event, entry.source, entry.order)
+  return [...records.values()].sort((a, b) => (a.orders[0] ?? Infinity) - (b.orders[0] ?? Infinity)
+    || (a.record.firstObservedAt ?? a.record.observedAt ?? 0) - (b.record.firstObservedAt ?? b.record.observedAt ?? 0)
+    || a.key.localeCompare(b.key))
+}
+
+const createTranscriptEvidence = (agents) => {
+  const blocks = []
+  const turns = []
+  const gaps = []
+  const runAccounting = []
+  const history = agents.flatMap(agent => agent.rows).filter(row => row.requests > 0 && known(row.input))
+  const addGap = (row, reason, sources = []) => gaps.push({ sessionId: row.sessionId, runId: row.id, reason, sources })
+  for (const agent of agents) {
+    for (const row of agent.rows) {
+      const entries = (agent.events || []).filter(entry => entry.event.runId === row.id)
+      const drafts = new Map()
+      const runBlocks = []
+      const add = (key, values, entry) => {
+        let block = drafts.get(key)
+        if (!block) {
+          block = { id: `${row.sessionId}:${row.id}:${key}`, sessionId: row.sessionId, runId: row.id,
+            order: entry.order, lastOrder: entry.order, ts: entry.event.ts, sources: [],
+            role: 'assistant', generated: false, dependencies: [], ...values }
+          drafts.set(key, block)
+          runBlocks.push(block)
+        }
+        block.sources.push(...entry.sources)
+        block.lastOrder = entry.order
+        return block
+      }
+      let previousThread = null
+      let previousModel = row.model
+      for (const entry of entries) {
+        const event = entry.event
+        const id = event.itemId || event.toolUseId || `anonymous-${entry.order}`
+        if (event.type === 'provider_prompt') {
+          const sections = Array.isArray(event.sections) && event.sections.map(part => part.text).join('') === event.text
+            ? event.sections : [{ kind: 'context', label: 'Unclassified prompt', text: event.text || '' }]
+          sections.forEach((section, index) => add(`prompt:${event.captureId || entry.order}:${index}`, {
+            kind: 'prompt', role: section.kind === 'system' ? 'system' : 'user', content: section.text,
+            sectionKind: section.kind, label: section.label, captureId: event.captureId,
+            visibility: 'request', lifetime: 'session', images: event.images || [],
+          }, entry))
+          if (event.images?.length) addGap(row, 'Image payload tokenization is unsupported.', entry.sources)
+        } else if (['text', 'thinking'].includes(event.type)) {
+          const block = add(`${event.type}:${id}`, { kind: event.type, itemId: id, content: '', generated: true,
+            visibility: event.type === 'thinking' ? 'provider-dependent' : 'conversation', lifetime: 'session' }, entry)
+          block.content = event.delta && !event.replace ? block.content + (event.text || '') : event.text || ''
+        } else if (event.type === 'tool_call') {
+          const call = add(`call:${id}`, { kind: 'tool_call', toolId: id, name: event.name || '', content: '',
+            visibility: 'conversation', lifetime: 'session', generated: true }, entry)
+          if (event.name) call.name = event.name
+          if (event.input !== undefined) call.content = event.input
+          else if (event.inputDelta !== undefined) call.content = text(call.content) + text(event.inputDelta)
+          if (event.output !== undefined || event.outputDelta !== undefined) {
+            const result = add(`result:${id}`, { kind: 'tool_result', toolId: id, name: call.name, role: 'tool', content: '',
+              visibility: 'conversation', lifetime: 'session', dependencies: [call.id] }, entry)
+            result.content = event.output !== undefined ? event.output : text(result.content) + text(event.outputDelta)
+            result.error = event.error || (event.status === 'error' ? 'Tool error' : null)
+            result.exitCode = event.exitCode ?? result.exitCode
+            call.resultId = result.id
+          }
+        }
+        const thread = event.providerAgentId || event.context?.providerAgentId
+        const model = event.settings?.model || (event.type === 'model_request' ? event.model : null)
+        const compacted = ['compacting', 'awaiting_update'].includes(event.context?.status)
+          || /^(?:Context compacted|Compacting context)/i.test(event.status || '')
+        const reset = previousThread && thread && previousThread !== thread
+        const changed = model && previousModel && model !== previousModel
+        if (compacted || reset || changed || /Model changed:/.test(event.status || '')) {
+          add(`boundary:${entry.order}`, { kind: 'boundary', role: 'system', content: '',
+            visibility: 'metadata', lifetime: 'boundary', boundary: compacted ? 'compaction' : reset ? 'reset' : 'model-change',
+            model: model || null }, entry)
+          addGap(row, compacted ? 'Compaction summary and retained provider context are unavailable.'
+            : reset ? 'Provider context reset has no complete replacement history.' : 'Model transition needs a new calibration region.', entry.sources)
+        }
+        if (thread) previousThread = thread
+        if (model) previousModel = model
+      }
+      if (!runBlocks.some(block => block.kind === 'prompt')) {
+        let prompt = null
+        try { prompt = readRecordPrompt(row.record, row.file) }
+        catch (error) { addGap(row, `Run prompt unavailable: ${error.message}`) }
+        if (prompt != null) {
+          const source = { file: row.file, field: row.record?.promptFile ? 'promptFile' : 'prompt' }
+          add('fallback-prompt', { kind: 'prompt', role: 'user', content: prompt, sectionKind: 'context', label: 'Uncaptured run prompt',
+            visibility: 'request', lifetime: 'session', fallback: true }, { order: (entries[0]?.order ?? 0) - 0.5,
+            event: { ts: row.startedAt }, sources: [source] })
+        }
+        addGap(row, 'Provider prompt capture missing: instructions and tool schemas may be absent.')
+      }
+      if (!runBlocks.some(block => block.kind === 'text') && row.record?.result) {
+        add('final-result', { kind: 'text', role: 'assistant', content: text(row.record.result), generated: true,
+          visibility: 'conversation', lifetime: 'session', fallback: true }, {
+          order: (entries.at(-1)?.order ?? 0) + 0.5, event: { ts: row.endedAt }, sources: [{ file: row.file, field: 'result' }],
+        })
+        addGap(row, 'Only final text is available, intermediate generated content may be missing.')
+      }
+      runBlocks.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+      const responses = responseRecords(row, entries)
+      const runTurns = responses.map((response, index) => {
+        const start = response.starts.length ? Math.min(...response.starts) : null
+        const end = response.ends.length ? Math.max(...response.ends) : null
+        return { id: `${row.sessionId}:${row.id}:response:${index}`, sessionId: row.sessionId, runId: row.id,
+          responseKey: response.key, responseId: response.record.requestId,
+          model: response.record.model || row.model, provider: row.provider, sources: response.sources,
+          confidence: row.requestEvidence?.coverage === 'complete' && start !== null && end !== null ? 'measured' : 'inferred',
+          reason: start !== null ? 'Recorded response start and transcript order.' : 'Response identity with inferred content boundary.',
+          start, end, order: start ?? end, blocks: [], measuredUsage: response.record.usage || null,
+          usageReconciled: row.requestEvidence?.coverage === 'complete' }
+      })
+      let inferred = null
+      let afterResult = false
+      for (const block of runBlocks) {
+        let turn = null
+        if (block.itemId) turn = runTurns.find(item => block.itemId === item.responseId || block.itemId.startsWith(`${item.responseId}:`))
+        if (!turn && block.generated) {
+          turn = runTurns.find(item => item.start !== null && item.start <= block.order && (item.end === null || item.end >= block.order))
+          if (!turn) turn = runTurns.find(item => item.start === null && item.end !== null && item.end >= block.order)
+          // Tool snapshots can arrive just after message_stop, before a new request starts.
+          if (!turn && block.kind === 'tool_call') turn = [...runTurns].reverse().find(item => item.end !== null && item.end <= block.order)
+        }
+        if (!turn && block.generated) {
+          if (!inferred || afterResult) {
+            inferred = { id: `${row.sessionId}:${row.id}:inferred:${runTurns.length}`, sessionId: row.sessionId, runId: row.id,
+              model: row.model, provider: row.provider, confidence: 'inferred',
+              reason: 'Generated content after a prompt/tool-result boundary, without a matched response ID.',
+              order: block.order - 0.01, start: null, end: null, blocks: [], sources: block.sources,
+              measuredUsage: null, usageReconciled: false }
+            runTurns.push(inferred)
+          }
+          turn = inferred
+        }
+        if (turn) { block.turnId = turn.id; turn.blocks.push(block.id); afterResult = false }
+        if (['tool_result', 'prompt', 'boundary'].includes(block.kind)) afterResult = true
+      }
+      const peers = history.filter(item => item.provider === row.provider && item.model === row.model)
+      const inputPerTurn = median(peers.map(item => item.input / item.requests)) || 8000
+      const segments = row.requestEvidence?.segments || []
+      const reported = segments.length && segments.every(segment => known(segment.reportedModelRequests))
+        ? total(segments.map(segment => segment.reportedModelRequests)) : null
+      const target = Math.max(runTurns.length, row.requestEvidence?.observed || 0, row.requests ?? reported
+        ?? (known(row.input) ? Math.max(row.input > 0 ? 1 : 0, Math.round(row.input / inputPerTurn)) : 3))
+      for (let index = runTurns.length; index < target; index += 1) {
+        runTurns.push({ id: `${row.sessionId}:${row.id}:allocated:${index}`, sessionId: row.sessionId, runId: row.id,
+          model: row.model, provider: row.provider, confidence: 'allocated',
+          reason: row.requests !== null ? 'Reconciled count lacks a recoverable transcript boundary.'
+            : reported !== null ? 'Provider-reported count lacks a recoverable transcript boundary.'
+              : `Run input allocation using ${inputPerTurn} input tokens/turn (${peers.length ? 'same-model measured history' : 'fallback assumption'}).`,
+          order: (runBlocks.at(-1)?.lastOrder ?? entries.at(-1)?.order ?? 0) + 1 + index / (target + 1),
+          start: null, end: null, blocks: [], sources: [{ file: row.file }], measuredUsage: null, usageReconciled: false })
+      }
+      for (const turn of runTurns) {
+        const generated = runBlocks.filter(block => block.turnId === turn.id)
+        // The request must precede the earliest generated block, even for completion-only evidence.
+        turn.order = generated.length ? Math.min(turn.order ?? Infinity, generated[0].order - 0.01)
+          : turn.order ?? (runBlocks.at(-1)?.order ?? 0) + 0.9
+        turn.contextLimit = entries.filter(entry => entry.event.context?.maxTokens > 0)
+          .find(entry => entry.order >= turn.order)?.event.context.maxTokens
+          ?? entries.filter(entry => entry.event.context?.maxTokens > 0).at(-1)?.event.context.maxTokens ?? null
+      }
+      runTurns.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+      if (runTurns.some(turn => turn.confidence !== 'measured')) addGap(row, 'Some response boundaries are inferred or allocated, so replay timing is a scenario.')
+      if (!row.endedAt || row.record?.transcriptStatus === 'incomplete') addGap(row, 'Run or transcript is incomplete at cutoff.')
+      if (agent.session.fork) addGap(row, 'Inherited provider history is not fully represented in this session.')
+      // Attribution conserves authoritative run totals without changing observed response usage.
+      const accounting = { sessionId: row.sessionId, runId: row.id, measured: { input: row.input, output: row.output }, residual: {} }
+      for (const field of ['input', 'output']) {
+        const key = `${field}Tokens`
+        const observed = runTurns.map(turn => known(turn.measuredUsage?.[key]) ? turn.measuredUsage[key] : null)
+        const subtotal = observed.reduce((sum, value) => sum + (value ?? 0), 0)
+        const missing = observed.filter(value => value === null).length
+        const budget = row[field]
+        const preserve = known(budget) && subtotal <= budget && (missing > 0 || subtotal === budget)
+        let remainder = known(budget) ? budget - (preserve ? subtotal : 0) : null
+        const recipients = preserve ? missing : runTurns.length
+        runTurns.forEach((turn, index) => {
+          turn.attributedUsage = turn.attributedUsage || {}
+          const share = known(budget) && (!preserve || observed[index] === null)
+            ? Math.floor((budget - (preserve ? subtotal : 0)) / Math.max(1, recipients)) : null
+          const value = known(budget) ? preserve && observed[index] !== null ? observed[index] : share : null
+          turn.attributedUsage[field] = value
+          if (share !== null) remainder -= share
+          turn.attribution = preserve ? 'Observed usage retained, missing usage allocated from run remainder.'
+            : 'Run total allocated equally, conflicting or incomplete response usage remains separate evidence.'
+        })
+        const recipient = [...runTurns].reverse().find((turn, reverseIndex) => !preserve || observed[runTurns.length - reverseIndex - 1] === null)
+        if (recipient && remainder > 0) { recipient.attributedUsage[field] += remainder; remainder = 0 }
+        accounting.residual[field] = known(budget) ? remainder : null
+      }
+      runAccounting.push(accounting)
+      turns.push(...runTurns.map(turn => freeze(turn)))
+      blocks.push(...runBlocks.map(block => freeze({ ...block, fingerprint: fingerprint({ kind: block.kind, content: block.content, name: block.name }),
+        dependencies: block.dependencies || [], sources: block.sources })))
+    }
+  }
+  return freeze({ blocks, turns, gaps, runAccounting })
+}
+
+module.exports = { readTranscript, createTranscriptEvidence }
