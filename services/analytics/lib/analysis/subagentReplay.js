@@ -15,6 +15,27 @@ const unpack = value => {
 }
 const delegation = block => /^(?:mcp__harness_agents__|harness_agents\/)(spawn|status|wait|stop)$/.exec(block.name || '')?.[1] || null
 const pureRead = block => /^(?:Read|read_file|read_file_text|mcp__filesystem__read_file)$/.test(block.name || '')
+const relayText = value => value.replace(/^\s*(?:[-*#>]\s+|\d+[.)]\s+)/gm, '').replace(/[*`]/g, '').replace(/\s+/g, ' ').trim()
+// Deliberately limited vocabulary: task reasoning and novel findings do not qualify
+// merely because they mention agents. This is an estimate, not semantic equivalence.
+const coordinationWords = new Set(('i we ill well im ive will shall am are is be been have has had do does '
+  + 'the a an to for from of on in with and or then now next just only still already all both each their them they '
+  + 'my our its it this that these those as once until after before here heres back up can need needs should must '
+  + 'one two three first second last another other remaining no more '
+  + 'agent agents subagent subagents child children grandchild grandchildren parent coordinator '
+  + 'spawn spawning spawned delegate delegating delegated delegation start starting started '
+  + 'wait waiting await awaiting pending running finish finished done complete completed '
+  + 'result results response responses output outputs finding findings receipt receipts summary summaries '
+  + 'receive received collect collected return returning returned relay relaying relayed '
+  + 'send sending sent pass passing forward forwarding report reported reporting hand handoff deliver delivered '
+  + 'summarize summarizing combine combined consolidated acknowledge acknowledged '
+  + 'task tasks work status check checking stop stopping stopped ready').split(' '))
+const coordinationText = value => {
+  if (/[^a-z\s.,!?:'’\-]/i.test(value)) return false
+  const words = value.toLowerCase().replace(/['’]/g, '').match(/[a-z]+/g) || []
+  return words.length > 0 && words.every(word => coordinationWords.has(word))
+    && words.some(word => /^(?:agents?|subagents?|child|children|grandchildren|parent|delegat\w*|spawn\w*|wait\w*|await\w*|relay\w*|handoff|results?|findings)$/.test(word))
+}
 const range = (point, uncertainty, supported) => ({ estimate: point,
   lower: point === null ? null : supported ? Math.max(0, point - uncertainty) : 0,
   upper: point === null || !supported ? null : point + uncertainty })
@@ -31,7 +52,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
   const dispositions = new Map(evidence.blocks.map(block => [block.id, { blockId: block.id, action: 'retain',
     reason: 'Unique content or insufficient evidence for deletion.', sources: block.sources, dependencies: [...block.dependencies] }]))
   const turnDispositions = new Map(evidence.turns.map(turn => [turn.id, { turnId: turn.id, action: 'retain',
-    reason: 'Preserve original work unless all generated content is proven removable.', sources: turn.sources }]))
+    reason: 'Preserve original work unless every generated block has an explicit removal disposition.', sources: turn.sources }]))
   const remove = (block, reason, dependencies = []) => dispositions.set(block.id, {
     blockId: block.id, action: 'remove', reason, sources: block.sources, dependencies,
   })
@@ -187,19 +208,20 @@ const createSubagentReplay = (data, assumptions = {}) => {
     evidence.blocks.filter(block => block.sessionId === agent.id && block.kind === 'text')]))
   const taskBlocks = new Map(data.agents.map(agent => [agent.id,
     evidence.blocks.filter(block => block.sessionId === agent.id && block.kind === 'prompt')]))
+  const completeChild = id => {
+    const child = agents.get(id)
+    return child?.rows.length > 0 && child.rows.every(row => row.endedAt && !row.record?.error
+      && row.status === 'completed' && row.record?.transcriptStatus !== 'incomplete'
+      && evidence.blocks.some(block => block.sessionId === id && block.runId === row.id && block.generated))
+  }
   const replacement = (result, at, method = null) => {
     if (!result || typeof result !== 'object' || Array.isArray(result)) return null
     const childId = result.sessionId
     if (!linked.has(childId) || !visited.has(childId) || !Number.isFinite(at)) return null
-    if (result.error) return null
+    if (result.error || !completeChild(childId)) return null
     const activeReceipt = ['spawn', 'status', 'wait'].includes(method)
       && ['starting', 'running', 'subagent'].includes(result.state)
     if (result.state && result.state !== 'completed' && !activeReceipt) return null
-    if (activeReceipt) {
-      const child = agents.get(childId)
-      if (!child.rows.length || child.rows.some(row => !row.endedAt || row.record?.error
-        || row.status !== 'completed' || row.record?.transcriptStatus === 'incomplete')) return null
-    }
     const permitted = new Set(['sessionId', 'runId', 'latestRunId', 'parentSessionId', 'parentRunId', 'resultId', 'task',
       'depth', 'lineage', 'usage', 'normalizedUsage', 'durationMs', 'done', 'state', 'status', 'finalResponse',
       'name', 'provider', 'model', 'mode', 'createdAt', 'startedAt', 'endedAt', 'dontReturn', 'childKind',
@@ -240,7 +262,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
     if (method === 'spawn') {
       const child = children.length === 1 ? children[0] : null
       const task = child && taskBlocks.get(child.sessionId)?.find(item => input?.task && content(item).trim() === input.task.trim())
-      if (!task || !child.proven || !visited.has(child.sessionId) || result?.error) continue
+      if (!task || task.fallback || !child.proven || !visited.has(child.sessionId) || !completeChild(child.sessionId) || !result || result.error) continue
       // Removal substitutes the explicit child task at this spawn point.
       const dependencies = result ? replacement(unpack(result.content), position.get(result.id), method) : []
       if (dependencies === null) continue
@@ -274,8 +296,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
     }
   }
 
-  // Only exact duplicates tied to a removed handoff qualify as assistant overhead.
-  // Unclassified prose may contain decisions, even beside a delegation call.
+  // Exact duplicates can be removed even in mixed turns, without losing their tools.
   const lastRootText = finalBlocks.get(root?.id)?.at(-1)?.id
   for (const turn of evidence.turns) {
     const generated = turn.blocks.map(id => blocks.get(id)).filter(block => block.generated)
@@ -296,6 +317,103 @@ const createSubagentReplay = (data, assumptions = {}) => {
       })
       if (duplicate) remove(block, 'Exact handoff text is already retained in inserted child work.', [duplicate])
     }
+  }
+
+  const overheadTurns = []
+  const rootAnswerTurn = blocks.get(lastRootText)?.turnId
+  const firstRunTurns = new Map()
+  for (const action of ordered) {
+    if (action.kind !== 'request') continue
+    const turn = turns.get(action.id)
+    const key = `${turn.sessionId}:${turn.runId}`
+    if (!firstRunTurns.has(key) && turn.blocks.length) firstRunTurns.set(key, turn.id)
+  }
+  // Inspect complete generated responses, including thinking. A first child
+  // response is real work and receives no automatic startup discount.
+  const previousTurns = new Map()
+  for (const action of ordered) {
+    if (action.kind !== 'request') continue
+    const turn = turns.get(action.id)
+    const previousTurn = previousTurns.get(turn.sessionId)
+    previousTurns.set(turn.sessionId, turn)
+    const row = rows.get(`${turn.sessionId}:${turn.runId}`)
+    const generated = turn.blocks.map(id => blocks.get(id)).filter(block => block.generated)
+    if (!generated.length || turn.id === rootAnswerTurn || turn.confidence === 'allocated'
+      || !row?.endedAt || row.status !== 'completed' || row.record?.error
+      || row.record?.transcriptStatus === 'incomplete' || generated.some(block => block.fallback)) continue
+    const calls = generated.filter(block => block.kind === 'tool_call')
+    if (calls.some(block => !delegation(block) || dispositions.get(block.id).action !== 'remove')) continue
+    const prompts = firstRunTurns.get(`${turn.sessionId}:${turn.runId}`) === turn.id && row.record?.delegationDelivery
+      ? (taskBlocks.get(turn.sessionId) || []).filter(block => block.runId === turn.runId && block.label === 'Delegated child results') : []
+    if (prompts.some(block => dispositions.get(block.id).action !== 'remove')) continue
+    const priorCalls = !calls.length && previousTurn?.runId === turn.runId
+      ? previousTurn.blocks.map(id => blocks.get(id)).filter(block => block.kind === 'tool_call') : []
+    const receipts = priorCalls.length && priorCalls.every(block => delegation(block)
+      && dispositions.get(block.id).action === 'remove' && block.resultId
+      && dispositions.get(block.resultId)?.action === 'remove'
+      && position.get(block.resultId) < position.get(turn.id)) ? priorCalls : []
+    const anchors = [...calls, ...prompts, ...receipts]
+    if (!anchors.length) continue
+    const dependencies = [...new Set(anchors.flatMap(block => [
+      ...dispositions.get(block.id).dependencies,
+      ...(block.resultId ? dispositions.get(block.resultId)?.dependencies || [] : []),
+    ]))]
+    if (!dependencies.length) continue
+    const findings = dependencies.map(id => blocks.get(id)).filter(block => block?.kind === 'text'
+      && !block.fallback && position.get(block.id) < position.get(turn.id))
+    const matches = []
+    let removable = true
+    for (const block of generated) {
+      if (dispositions.get(block.id).action === 'remove') continue
+      if (!['text', 'thinking'].includes(block.kind)) {
+        removable = false
+        break
+      }
+      const clauses = content(block).split(/\n+|(?<=[.!?])\s+/).map(relayText).filter(Boolean)
+      const used = []
+      for (const clause of clauses) {
+        if (coordinationText(clause)) continue
+        // Allow formatting/attribution changes and excerpts, but no novel summary
+        // claims. In particular, token overlap alone cannot prove synthesis redundant.
+        const excerpt = clause.replace(/^(?:(?:child|grandchild|agent|subagent)(?:\s+[\w-]+)?\s*(?::|reported:|returned:|found:))\s*/i, '')
+        const original = findings.find(item => excerpt.length >= 24 && excerpt.split(/\s+/).length >= 4
+          && ` ${relayText(content(item))} `.includes(` ${excerpt} `))
+        if (!original) {
+          removable = false
+          break
+        }
+        used.push(original.id)
+      }
+      if (!removable) break
+      matches.push({ block, dependencies: used.length ? [...new Set(used)] : dependencies })
+    }
+    if (!removable || !matches.length) continue
+    for (const match of matches) remove(match.block,
+      'Estimated delegation-only response: coordination language or attributed excerpts of inserted findings, with no other tool work.', match.dependencies)
+    overheadTurns.push({ turnId: turn.id, sessionId: turn.sessionId, runId: turn.runId,
+      evidenceBlockIds: anchors.map(block => block.id),
+      assumption: 'Coordination-only thinking/prose and excerpt-only relay output are unnecessary in sequential replay. Unmatched synthesis is retained.' })
+  }
+
+  // Keep tasks and user instructions. Identical captured system sections need only
+  // one copy in the flattened history, but never deduplicate across a boundary.
+  const systemPrompts = new Map()
+  for (const action of ordered) {
+    if (action.kind !== 'block') continue
+    const block = blocks.get(action.id)
+    if (block.kind === 'boundary') systemPrompts.clear()
+    if (block.kind !== 'prompt' || block.sectionKind !== 'system' || block.fallback
+      || block.images?.length || dispositions.get(block.id).action === 'remove') continue
+    const key = serialize([block.role, block.sectionKind, block.label, content(block)])
+    const previous = systemPrompts.get(key)
+    const delegated = agents.get(block.sessionId)?.session.childKind === 'delegation'
+      && linked.has(block.sessionId) && completeChild(block.sessionId)
+    const continuation = rows.get(`${block.sessionId}:${block.runId}`)?.record?.delegationDelivery
+      && (taskBlocks.get(block.sessionId) || []).some(item => item.runId === block.runId
+        && item.label === 'Delegated child results' && dispositions.get(item.id).action === 'remove')
+    if (previous && (delegated || continuation)) remove(block,
+      'Repeated captured system section is already present in the flattened delegation history.', [previous.id])
+    else systemPrompts.set(key, block)
   }
 
   let previousRead = null
@@ -325,6 +443,44 @@ const createSubagentReplay = (data, assumptions = {}) => {
       remove(result, 'Byte-identical read result remains in retained history.', [previousRead.result.id])
     } else previousRead = { call: block, result }
   }
+  // Rebase every removal proof through deleted relay text and prompt duplicates.
+  // If a chain is cyclic, missing or moves an earlier substitute past its consumer,
+  // keep that consumer instead. Spawn-to-task dependencies intentionally point ahead.
+  const retainedDependencies = (id, active = new Set()) => {
+    if (!blocks.has(id) || !position.has(id) || active.has(id)) return null
+    const disposition = dispositions.get(id)
+    if (disposition.action !== 'remove') return [id]
+    const next = new Set([...active, id])
+    const replacements = disposition.dependencies.map(dependency => retainedDependencies(dependency, next))
+    return replacements.some(value => value === null) ? null : [...new Set(replacements.flat())]
+  }
+  let restored = true
+  while (restored) {
+    restored = false
+    for (const disposition of dispositions.values()) {
+      if (disposition.action !== 'remove') continue
+      const invalid = disposition.dependencies.some(id => {
+        const replacements = retainedDependencies(id, new Set([disposition.blockId]))
+        return replacements === null || (position.get(id) < position.get(disposition.blockId)
+          && replacements.some(dependency => position.get(dependency) >= position.get(disposition.blockId)))
+      })
+      if (!invalid) continue
+      const block = blocks.get(disposition.blockId)
+      dispositions.set(block.id, { blockId: block.id, action: 'retain',
+        reason: 'Retained because the proposed removal no longer has an available dependency-safe substitute.',
+        sources: block.sources, dependencies: [...block.dependencies] })
+      restored = true
+    }
+  }
+  for (const disposition of dispositions.values()) {
+    if (disposition.action !== 'remove') continue
+    const dependencies = [...new Set(disposition.dependencies.flatMap(id => retainedDependencies(id)))]
+    const rebased = serialize(dependencies) !== serialize(disposition.dependencies)
+    dispositions.set(disposition.blockId, { ...disposition, dependencies,
+      ...(rebased ? { originalDependencies: disposition.dependencies,
+        reason: `${disposition.reason} Substitutes are expanded through removed wrappers or estimated relay output to retained evidence.` } : {}) })
+  }
+  const estimatedOverhead = new Set(overheadTurns.map(turn => turn.turnId))
   for (const turn of evidence.turns) {
     if (turn.confidence === 'allocated' && !turn.blocks.length) {
       turnDispositions.set(turn.id, { turnId: turn.id, action: 'sensitivity',
@@ -337,7 +493,9 @@ const createSubagentReplay = (data, assumptions = {}) => {
     const retained = generated.filter(block => dispositions.get(block.id).action !== 'remove')
     if (!retained.length && generated.every(block => dispositions.get(block.id).action === 'remove')) {
       turnDispositions.set(turn.id, { turnId: turn.id, action: 'remove',
-        reason: 'All recorded generated content is proven delegation/read overhead. Boundary confidence remains separate evidence.',
+        reason: estimatedOverhead.has(turn.id)
+          ? 'All generated blocks are removed under the explicit delegation-only response estimate. Boundary confidence remains separate evidence.'
+          : 'All recorded generated content has an explicit delegation/read removal substitute. Boundary confidence remains separate evidence.',
         sources: turn.sources, dependencies: generated.flatMap(block => dispositions.get(block.id).dependencies) })
     }
   }
@@ -347,7 +505,10 @@ const createSubagentReplay = (data, assumptions = {}) => {
   const visible = new Set()
   const estimates = []
   const allocatedEstimates = []
-  let regionUnsupported = false
+  const removedOverheadTurns = overheadTurns.filter(turn => turnDispositions.get(turn.turnId).action === 'remove')
+  if (overheadTurns.length) gap('Delegation-only language and relay excerpts are classified heuristically, not proven semantically equivalent.',
+    { turnIds: overheadTurns.map(turn => turn.turnId) })
+  let regionUnsupported = overheadTurns.length > 0
   let activeModel = null
   let currentRootThread = null
   for (const action of ordered) {
@@ -489,7 +650,8 @@ const createSubagentReplay = (data, assumptions = {}) => {
     confidenceCounts: Object.fromEntries(['measured', 'inferred', 'allocated'].map(confidence => [confidence,
       evidence.turns.filter(turn => turn.confidence === confidence).length])),
     removed: { blocks: [...dispositions.values()].filter(item => item.action === 'remove').length,
-      turns: [...turnDispositions.values()].filter(item => item.action === 'remove').length },
+      turns: [...turnDispositions.values()].filter(item => item.action === 'remove').length,
+      estimatedDelegationTurns: removedOverheadTurns },
     ordering: { policy: 'Original transcript order, recursively insert each child immediately after its spawn call. Siblings use creation time then session ID. Missing anchors are explicit gaps.',
       insertions: [...insertions.values()].flat(), actions: ordered.map((action, index) => ({ ...action, index })) },
     tokenizer: { identities: tokenizer.identities(), cachedRequestsAndOutputs: tokenizer.cacheSize(),
@@ -505,7 +667,12 @@ const createSubagentReplay = (data, assumptions = {}) => {
       'Allocated turn usage conserves run totals for attribution only. It does not fabricate transcript text or request measurements.',
       'The primary estimate excludes allocated requests without recorded blocks. Their repeated-history input appears only in the explicit sensitivity scenario.',
       'Measured and inferred requests are removed only when every recorded generated block has an explicit removal disposition. Mixed turns retain their useful output and request.',
-      'Assistant handoff text is removed only with an exact retained duplicate tied to the removed delegation. Unclassified prose and the last coordinator answer remain.',
+      'No fixed startup/request discount is applied. First child responses are generated work and use the same content rules as other responses.',
+      'Delegation-only responses require replaced calls, a fully replaced automatic handoff, or immediately preceding replaced control receipts. Failed, incomplete and missing child runs keep their wrappers.',
+      'Coordination-only thinking/prose is estimated overhead using a restricted vocabulary. Relay excerpts may differ in formatting or attribution, but novel paraphrases and substantive synthesis remain. This is not a proof of semantic equivalence.',
+      'Turns containing other tools retain their request and useful work. Exact duplicate handoff text may still be removed. The final coordinator answer turn is preserved.',
+      'Repeated captured system sections may share an earlier identical copy within a boundary region. Child tasks, user instructions and distinct system/mode instructions remain.',
+      'Removal dependencies are rebased to retained evidence, preserving earlier substitution positions. Invalid removal chains fall back to retention.',
       'Estimates do not measure quality, time or money and do not imply a categorical delegation verdict.',
       ...(ignoredAssumptions.length ? [`Unapplied legacy assumptions: ${ignoredAssumptions.join(', ')}`] : []),
     ],
