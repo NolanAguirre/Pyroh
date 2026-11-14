@@ -4,17 +4,17 @@ const sessionLock = require('../store/sessionLock')
 const eventLog = require('../store/eventLog')
 const checkpointStore = require('../store/checkpointStore')
 const { inputCommandHelp } = require('../prompt/triggers')
-const { analyzeSubagents, parseAssumptions } = require('./subagentAnalysis')
+const analytics = require('../analytics/client')
 
 // Local replies use the same saved runs and normalized events as agent turns.
-const writeReply = (session, prompt, reply, localCommand = 'help') => {
+const writeReply = async (session, prompt, reply, localCommand = 'help') => {
   const writeDir = config.writeDir
   const lock = sessionLock.acquire(session.id, writeDir, { exclusive: true })
   let run
   try {
     sessionStore.recoverSession(session.id, writeDir)
     // Capture analysis before creating its own local run.
-    const text = typeof reply === 'function' ? reply() : reply
+    const text = typeof reply === 'function' ? await reply() : reply
     run = sessionStore.createRun(session.id, { mode: 'agent', prompt, localCommand }, writeDir)
     eventLog.append(session.id, { type: 'text', runId: run.id, itemId: `${run.id}:reply`, text }, writeDir)
     const endedAt = Date.now()
@@ -40,21 +40,18 @@ const writeReply = (session, prompt, reply, localCommand = 'help') => {
 
 const handlers = {
   help: ({ session, prompt }) => writeReply(session, prompt, inputCommandHelp()),
-  'analyze-subagent': ({ session, prompt, command }) => {
-    const assumptions = parseAssumptions(command.assumptions)
-    return writeReply(session, prompt,
-      () => analyzeSubagents(session, config.writeDir, assumptions), 'analyze-subagent')
-  },
+  'analyze-subagent': ({ session, prompt, command }) => writeReply(session, prompt,
+    async () => (await analytics.analyzeSubagents(session.id, command.assumptions)).report, 'analyze-subagent'),
   'create-checkpoint': ({ session, command, at }) => {
     const checkpoint = checkpointStore.create({ name: command.name, sessionId: session.id, at })
     return { checkpoint, message: `Created checkpoint "${checkpoint.name}".` }
   },
 }
 
-const executeInputCommand = ({ session, prompt, command, at }) => {
+const executeInputCommand = async ({ session, prompt, command, at }) => {
   const handler = handlers[command.type]
   if (!handler) throw Object.assign(new Error(`Unknown command: ${command.type}`), { status: 400 })
-  return { command: command.type, ...handler({ session, prompt, command, at }) }
+  return { command: command.type, ...await handler({ session, prompt, command, at }) }
 }
 
 module.exports = { executeInputCommand }

@@ -83,7 +83,7 @@ help: ## Show this help
 	@printf '%s\n' '  install                          Install all services and UIs, including python venvs'
 	@printf '%s\n' '  install.js                       Install only JS packages across all services and UIs'
 	@printf '%s\n' '  install.py                       Install python venvs for the GPU services'
-	@printf '%s\n' '  start                            Start the harness stack and stop its child process groups on exit'
+	@printf '%s\n' '  start                            Start the harness stack; Ctrl+C closes the terminal host and shells'
 	@printf '%s\n' '  db.analytics.init                Create the analytics database'
 	@printf '%s\n' '  db.analytics.render              Render analytics Sqitch config using env-dir'
 	@printf '%s\n' '  db.analytics.deploy              Deploy pending analytics Sqitch changes'
@@ -326,29 +326,12 @@ install.js: ## Install only JS packages across all services and UIs
 install.py: ## Install python venvs for the GPU services
 	$(MAKE) services.categorizer.install.python
 
-start: SHELL := /bin/bash
-start: ## Start the harness stack and stop its child process groups on exit
+start: ## Start the harness stack; Ctrl+C closes the terminal host and shells
 	@$(MAKE) services.kanban.prepare
 	@$(MAKE) db.harness.deploy
 	@$(MAKE) db.mcpdevid.deploy
 	@$(MAKE) db.kanban.deploy
-	@pids=""; \
-	cleanup() { trap '' INT TERM; for pid in $$pids; do kill -TERM -- -$$pid 2>/dev/null || true; done; wait || true; }; \
-	trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM; \
-	s6-setsid $(MAKE) -C services/nginx start & pids="$$pids $$!"; \
-	s6-setsid $(MAKE) -C services/harness start & pids="$$pids $$!"; \
-	s6-setsid $(MAKE) -C services/terminal start & pids="$$pids $$!"; \
-	s6-setsid $(MAKE) -C services/editor start & pids="$$pids $$!"; \
-	s6-setsid $(MAKE) -C services/git start & pids="$$pids $$!"; \
-	s6-setsid $(MAKE) -C services/kanban start & pids="$$pids $$!"; \
-	s6-setsid $(MAKE) -C services/categorizer start & pids="$$pids $$!"; \
-	s6-setsid $(MAKE) -C services/categorizer consumer & pids="$$pids $$!"; \
-	s6-setsid $(MAKE) -C services/analytics start & pids="$$pids $$!"; \
-	s6-setsid $(MAKE) -C services/mcp-memory start & pids="$$pids $$!"; \
-	s6-setsid $(MAKE) -C services/memory start & pids="$$pids $$!"; \
-	s6-setsid $(MAKE) -C services/mcpdevid start & pids="$$pids $$!"; \
-	s6-setsid $(MAKE) -C ui/harness dev & pids="$$pids $$!"; \
-	wait
+	@exec sh scripts/start-stack "$(MAKE)"
 
 # Sqitch database db/analytics
 .PHONY: help db.analytics.help db.analytics.init db.analytics.render db.analytics.deploy db.analytics.status db.analytics.verify db.analytics.revert

@@ -1,0 +1,173 @@
+#!/bin/sh
+
+make_command=$1
+pids=
+terminal_pid=
+signal_status=0
+cleanup_status=0
+
+request_stop() {
+    if [ "$signal_status" -eq 0 ]; then
+        signal_status=$1
+    fi
+}
+
+group_alive() {
+    kill -s 0 -- "-$1" 2>/dev/null || kill -s 0 "$1" 2>/dev/null
+}
+
+any_groups_alive() {
+    for candidate in "$@"; do
+        if group_alive "$candidate"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+signal_group() {
+    kill -s "$1" -- "-$2" 2>/dev/null || :
+    # The launcher may not have called setsid yet. Signal it too, then
+    # retry the group in case it was created between the two signals.
+    kill -s "$1" "$2" 2>/dev/null || :
+    kill -s "$1" -- "-$2" 2>/dev/null || :
+}
+
+pause() {
+    # Repeated Ctrl+C must not shorten the graceful shutdown interval.
+    (
+        trap '' INT TERM
+        sleep 1
+    )
+}
+
+stop_groups() {
+    for stopping_pid in "$@"; do
+        signal_group TERM "$stopping_pid"
+    done
+
+    remaining=8
+    while [ "$remaining" -gt 0 ]; do
+        pause
+        remaining=$((remaining - 1))
+    done
+
+    # Keep every recorded group, even if its original submake has exited.
+    for stopping_pid in "$@"; do
+        signal_group KILL "$stopping_pid"
+    done
+
+    remaining=3
+    while any_groups_alive "$@" && [ "$remaining" -gt 0 ]; do
+        pause
+        for stopping_pid in "$@"; do
+            signal_group KILL "$stopping_pid"
+        done
+        remaining=$((remaining - 1))
+    done
+
+    for stopping_pid in "$@"; do
+        if group_alive "$stopping_pid"; then
+            printf 'start: process group %s did not stop after KILL\n' "$stopping_pid" >&2
+            cleanup_status=1
+        fi
+    done
+}
+
+stop_terminal_host() {
+    # This bounds the entire root forward, including make and env wrappers.
+    s6-setsid "$make_command" services.terminal.stop-host &
+    stop_pid=$!
+    remaining=10
+    while group_alive "$stop_pid" && [ "$remaining" -gt 0 ]; do
+        pause
+        remaining=$((remaining - 1))
+    done
+
+    if group_alive "$stop_pid"; then
+        printf '%s\n' 'start: services.terminal.stop-host timed out after 10 seconds' >&2
+        cleanup_status=1
+        stop_groups "$stop_pid"
+    fi
+
+    # Only wait for an exited child: an uninterruptible process must not
+    # turn the bounded shutdown into an unbounded wait.
+    if ! kill -s 0 "$stop_pid" 2>/dev/null; then
+        wait "$stop_pid"
+        stop_status=$?
+        if [ "$stop_status" -ne 0 ]; then
+            printf 'start: services.terminal.stop-host failed (exit %s)\n' "$stop_status" >&2
+            cleanup_status=1
+        fi
+    fi
+}
+
+cleanup() {
+    original_status=$?
+    trap - 0
+    # Deliberate splitting: pids contains only recorded numeric child PIDs.
+    stop_groups $pids
+
+    if [ -z "$terminal_pid" ] || ! group_alive "$terminal_pid"; then
+        stop_terminal_host
+    else
+        printf '%s\n' 'start: terminal API group is still present; services.terminal.stop-host was not run' >&2
+        cleanup_status=1
+    fi
+
+    if [ "$signal_status" -ne 0 ]; then
+        exit "$signal_status"
+    fi
+    if [ "$original_status" -ne 0 ]; then
+        exit "$original_status"
+    fi
+    exit "$cleanup_status"
+}
+
+launch() {
+    if [ "$signal_status" -ne 0 ]; then
+        return
+    fi
+    s6-setsid "$make_command" -C "$@" &
+    launch_pid=$!
+    pids="$pids $launch_pid"
+    if [ "$1" = services/terminal ]; then
+        terminal_pid=$launch_pid
+    fi
+}
+
+# Traps only record intent, so a signal cannot interrupt PID registration.
+trap 'request_stop 130' INT
+trap 'request_stop 143' TERM
+trap cleanup 0
+
+launch services/nginx start
+launch services/harness start
+launch services/terminal start
+launch services/editor start
+launch services/git start
+launch services/kanban start
+launch services/categorizer start
+launch services/categorizer consumer
+launch services/analytics start
+launch services/mcp-memory start
+launch services/memory start
+launch services/mcpdevid start
+launch ui/harness dev
+
+# Polling avoids a signal arriving just before an otherwise blocking wait.
+while [ "$signal_status" -eq 0 ]; do
+    running=0
+    for running_pid in $pids; do
+        if kill -s 0 "$running_pid" 2>/dev/null; then
+            running=1
+            break
+        fi
+    done
+    if [ "$running" -eq 0 ]; then
+        break
+    fi
+    sleep 1
+done
+
+exit 0

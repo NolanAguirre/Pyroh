@@ -1,6 +1,6 @@
 const fs = require('fs')
 const path = require('path')
-const { readRecordPrompt } = require('../store/recordPrompt')
+const { readRecordPrompt } = require('../source/recordPrompt')
 const { fingerprint, freeze } = require('./replayTokenizer')
 
 const known = value => Number.isSafeInteger(value) && value >= 0
@@ -234,7 +234,8 @@ const createTranscriptEvidence = (agents) => {
         ? total(segments.map(segment => segment.reportedModelRequests)) : null
       const target = Math.max(runTurns.length, row.requestEvidence?.observed || 0, row.requests ?? reported
         ?? (known(row.input) ? Math.max(row.input > 0 ? 1 : 0, Math.round(row.input / inputPerTurn)) : 3))
-      for (let index = runTurns.length; index < target; index += 1) {
+      while (runTurns.length < target) {
+        const index = runTurns.length
         runTurns.push({ id: `${row.sessionId}:${row.id}:allocated:${index}`, sessionId: row.sessionId, runId: row.id,
           model: row.model, provider: row.provider, confidence: 'allocated',
           reason: row.requests !== null ? 'Reconciled count lacks a recoverable transcript boundary.'

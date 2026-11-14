@@ -69,4 +69,7 @@ const toolStats = async (raw) => (await request('GET', '/aggregate/tool-calls', 
 // { sessionId?, compute? } → { sessions, job }
 const sync = (body = {}) => request('POST', '/sync', { body })
 
-module.exports = { notifySession, toolStats, sync }
+const analyzeSubagents = (sessionId, assumptions = '') => request('POST',
+  `/sessions/${encodeURIComponent(sessionId)}/analyze-subagent`, { body: { assumptions } })
+
+module.exports = { notifySession, toolStats, sync, analyzeSubagents }

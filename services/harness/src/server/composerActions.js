@@ -11,7 +11,7 @@ const { userPrompt } = require('../prompt/provenance')
 const fail = (message, status = 400) => Object.assign(new Error(message), { status })
 
 // Shared by the original HTTP routes and durable background submissions.
-const inputCommand = (sessionId, { prompt, images } = {}) => {
+const inputCommand = async (sessionId, { prompt, images } = {}) => {
   const command = parseInputCommand(prompt)
   if (!command) return null
   if (images !== undefined && (!Array.isArray(images) || images.length)) throw fail('local commands do not accept images')
@@ -19,9 +19,9 @@ const inputCommand = (sessionId, { prompt, images } = {}) => {
   try {
     const session = sessionStore.loadSession(sessionId, config.writeDir)
     if (!session) throw fail('session not found', 404)
-    return { status: 200, body: executeInputCommand({ session, prompt, command, at }) }
+    return { status: 200, body: await executeInputCommand({ session, prompt, command, at }) }
   } catch (err) {
-    if (!err.status) err.status = 500
+    if (!err.status) err.status = err.httpStatus || 500
     throw err
   }
 }
@@ -50,7 +50,7 @@ const startRun = async (sessionId, requested, { prompt, images, provider, model,
 }
 
 const execute = async (sessionId, action, body = {}) => {
-  const command = inputCommand(sessionId, body)
+  const command = await inputCommand(sessionId, body)
   if (command) return command
   if (action === 'commands') throw fail(`Expected command: ${INPUT_COMMANDS.map(command => command.usage).join(', ')}`)
   body = { ...body, images: imageStore.normalizeImages(sessionId, body.images, config.writeDir) }

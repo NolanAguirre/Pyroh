@@ -1,12 +1,13 @@
 const fs = require('fs')
 const path = require('path')
-const paths = require('../store/paths')
-const store = require('../store/sessionStore')
-const usageStore = require('../store/usageStore')
-const runIndex = require('../store/runIndexStore')
-const { readJson } = require('../store/jsonFile')
-const { parseInputCommand } = require('../prompt/triggers')
-const { createRequestMetrics, summarizeRequestMetrics } = require('../agents/requestMetrics')
+const config = require('../config')
+const { locateSession } = require('../source/harness')
+const { readRecordPrompt } = require('../source/recordPrompt')
+const usageStore = require('../source/usageStore')
+const runIndex = require('../source/runIndexStore')
+const { readJson } = require('../source/jsonFile')
+const { parseInputCommand } = require('../../../../packages/prompt-triggers/index.js')
+const { createRequestMetrics, summarizeRequestMetrics } = require('../source/requestMetrics')
 const { readTranscript } = require('./transcriptContext')
 const { createSubagentReplay } = require('./subagentReplay')
 
@@ -39,6 +40,7 @@ const measuredUsage = (usage, provider) => {
 }
 
 const parseAssumptions = (text = '') => {
+  if (typeof text !== 'string') throw Object.assign(new Error('Assumptions must be text.'), { status: 400 })
   const result = {}
   for (const part of text.trim().split(/\s+/).filter(Boolean)) {
     const match = /^(shared|requests|output)=(\d+)$/i.exec(part)
@@ -129,10 +131,15 @@ const requestEvidence = (events, usage, provider, saved, cutoff) => {
       : 'No complete direct request evidence; historical counts are unknown.' }
 }
 
-const collect = (current, writeDir, cutoff) => {
+const collect = async (current, writeDir, cutoff) => {
   const warnings = new Set()
   const read = (file) => {
-    try { return readJson(file) } catch (err) { warnings.add(`Cannot read ${file}: ${err.message}`); return null }
+    try {
+      return readJson(file)
+    } catch (err) {
+      warnings.add(`Cannot read ${file}: ${err.message}`)
+      return null
+    }
   }
   let index = []
   try { index = runIndex.listRuns(writeDir) }
@@ -147,7 +154,7 @@ const collect = (current, writeDir, cutoff) => {
     }
   }
   const sessions = new Map()
-  const roots = [paths.legacySessionsDir(writeDir), ...directories(paths.workspacesDir(writeDir)).map(dir => path.join(dir, 'sessions'))]
+  const roots = [path.join(writeDir, 'sessions'), ...directories(path.join(writeDir, 'workspaces')).map(dir => path.join(dir, 'sessions'))]
   for (const root of roots) for (const dir of directories(root)) {
     const session = read(path.join(dir, 'session.json'))
     if (session?.id) sessions.set(session.id, session)
@@ -166,8 +173,8 @@ const collect = (current, writeDir, cutoff) => {
     hint(entry.sessionId, entry.sessionPath)
     hint(entry.sourceSessionId, entry.sourceSessionPath)
   }
-  const locate = (id) => {
-    const local = paths.locateSession(id, writeDir)
+  const locate = async (id) => {
+    const local = await locateSession(id, writeDir)
     if (local) return { session: sessions.get(id) || read(path.join(local.dir, 'session.json')), dir: local.dir }
     for (const file of hints.get(id) || []) {
       const session = read(file)
@@ -182,9 +189,15 @@ const collect = (current, writeDir, cutoff) => {
   let source = current
   const sources = new Set([source.id])
   while (source.sourceSessionId) {
-    if (sources.has(source.sourceSessionId)) { warnings.add('Cycle in source-session links; stopped at the last distinct source.'); break }
-    const next = locate(source.sourceSessionId)?.session
-    if (!next) { warnings.add(`Source session ${source.sourceSessionId} is unlocated; using ${source.id}.`); break }
+    if (sources.has(source.sourceSessionId)) {
+      warnings.add('Cycle in source-session links; stopped at the last distinct source.')
+      break
+    }
+    const next = (await locate(source.sourceSessionId))?.session
+    if (!next) {
+      warnings.add(`Source session ${source.sourceSessionId} is unlocated; using ${source.id}.`)
+      break
+    }
     sources.add(next.id)
     source = next
   }
@@ -212,11 +225,17 @@ const collect = (current, writeDir, cutoff) => {
   let excluded = 0
   while (pending.length) {
     const node = pending.pop()
-    if (node.ancestors.includes(node.id)) { warnings.add(`Delegation cycle at ${node.id}; counted once.`); continue }
+    if (node.ancestors.includes(node.id)) {
+      warnings.add(`Delegation cycle at ${node.id}; counted once.`)
+      continue
+    }
     if (seen.has(node.id)) continue
     seen.add(node.id)
-    const location = locate(node.id)
-    if (!location?.session) { warnings.add(`Linked child ${node.id} is unlocated; its usage is unknown.`); continue }
+    const location = await locate(node.id)
+    if (!location?.session) {
+      warnings.add(`Linked child ${node.id} is unlocated; its usage is unknown.`)
+      continue
+    }
     const { session, dir } = location
     if (node.depth && session.childKind === 'fork') continue
     if (session.createdAt > cutoff) continue
@@ -229,8 +248,8 @@ const collect = (current, writeDir, cutoff) => {
     let usage = new Map()
     if (dir) {
       try {
-        for (const item of usageStore.runRecords(node.id, writeDir, dir)) records.set(item.record.id, item)
-        usage = new Map(usageStore.listRunUsage(node.id, writeDir, dir).map(item => [item.runId, item]))
+        for (const item of usageStore.runRecords(node.id, dir)) records.set(item.record.id, item)
+        usage = new Map(usageStore.listRunUsage(node.id, dir).map(item => [item.runId, item]))
       } catch (err) { warnings.add(`Incomplete records for ${node.id}: ${err.message}`) }
     }
     for (const entry of usage.values()) {
@@ -259,10 +278,13 @@ const collect = (current, writeDir, cutoff) => {
       }
       let local = Boolean(record.localCommand)
       if (!local && file && record.mode === 'agent') {
-        try { local = Boolean(parseInputCommand(store.readRecordPrompt(record, file))) }
+        try { local = Boolean(parseInputCommand(readRecordPrompt(record, file))) }
         catch { /* Missing prompts do not invalidate reported usage. */ }
       }
-      if (local) { excluded += 1; continue }
+      if (local) {
+        excluded += 1
+        continue
+      }
       const key = `${node.id}:${record.id}`
       if (seenRuns.has(key)) continue
       seenRuns.add(key)
@@ -297,7 +319,10 @@ const collect = (current, writeDir, cutoff) => {
           if (!state || !included.has(state.runId)) continue
           for (const child of Object.values(state.children || {})) {
             if (child.createdAt > cutoff) continue
-            if (!child.sessionId) { warnings.add(`Unlocated child spawn in ${state.runId}${child.error ? `: ${child.error}` : ''}; no usage available.`); continue }
+            if (!child.sessionId) {
+              warnings.add(`Unlocated child spawn in ${state.runId}${child.error ? `: ${child.error}` : ''}; no usage available.`)
+              continue
+            }
             hint(child.sessionId, child.sessionPath)
             links.push({ ...child, parentRunId: state.runId, source: { file: linkFile, field: `children.${child.resultId || child.sessionId}` } })
           }
@@ -320,10 +345,21 @@ const rangeText = value => `${fmt(value.estimate)} (${fmt(value.lower)} to ${val
 const measuredText = value => value.value === null
   ? `unknown (${fmt(value.knownSubtotal)} known, ${value.coveredRuns}/${value.runs} runs)` : fmt(value.value)
 
-const analyzeSubagents = (session, writeDir, assumptions = {}) => {
-  const data = collect(session, writeDir, Date.now())
+const analyzeSubagents = async (sessionId, rawAssumptions = '') => {
+  if (typeof sessionId !== 'string' || !sessionId.trim() || sessionId === '.' || sessionId === '..'
+    || /[\\/\0]/.test(sessionId)) {
+    throw Object.assign(new Error('Invalid session ID.'), { status: 400 })
+  }
+  const assumptions = parseAssumptions(rawAssumptions)
+  const writeDir = config.harnessWriteDir
+  const location = await locateSession(sessionId, writeDir)
+  const session = location && readJson(path.join(location.dir, 'session.json'))
+  if (!session || session.id !== sessionId) {
+    throw Object.assign(new Error('Session not found.'), { status: 404 })
+  }
+  const data = await collect(session, writeDir, Date.now())
   const replay = createSubagentReplay(data, assumptions)
-  const destination = path.join(paths.sessionDir(session.id, writeDir), 'analysis')
+  const destination = path.join(location.dir, 'analysis')
   fs.mkdirSync(destination, { recursive: true })
   const artifact = path.join(destination, `subagent-replay-${data.cutoff}.json`)
   fs.writeFileSync(artifact, `${JSON.stringify(replay, null, 2)}\n`)
@@ -353,7 +389,7 @@ const analyzeSubagents = (session, writeDir, assumptions = {}) => {
   ]
   if (Object.keys(assumptions).length) lines.push('', 'Legacy shared/requests/output overrides are recorded in the artifact but are not applied to ordered replay.')
   if (replay.coverage.gaps.length) lines.push('', ...replay.coverage.gaps.slice(0, 5).map(item => `- ${cell(item.reason)}`))
-  return lines.join('\n')
+  return { report: lines.join('\n'), artifact }
 }
 
 module.exports = { analyzeSubagents, parseAssumptions, requestEvidence }
