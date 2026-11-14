@@ -38,7 +38,11 @@ const createSubagentReplay = (data, assumptions = {}) => {
   const gap = (reason, extra = {}) => gaps.push({ reason, ...extra })
   const sessionActions = new Map()
   for (const agent of data.agents) {
-    const actions = agent.rows.flatMap(row => {
+    const runs = [...agent.rows.map(row => ({ row, startedAt: row.startedAt, id: row.id })),
+      ...(agent.containers || []).map(({ record }) => ({ container: record, startedAt: record.startedAt, id: record.id }))]
+      .sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0) || a.id.localeCompare(b.id))
+    const actions = runs.flatMap(({ row, container }) => {
+      if (container) return [{ kind: 'container', id: `${agent.id}:${container.id}:workflow`, runId: container.id, order: 0 }]
       const local = [
         ...evidence.turns.filter(turn => turn.sessionId === agent.id && turn.runId === row.id)
           .map(turn => ({ kind: 'request', id: turn.id, runId: row.id, order: turn.order })),
@@ -60,6 +64,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
     let uncertain = Boolean(agent.session.fork)
     const samples = new Map()
     for (const action of sessionActions.get(agent.id)) {
+      if (action.kind === 'container') continue
       if (action.kind === 'block') {
         const block = blocks.get(action.id)
         if (block.kind === 'boundary') {
@@ -82,12 +87,16 @@ const createSubagentReplay = (data, assumptions = {}) => {
       if (model && model !== turn.model) { region += 1; uncertain = true }
       model = turn.model
       const request = tokenizer.request(history, model)
+      const generated = tokenizer.output(turn.blocks.map(id => blocks.get(id)), model)
       const input = turn.measuredUsage?.inputTokens
       const eligible = turn.usageReconciled && turn.confidence === 'measured' && known(input) && request.tokens !== null
       const key = `${agent.id}:${model}:${region}`
       if (!samples.has(key)) samples.set(key, { sessionId: agent.id, model, region, samples: [] })
       samples.get(key).samples.push({ turnId: turn.id, sources: turn.sources, measuredInput: input ?? null,
         reconstructedInput: request.tokens, requestFingerprint: request.fingerprint,
+        measuredOutput: turn.measuredUsage?.outputTokens ?? null, generatedOutput: generated.tokens,
+        outputResidual: known(turn.measuredUsage?.outputTokens) && generated.tokens !== null
+          ? turn.measuredUsage.outputTokens - generated.tokens : null,
         residual: eligible ? input - request.tokens : null, eligible,
         reliableRegion: eligible && !uncertain,
         reason: eligible ? 'Per-response input only. Signed residual remains uncertainty.'
@@ -121,7 +130,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
       const link = candidates[0] || { parentSessionId: child.session.parentSessionId, parentRunId: child.session.parentRunId }
       const parentActions = sessionActions.get(link.parentSessionId) || []
       const anchor = [...parentActions].reverse().find(action => action.runId === link.parentRunId)
-      if (anchor) selected = { link, anchor, inferred: true }
+      if (anchor) selected = { link, anchor, inferred: !link.workflow }
     }
     if (!selected) { gap('Child has no recoverable parent spawn anchor, its work remains an unplaced region.', { sessionId: child.id }); continue }
     const anchorId = selected.call?.id || selected.anchor.id
@@ -273,6 +282,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
   let activeModel = null
   let currentRootThread = null
   for (const action of ordered) {
+    if (action.kind === 'container') continue
     if (action.kind === 'block') {
       const block = blocks.get(action.id)
       if (dispositions.get(block.id).action === 'remove') continue
@@ -307,6 +317,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
     }
     const turn = turns.get(action.id)
     if (turnDispositions.get(turn.id).action === 'remove') continue
+    if (turn.confidence !== 'measured') regionUnsupported = true
     if (activeModel && activeModel !== action.targetModel) regionUnsupported = true
     activeModel = action.targetModel
     const request = tokenizer.request(retainedHistory, action.targetModel)
@@ -314,6 +325,8 @@ const createSubagentReplay = (data, assumptions = {}) => {
     const output = tokenizer.output(generated, action.targetModel)
     const groups = calibration.filter(group => group.sessionId === root?.id && group.model === action.targetModel && group.residualEnvelope !== null)
     const envelope = groups.length ? Math.max(...groups.map(group => group.residualEnvelope)) : null
+    const outputSamples = calibration.flatMap(group => group.samples).filter(sample => sample.turnId === turn.id)
+    const hiddenOutput = outputSamples.some(sample => sample.outputResidual !== null && sample.outputResidual !== 0)
     const rootRow = action.sessionId === root?.id ? rows.get(`${root.id}:${turn.runId}`) : null
     const coordinatorLimits = evidence.turns.filter(item => item.sessionId === root?.id && item.model === action.targetModel
       && (rootRow ? item.runId === rootRow.id : position.get(item.id) <= position.get(turn.id)))
@@ -330,7 +343,8 @@ const createSubagentReplay = (data, assumptions = {}) => {
       originalModel: turn.model, confidence: turn.confidence, requestFingerprint: request.fingerprint,
       requestBlockIds: retainedHistory.map(block => block.id), generatedBlockIds: generated.map(block => block.id),
       input: range(request.tokens, envelope || 0, supported),
-      output: range(output.tokens, 0, supported), contextLimit: limit, contextLimitExceeded: overLimit,
+      output: range(output.tokens, 0, supported && !hiddenOutput), contextLimit: limit, contextLimitExceeded: overLimit,
+      outputResidual: outputSamples[0]?.outputResidual ?? null,
       residualUncertainty: envelope, supported, sources: turn.sources,
       uncertainty: supported ? 'Sensitivity envelope from original coordinator response-input residuals.'
         : 'Missing boundaries, tokenizer mapping, calibration, context, or source coverage. Upper bound is unknown.' })
@@ -365,7 +379,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
   if (ignoredAssumptions.length) gap(`Legacy scalar overrides are recorded but not applied to ordered replay: ${ignoredAssumptions.join(', ')}.`)
   return freeze({ version: 1, cutoff: data.cutoff, sourceSessionId: root?.id || null,
     measured, estimate: { input, output, total, difference, scope: 'All placed coordinator and recursive descendant work through cutoff.' },
-    coverage: { complete: !gaps.length && estimates.every(item => item.supported), gaps, unplacedSessions: unplaced,
+    coverage: { complete: estimates.length > 0 && !gaps.length && estimates.every(item => item.supported && item.output.upper !== null), gaps, unplacedSessions: unplaced,
       cutoff: data.cutoff, measuredUsageComplete: measured.combined.total.value !== null && !data.warnings.length,
       firstUnsupportedTurn: estimates.find(item => !item.supported)?.turnId || null },
     confidenceCounts: Object.fromEntries(['measured', 'inferred', 'allocated'].map(confidence => [confidence,

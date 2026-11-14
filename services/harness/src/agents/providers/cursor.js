@@ -144,7 +144,6 @@ const mcpOptions = (servers) => Array.isArray(servers) && servers.length
 const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } = {}) => {
   const harnessMcp = mcpOptions(tools.mcpServers)
   const nativeOptions = (mode) => ({
-    ...(tools.disableNativeSpawning ? {} : { agents: subagents() }),
     ...modeOptions(mode),
     ...(tools.disableNativeSpawning || tools.restrictedChild ? { disallowedTools: [...new Set([
       ...providerMode('cursor', mode).tools.disallowed, ...(tools.restrictedChild ? ASK_DISALLOWED_TOOLS : []), 'task',
@@ -210,23 +209,6 @@ const createDriver = ({ apiKey = config.cursorApiKey, tools = {}, sdkStoreDir } 
   }
 
   const resolveModel = (model) => model || CURSOR_MODELS[0].id
-
-  // Custom definitions keyed by Task subagent_type. Built-in types otherwise
-  // fall back to Cursor's runtime default model, not the parent's.
-  // Names must not match Cursor's built-in subagent types (explore,
-  // generalPurpose, etc.): the built-in wins and ignores our model.
-  const subagents = () => ({
-    generalPurpose: {
-      description: prompts.text('subagentGeneralPurposeDescription', 'cursor', { cwd: selectedCwd, model: selectedModel, mode: selectedLogicalMode }),
-      prompt: prompts.text('subagentGeneralPurpose', 'cursor', { cwd: selectedCwd, model: selectedModel, mode: selectedLogicalMode }),
-      model: { id: selectedModel },
-    },
-    harnessExplore: {
-      description: prompts.text('subagentExploreDescription', 'cursor', { cwd: selectedCwd, model: selectedModel, mode: selectedLogicalMode }),
-      prompt: prompts.text('subagentExplore', 'cursor', { cwd: selectedCwd, model: 'grok-4.7', mode: selectedLogicalMode }),
-      model: { id: 'grok-4.7' },
-    },
-  })
 
   const create = async ({ model, cwd, mode, logicalMode = mode || 'agent', tools, name } = {}) => {
     selectedCwd = cwd || process.cwd()
