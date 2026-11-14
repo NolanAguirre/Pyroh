@@ -49,8 +49,7 @@ const Editor = ({ devId, user, editor, columns, busy, error, onSave, onDelete, o
 const rememberedBoard = () => {
   try { return localStorage.getItem('kanban-board') || '' } catch { return '' }
 }
-// Columns load every card
-      ordering only applies to the active ones.
+// Columns load every card; ordering only applies to the active ones.
 const activeCards = (column) => column.cardsByColumnId.nodes.filter((card) => !card.archivedAt)
 const archivedCards = (column) => column.cardsByColumnId.nodes.filter((card) => card.archivedAt)
   .sort((a, b) => b.archivedAt.localeCompare(a.archivedAt))
@@ -234,8 +233,7 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards }) => {
     const type = kind === 'boardColumn' ? 'BoardColumn' : kind === 'board' ? 'Board' : 'Card'
     change(() => mutate(`delete${type}ById`, `Delete${type}ByIdInput`, { id: item.id }, undefined, kind === 'board' ? undefined : editor?.boardId || activeId), { close: true })
   }
-  // Archived cards leave the column order
-      restoring appends them to the end.
+  // Archived cards leave the column order; restoring appends them to the end.
   const toggleArchive = (card, options) => change(() => (card.archivedAt ? restoreCard : archiveCard)(card.id, editor?.boardId || activeId), options)
   const reorderCard = (column, cardId, direction) => {
     const cards = activeCards(column)

@@ -5,7 +5,7 @@ import { COMMENTS_QUERY, addComment, addReply } from './api'
 
 const CommentComposer = ({ devId, reply = false, busy, onPost, onCancel, postDevId, cancelDevId }) => {
   const [body, setBody] = useState('')
-  return <form className="comment-composer" onSubmit={async (event) => {
+  return <DevScope id={devId}><form className="comment-composer" onSubmit={async (event) => {
     event.preventDefault()
     if (!busy && body.trim() && await onPost(body.trim())) setBody('')
   }}>
