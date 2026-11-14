@@ -27,12 +27,20 @@ const send = (socket, message) => {
 }
 
 // Maps pty host failures onto HTTP errors.
-const hostRequest = async (type, payload) => {
+const hostRequest = async (type, payload, request = hostClient.request) => {
   try {
-    return await hostClient.request(type, payload)
+    return await request(type, payload)
   } catch (err) {
     if (err && err.code === 'not_found') throw httpError(404, 'Terminal not found')
     throw httpError(503, err && err.message ? err.message : 'pty host unavailable')
+  }
+}
+
+const requirePreparedHost = async () => {
+  try {
+    return await hostClient.requireCapabilities(['prepare', 'runPrepared'])
+  } catch (err) {
+    throw httpError(503, err.message)
   }
 }
 
@@ -232,9 +240,10 @@ const createTerminalStore = () => {
       // A lost host or an interrupted launch must never recreate a terminal on retry.
       if (previous?.preparationAttempted) throw httpError(410, 'Prepared terminal is unavailable or its launch was interrupted. Use a new retryKey for a new terminal')
       const cwd = await resolvePreparedCwd(workspaceId, request.cwd)
+      const preparedRequest = await requirePreparedHost()
       writeMeta(id, { name, nameSource: 'manual', sessionId, workspaceId, cwd,
         preparedCommand: command, preparedState: 'pending', preparationAttempted: true })
-      const summary = await hostRequest('prepare', { id, workspaceId, cwd })
+      const summary = await hostRequest('prepare', { id, workspaceId, cwd }, preparedRequest)
       const entry = readMeta(fromHost(summary))
       data.terminals.set(id, entry)
       return toJSON(entry)
@@ -255,8 +264,9 @@ const createTerminalStore = () => {
   const get = (id, workspace, session) => toJSON(scoped(id, workspace, session))
 
   const run = async (id, { workspace, session, command } = {}) => {
-    const entry = scoped(id, workspace, session)
     if (typeof command !== 'string' || !command.trim() || command.length > 65536 || /[\x00-\x08\x0b-\x1f\x7f]/.test(command)) throw httpError(400, 'command must contain 1–65536 characters without terminal control characters')
+    const preparedRequest = await requirePreparedHost()
+    const entry = scoped(id, workspace, session)
     if (entry.preparedState === 'submitted') {
       if (entry.preparedError) throw httpError(409, entry.preparedError)
       if (command !== entry.preparedCommand) throw httpError(409, 'This terminal already submitted a different command')
@@ -269,7 +279,7 @@ const createTerminalStore = () => {
     entry.preparedCommand = command
     entry.preparedState = 'submitted'
     try {
-      await hostRequest('runPrepared', { id, command })
+      await hostRequest('runPrepared', { id, command }, preparedRequest)
       writeMeta(id, { preparedError: null })
     } catch (err) {
       const preparedError = `Command submission could not be confirmed and will not be retried: ${err.message}`

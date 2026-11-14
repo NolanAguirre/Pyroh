@@ -32,6 +32,7 @@ const createPtyHost = () => {
   })
 
   const handlers = {
+    capabilities: () => Object.keys(handlers),
     create: (payload) => store.create(payload),
     prepare: (payload) => store.prepare(payload),
     runPrepared: ({ id, command }) => store.runPrepared(id, command),

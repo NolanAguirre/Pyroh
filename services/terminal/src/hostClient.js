@@ -142,8 +142,8 @@ const createHostClient = () => {
     return data.connecting
   }
 
-  const request = async (type, payload = {}) => {
-    const socket = await ensure()
+  const requestOnSocket = (socket, type, payload = {}) => {
+    if (data.socket !== socket || socket.destroyed) return Promise.reject(new Error('pty host disconnected'))
     const reqId = data.nextReqId
     data.nextReqId += 1
     return new Promise((resolve, reject) => {
@@ -154,6 +154,20 @@ const createHostClient = () => {
       data.pending.set(reqId, { resolve, reject, timer })
       socket.write(encode({ reqId, type, payload }))
     })
+  }
+
+  const request = async (type, payload = {}) => requestOnSocket(await ensure(), type, payload)
+
+  const requireCapabilities = async (types) => {
+    const socket = await ensure()
+    const unsupported = () => new Error(`PTY host restart required: the running host does not support ${types.join(', ')}. Restarting only the terminal API is insufficient. Restarting the host closes its terminals.`)
+    const capabilities = await requestOnSocket(socket, 'capabilities').catch((err) => {
+      if (err.message === 'Unknown request: capabilities') throw unsupported()
+      throw err
+    })
+    if (!Array.isArray(capabilities) || types.some(type => !capabilities.includes(type))) throw unsupported()
+    // Keep the operation on the checked host, even if the client reconnects.
+    return (type, payload) => requestOnSocket(socket, type, payload)
   }
 
   const subscribe = (set) => (handler) => {
@@ -170,6 +184,7 @@ const createHostClient = () => {
 
   return {
     request,
+    requireCapabilities,
     onEvent: subscribe(data.eventHandlers),
     onConnect: subscribe(data.connectHandlers),
     onDisconnect: subscribe(data.disconnectHandlers),
