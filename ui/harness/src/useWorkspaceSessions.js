@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import api from './api'
 
 const sameSessionRow = (a, b) => a.updatedAt === b.updatedAt
+  && a.lastInteractionAt === b.lastInteractionAt
   && a.status === b.status
   && a.name === b.name
   && Boolean(a.pinned) === Boolean(b.pinned)

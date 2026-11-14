@@ -1,4 +1,4 @@
-import { memo, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { Badge, DevScope, ScrollingText } from 'component-library'
 import { PinIcon, RestoreIcon, TrashIcon } from './icons'
 import { formatCompactNumber, formatDuration } from '../../format'
@@ -15,6 +15,62 @@ const STATUS_VARIANT = {
   queued: 'info',
   subagent: 'primary',
 }
+
+const interactionVariant = (provider, model, elapsedMs) => {
+  const providerName = (provider || '').toLowerCase()
+  const modelName = (model || '').toLowerCase()
+  if (providerName === 'claude' || providerName === 'codex'
+    || (providerName === 'cursor' && /^gpt(?:[-\s]|$)/.test(modelName))) {
+    if (elapsedMs >= 30 * 60 * 1000) return 'danger'
+    if (elapsedMs >= 28 * 60 * 1000) return 'warning'
+    return 'success'
+  }
+  if (providerName === 'cursor') {
+    if (/^(?:claude|opus|sonnet|haiku)(?:[-\s]|$)/.test(modelName)) {
+      if (elapsedMs >= 5 * 60 * 1000) return 'danger'
+      if (elapsedMs >= 4 * 60 * 1000) return 'warning'
+      return 'success'
+    }
+    if (/^grok(?:[-\s]|$)/.test(modelName)) {
+      return elapsedMs > 3 * 60 * 1000 ? 'danger' : 'success'
+    }
+  }
+  return 'neutral'
+}
+
+const LastInteraction = memo(({ timestamp, provider, model }) => {
+  const baseMs = timestamp ? Date.parse(timestamp) : NaN
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (!Number.isFinite(baseMs)) return
+    setNow(Date.now())
+    const interval = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(interval)
+  }, [baseMs])
+
+  if (!Number.isFinite(baseMs)) return null
+
+  const elapsedMs = Math.max(0, now - baseMs)
+  const elapsedSeconds = Math.floor(elapsedMs / 1000)
+  const baseDate = new Date(baseMs)
+  const label = elapsedMs >= 60 * 60 * 1000
+    ? baseDate.toLocaleDateString()
+    : `${Math.floor(elapsedSeconds / 60)}:${String(elapsedSeconds % 60).padStart(2, '0')}`
+  const variant = interactionVariant(provider, model, elapsedMs)
+  const description = `Last chat interaction: ${baseDate.toLocaleString()}`
+
+  return (
+    <time
+      className={`session-row__interaction session-row__interaction--${variant}`}
+      dateTime={timestamp}
+      title={description}
+      aria-label={description}
+    >
+      {label}
+    </time>
+  )
+})
 
 const SessionRow = memo(({ session, active, onSelect, onRename, onArchive, archiveBusy, onPin, pinBusy }) => {
   const [editing, setEditing] = useState(false)
@@ -187,6 +243,7 @@ const SessionRow = memo(({ session, active, onSelect, onRename, onArchive, archi
               )}
             </span>
             <div className="session-row__meta">
+              <LastInteraction timestamp={session.lastInteractionAt} provider={session.provider} model={session.model} />
               <span>{formatCompactNumber(tokenTotal)} tok</span>
               <span>{formatDuration(durationMs)}</span>
             </div>

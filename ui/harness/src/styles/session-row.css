@@ -209,6 +209,25 @@
   flex-shrink: 0;
 }
 
+.session-row__interaction {
+  color: var(--text-dim);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.session-row__interaction--success {
+  color: var(--success);
+}
+
+.session-row__interaction--warning {
+  color: var(--warning);
+}
+
+.session-row__interaction--danger {
+  color: var(--danger);
+}
+
 .sidebar__child-session {
   margin-left: 18px;
   border-left: 2px solid currentColor;
