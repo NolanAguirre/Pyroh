@@ -3,6 +3,7 @@ const paths = require('../store/paths')
 const { readJson, readJsonAsync, writeJson } = require('../store/jsonFile')
 const sessionStore = require('../store/sessionStore')
 const sessionIndex = require('../store/sessionIndex')
+const chatInteractionStore = require('../store/chatInteractionStore')
 const workspaceStore = require('../store/workspaceStore')
 const questionStore = require('../store/questionStore')
 const steerStore = require('../store/steerStore')
@@ -76,7 +77,7 @@ const resolveNewChatTarget = (source, target = {}) => {
   return { provider, model, mode }
 }
 
-const spawnRun = (sessionId, action, { mode, prompt, images, promptProvenance, autoName = false, handoff, plugin, onPrepared, allowQueued = false, delegationDelivery, queuedMessage, forkStart = false }) => {
+const spawnRun = (sessionId, action, { mode, prompt, images, promptProvenance, autoName = false, handoff, plugin, onPrepared, allowQueued = false, delegationDelivery, queuedMessage, forkStart = false, userSentAt }) => {
   if (plugin) validateSavedDescriptor(plugin)
   images = imageStore.normalizeImages(sessionId, images, config.writeDir)
   if (images.length && prompt == null) prompt = ''
@@ -102,7 +103,7 @@ const spawnRun = (sessionId, action, { mode, prompt, images, promptProvenance, a
       sessionStore.listRuns(sessionId, config.writeDir).length === 0
     require('fs').rmSync(paths.controlFile(sessionId, config.writeDir), { force: true })
     if (allowQueued && runAfter.cancelled(sessionId)) throw stopped()
-    const run = sessionStore.createRun(sessionId, { mode, prompt, images, promptProvenance, handoff, plugin, delegationDelivery, queuedMessage }, config.writeDir)
+    const run = sessionStore.createRun(sessionId, { mode, prompt, images, promptProvenance, handoff, plugin, delegationDelivery, queuedMessage, userSentAt }, config.writeDir)
     onPrepared?.(run)
     sessionStore.updateSession(sessionId, { status: 'running' }, config.writeDir)
     if (allowQueued && runAfter.cancelled(sessionId)) throw stopped()
@@ -140,6 +141,7 @@ const spawnWorkflow = (sessionId, { mode, resume = false, prompt, promptProvenan
       ...(!resume ? { currentPhase: null, currentStep: null, totalPhases: null } : {}),
     }, config.writeDir)
     const pid = proc.spawnHarness(args, lock.spawnOptions())
+    if (chatInteractionStore.isUserMessage({ prompt, promptProvenance })) chatInteractionStore.recordUser(sessionId, Date.now(), config.writeDir)
     return { sessionId, mode, resume: Boolean(resume), daemonPid: pid }
   } catch (err) {
     sessionStore.recoverSession(sessionId, config.writeDir)
@@ -369,7 +371,7 @@ const resume = (sessionId, { prompt, mode: requested, promptProvenance, images }
     return spawnWorkflow(sessionId, { mode: session.mode, resume: true })
   }
   const retry = !prompt && !images.length && undeliveredRun(sessionId, session)
-  if (retry) return spawnRun(sessionId, 'resume', { mode: retry.mode, prompt: retry.prompt, images: retry.images, promptProvenance: retry.promptProvenance, handoff: retry.handoff, plugin: retry.plugin })
+  if (retry) return spawnRun(sessionId, 'resume', { mode: retry.mode, prompt: retry.prompt, images: retry.images, promptProvenance: retry.promptProvenance, handoff: retry.handoff, plugin: retry.plugin, userSentAt: null })
   const mode = requested || replyMode(session)
   return spawnRun(sessionId, 'resume', { mode, ...resumeInput(session, mode, prompt, promptProvenance), images, plugin: lastPluginRun(sessionId, mode) })
 }
@@ -467,11 +469,12 @@ const list = async (workspaceId, { includeArchived = false, orderBy = 'createdAt
   await sessionIndex.whenReady()
   const workspaces = new Map((await workspaceStore.listWorkspacesAsync(config.writeDir))
     .map(workspace => [workspace.id, workspace]))
-  return sessionIndex.query({ workspaceId, includeArchived, active, orderBy, order, limit, fields })
-    .map(session => {
+  return Promise.all(sessionIndex.query({ workspaceId, includeArchived, active, orderBy, order, limit, fields })
+    .map(async session => {
       const workspace = session.workspaceId ? workspaces.get(session.workspaceId) : null
-      return sessionStore.withCwd(session, workspace?.cwd || session.cwd || config.workBase, config.writeDir)
-    })
+      const lastInteractionAt = await chatInteractionStore.latest(session.id, config.writeDir)
+      return sessionStore.withCwd({ ...session, lastInteractionAt }, workspace?.cwd || session.cwd || config.workBase, config.writeDir)
+    }))
 }
 
 module.exports = {

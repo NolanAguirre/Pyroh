@@ -2,6 +2,7 @@ const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 const paths = require('./paths')
+const chatInteractionStore = require('./chatInteractionStore')
 const { readJson, writeJson, ensureDir } = require('./jsonFile')
 
 const genId = () => `steer_${Date.now().toString(36)}${crypto.randomBytes(3).toString('hex')}`
@@ -32,6 +33,7 @@ const write = (sessionId, text, writeDir, { queuedMessageId, promptProvenance, i
     ...(promptProvenance ? { promptProvenance: require('../prompt/provenance').supplied(text, promptProvenance) } : {}),
     ...(queuedMessageId ? { queuedMessageId } : {}) }
   writeJson(path.join(paths.steerDir(sessionId, writeDir), `${record.id}.json`), record)
+  if (!queuedMessageId && chatInteractionStore.isUserMessage(record)) chatInteractionStore.recordUser(sessionId, record.createdAt, writeDir)
   return record
 }
 

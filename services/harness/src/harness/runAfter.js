@@ -149,6 +149,7 @@ const launchLocked = (session) => {
       images,
       autoName: Boolean(entry.autoName),
       allowQueued: true,
+      userSentAt: session.runAfter.createdAt ?? null,
     })
   } catch (err) {
     const current = sessionStore.loadSession(session.id, config.writeDir) || session
@@ -225,6 +226,7 @@ const enqueue = (session, { prompt, mode, runAfterSessionId, promptProvenance, i
   clearClaim(session.id)
   clearCancel(session.id)
   const runAfter = {
+    createdAt: Date.now(),
     sessionId: dep.id,
     runId: bound.id,
     prompt: prompt == null ? '' : String(prompt),
@@ -235,6 +237,8 @@ const enqueue = (session, { prompt, mode, runAfterSessionId, promptProvenance, i
   const patch = { status: 'queued', runAfter }
   if (!session.mode) patch.mode = mode
   const updated = sessionStore.updateSession(session.id, patch, config.writeDir)
+  const chatInteractionStore = require('../store/chatInteractionStore')
+  if (chatInteractionStore.isUserMessage({ prompt, promptProvenance, images })) chatInteractionStore.recordUser(session.id, runAfter.createdAt, config.writeDir)
   eventLog.append(session.id, {
     type: 'status',
     status: 'queued',

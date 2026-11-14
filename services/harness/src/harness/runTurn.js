@@ -384,7 +384,9 @@ const runOneTurn = async ({
         metadata.rewrittenText = sources.map(source => source.rewrittenText ?? source.originalText ?? source.text).join('\n\n')
       }
       assembled = provenance.assemble(sections, metadata)
-      onEvent?.({ type: 'user', steer: true, text: assembled.text, itemId: assembled.userItemId,
+      onEvent?.({ type: 'user', steer: true, text: assembled.text, itemId: assembled.userItemId, messageType,
+        interactionAt: Math.max(...steers.filter(steer => !steer.queuedMessageId && steer.promptProvenance?.messageType !== 'agent')
+          .map(steer => steer.createdAt), 0),
         ...(segmentImages.length ? { images: segmentImages.map(({ id, sessionId, name, mimeType, size }) => ({ id, sessionId, name, mimeType, size })) } : {}) })
       if (signal?.aborted) break
     }

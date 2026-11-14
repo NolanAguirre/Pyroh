@@ -3,6 +3,7 @@ const path = require('path')
 const crypto = require('crypto')
 const config = require('../config')
 const paths = require('./paths')
+const chatInteractionStore = require('./chatInteractionStore')
 const { readJson, readJsonAsync, writeJson } = require('./jsonFile')
 
 const fileFor = (sessionId, writeDir = config.writeDir) =>
@@ -37,6 +38,7 @@ const enqueue = (sessionId, text, mode, writeDir = config.writeDir, promptProven
     ...(promptProvenance ? { promptProvenance: require('../prompt/provenance').supplied(text, promptProvenance) } : {}) }
   state.messages.push(message)
   save(sessionId, state, writeDir)
+  if (chatInteractionStore.isUserMessage(message)) chatInteractionStore.recordUser(sessionId, message.createdAt, writeDir)
   return publicMessage(message)
 }
 

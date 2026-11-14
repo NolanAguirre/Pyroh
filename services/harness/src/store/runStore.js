@@ -2,12 +2,13 @@ const fs = require('fs')
 const path = require('path')
 const paths = require('./paths')
 const runIndexStore = require('./runIndexStore')
+const chatInteractionStore = require('./chatInteractionStore')
 const { readJson, readJsonAsync, writeJson } = require('./jsonFile')
 const { genId, loadSession } = require('./sessionRecord')
 const { writePromptFile, persistRecordPrompt, readRecordPrompt, readRecordPromptAsync } = require('./recordPrompt')
 const { isDelegatedChild, detachDelegation } = require('./delegationBoundary')
 
-const createRun = (sessionId, { mode, prompt, images, promptProvenance, handoff, plugin, delegationDelivery, queuedMessage, localCommand }, writeDir) => {
+const createRun = (sessionId, { mode, prompt, images, promptProvenance, handoff, plugin, delegationDelivery, queuedMessage, localCommand, userSentAt }, writeDir) => {
   let session = loadSession(sessionId, writeDir)
   if (isDelegatedChild(session) && !localCommand) {
     const runs = listRuns(sessionId, writeDir).filter(run => !run.localCommand)
@@ -36,6 +37,10 @@ const createRun = (sessionId, { mode, prompt, images, promptProvenance, handoff,
   } : {}
   const id = genId('r')
   const file = paths.runFile(sessionId, id, writeDir)
+  const startedAt = Date.now()
+  const interactionAt = userSentAt !== undefined ? userSentAt : (!queuedMessage && chatInteractionStore.isUserMessage({
+    prompt, images, promptProvenance, handoff, delegationDelivery, localCommand,
+  }) ? startedAt : null)
   const run = persistRecordPrompt(file, {
     id,
     sessionId,
@@ -51,7 +56,8 @@ const createRun = (sessionId, { mode, prompt, images, promptProvenance, handoff,
     ...(queuedMessage ? { queuedMessage } : {}),
     status: 'running',
     pid: null,
-    startedAt: Date.now(),
+    startedAt,
+    userSentAt: interactionAt,
     endedAt: null,
     durationMs: 0,
     usage: null,
@@ -59,6 +65,7 @@ const createRun = (sessionId, { mode, prompt, images, promptProvenance, handoff,
     error: null,
   })
   writeJson(file, run)
+  if (interactionAt) chatInteractionStore.recordUser(sessionId, interactionAt, writeDir)
   runIndexStore.recordRun(run, loadSession(sessionId, writeDir), writeDir, file)
   return run
 }
