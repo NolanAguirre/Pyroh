@@ -38,7 +38,7 @@ const hostRequest = async (type, payload, request = hostClient.request) => {
 
 const requirePreparedHost = async () => {
   try {
-    return await hostClient.requireCapabilities(['prepare', 'runPrepared'])
+    return await hostClient.requireCapabilities(['prepare', 'runPrepared'], { allowLegacyPrepared: true })
   } catch (err) {
     throw httpError(503, err.message)
   }
@@ -229,10 +229,14 @@ const createTerminalStore = () => {
       const { id, workspaceId, sessionId, command, name } = request
       const previous = readJson(paths.terminalMetaFile(id))
       if (previous?.preparedClosed) throw httpError(410, 'Prepared terminal was closed. Use a new retryKey for a new terminal')
-      const summaries = await hostRequest('list')
+      const preparedRequest = await requirePreparedHost()
+      const summaries = await hostRequest('list', {}, preparedRequest)
       const existing = summaries.find(item => item.id === id)
       if (existing) {
-        if (!previous?.preparedState || existing.workspaceId !== workspaceId) throw httpError(409, 'Prepared terminal metadata does not match the host')
+        if (!previous?.preparedState || previous.workspaceId !== workspaceId || previous.sessionId !== sessionId ||
+          existing.workspaceId !== workspaceId || existing.cwd !== previous.cwd ||
+          !['pending', 'submitted'].includes(existing.preparedState) ||
+          (previous.preparedState === 'pending' && existing.preparedState !== 'pending')) throw httpError(409, 'Prepared terminal metadata does not match the host')
         const entry = readMeta(data.terminals.get(id) || fromHost(existing))
         data.terminals.set(id, entry)
         return toJSON(entry)
@@ -240,10 +244,12 @@ const createTerminalStore = () => {
       // A lost host or an interrupted launch must never recreate a terminal on retry.
       if (previous?.preparationAttempted) throw httpError(410, 'Prepared terminal is unavailable or its launch was interrupted. Use a new retryKey for a new terminal')
       const cwd = await resolvePreparedCwd(workspaceId, request.cwd)
-      const preparedRequest = await requirePreparedHost()
       writeMeta(id, { name, nameSource: 'manual', sessionId, workspaceId, cwd,
         preparedCommand: command, preparedState: 'pending', preparationAttempted: true })
       const summary = await hostRequest('prepare', { id, workspaceId, cwd }, preparedRequest)
+      if (!summary || summary.id !== id || summary.workspaceId !== workspaceId || summary.cwd !== cwd || summary.preparedState !== 'pending') {
+        throw httpError(503, 'PTY host did not return the requested pending terminal with its supplied id and workspace')
+      }
       const entry = readMeta(fromHost(summary))
       data.terminals.set(id, entry)
       return toJSON(entry)

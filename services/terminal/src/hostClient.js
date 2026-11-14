@@ -158,12 +158,24 @@ const createHostClient = () => {
 
   const request = async (type, payload = {}) => requestOnSocket(await ensure(), type, payload)
 
-  const requireCapabilities = async (types) => {
+  const requireCapabilities = async (types, { allowLegacyPrepared = false } = {}) => {
     const socket = await ensure()
     const unsupported = () => new Error(`PTY host restart required: the running host does not support ${types.join(', ')}. Restarting only the terminal API is insufficient. Restarting the host closes its terminals.`)
-    const capabilities = await requestOnSocket(socket, 'capabilities').catch((err) => {
-      if (err.message === 'Unknown request: capabilities') throw unsupported()
-      throw err
+    const capabilities = await requestOnSocket(socket, 'capabilities').catch(async (err) => {
+      if (err.message !== 'Unknown request: capabilities') throw err
+      if (!allowLegacyPrepared || types.length !== 2 || !types.includes('prepare') || !types.includes('runPrepared')) throw unsupported()
+      // Native prepared commands and caller-supplied ids predate capabilities.
+      // A null id cannot identify a terminal, so this probe never writes input.
+      try {
+        await requestOnSocket(socket, 'runPrepared', { id: null })
+      } catch (probeError) {
+        if (probeError.code === 'not_found') return ['prepare', 'runPrepared']
+        if (probeError.message === 'Unknown request: runPrepared') {
+          throw new Error('The running PTY host predates native prepared commands. Its legacy create API ignores supplied terminal ids, so a safe create/write fallback is unavailable')
+        }
+        throw probeError
+      }
+      throw unsupported()
     })
     if (!Array.isArray(capabilities) || types.some(type => !capabilities.includes(type))) throw unsupported()
     // Keep the operation on the checked host, even if the client reconnects.
