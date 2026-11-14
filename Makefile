@@ -328,6 +328,7 @@ install.py: ## Install python venvs for the GPU services
 
 start: SHELL := /bin/bash
 start: ## Start the harness stack and stop its child process groups on exit
+	@$(MAKE) services.kanban.prepare
 	@$(MAKE) db.harness.deploy
 	@$(MAKE) db.mcpdevid.deploy
 	@$(MAKE) db.kanban.deploy
@@ -425,17 +426,20 @@ db.mcpdevid.revert:
 	$(MAKE) -C db/mcpdevid revert
 
 # Kanban shares the harness UI and nginx entry point.
-.PHONY: services.kanban.help services.kanban.install services.kanban.start db.kanban.help db.kanban.deploy db.kanban.status infrastructure.kanban.register
+.PHONY: services.kanban.help services.kanban.install services.kanban.prepare services.kanban.start db.kanban.help db.kanban.deploy db.kanban.status infrastructure.kanban.register
 
 help: services.kanban.help db.kanban.help
 
 services.kanban.help:
-	@echo 'services/kanban: services.kanban.install services.kanban.start'
+	@echo 'services/kanban: services.kanban.install services.kanban.prepare services.kanban.start'
 	@echo 'infrastructure/kanban: infrastructure.kanban.register (register toolkit ports and database)'
 	@$(MAKE) --no-print-directory -C services/kanban help
 
 services.kanban.install:
 	$(MAKE) -C services/kanban install
+
+services.kanban.prepare:
+	$(MAKE) -C services/kanban prepare
 
 services.kanban.start:
 	$(MAKE) -C services/kanban start
