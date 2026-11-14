@@ -3,6 +3,7 @@ import {
   createHarnessPlugin,
   DevInspector,
   DevScope,
+  PopupDisplay,
   useBrowserLocation,
   useMediaQuery,
 } from 'component-library'
@@ -11,6 +12,7 @@ import SessionView from './components/SessionView'
 import RunningJobsNav from './components/RunningJobsNav'
 import WorkspaceTerminal from './components/Terminal/WorkspaceTerminal'
 import AppPlaceholder from './components/AppPlaceholder'
+import KanbanView from './pages/KanbanView'
 import { DesktopLayout, MobileLayout, MOBILE_CHAT, MOBILE_SESSIONS } from './components/AppLayout'
 import { createPanelComponents, EDITOR_PANEL, PANEL_CLOSE_PARAMS, PANEL_OPEN_PARAMS } from './components/AppPanels'
 import { restoreStoredWorkspace, selectionFromUrl, storeWorkspace, urlWithSelection } from './appUrl'
@@ -41,7 +43,10 @@ const App = () => {
   const [providers, setProviders] = useState([])
   const [jobsCollapsed, setJobsCollapsed] = useState(false)
   const [sessionSearchQuery, setSessionSearchQuery] = useState('')
+  const [kanbanOpen, setKanbanOpen] = useState(false)
   const searchingSessionId = sessionSearchQuery.trim().toLowerCase().startsWith('s_')
+
+  useEffect(() => { setKanbanOpen(false) }, [activeWorkspaceId, url.href])
 
   const go = useCallback((workspaceId, sessionId, { replace = false, view: nextView, file: nextFile, term: nextTerm } = {}) => {
     const workspaceChanged = workspaceId !== activeWorkspaceId
@@ -177,6 +182,10 @@ const App = () => {
   const openPanel = (id) => {
     const panel = registry.panels.find((item) => item.id === id)
     if (!panel) return
+    if (id === 'kanban') {
+      setKanbanOpen(true)
+      return
+    }
     if (panel.placement === 'main') {
       const open = view === id
       go(activeWorkspaceId, activeId, { view: open ? null : id })
@@ -320,6 +329,9 @@ const App = () => {
         ) : (
           <DesktopLayout sidebar={sidebar} main={mainPane} jobs={jobsNav} jobsCollapsed={jobsCollapsed} />
         )}
+        <PopupDisplay isOpen={kanbanOpen} close={() => setKanbanOpen(false)} closeOnEscape={false} showClose={false} lockScroll panelClassName="kanban__popup">
+          <KanbanView key={activeWorkspaceId || 'no-workspace'} devId="wkboard" scoped workspace={workspace} onBack={() => setKanbanOpen(false)} />
+        </PopupDisplay>
       </DevScope>
     </DevInspector>
   )

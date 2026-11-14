@@ -83,7 +83,7 @@ export const TOOLS: Tool[] = [
 // `page` panels replace the whole layout; `main` panels replace the main pane
 // and toggle. The UI maps ids to components.
 export const PANELS: Panel[] = [
-  { id: 'kanban', label: 'Kanban', title: 'Open boards, tasks, and project matrix', icon: 'kanban', placement: 'page', needsWorkspace: false },
+  { id: 'kanban', label: 'Kanban', title: 'Open workspace board', icon: 'kanban', placement: 'page', needsWorkspace: false },
   { id: 'editor', label: 'Editor', title: 'Open the file editor for this workspace', icon: 'editor', placement: 'page', needsWorkspace: true },
   { id: 'terminal', label: 'Terminal', title: 'Open a terminal for this workspace', icon: 'terminal', placement: 'page', needsWorkspace: true },
   { id: 'git', label: 'Git', title: 'Open git for this workspace', icon: 'git', placement: 'page', needsWorkspace: true },

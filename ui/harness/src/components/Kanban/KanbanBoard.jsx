@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Children, useEffect, useMemo, useRef, useState } from 'react'
 import { readRoute, routeUrl } from './navigation'
 import { BOARDS_QUERY, archiveCard, mutate, moveCard, moveColumn, restoreCard, saveCard } from './api'
 import TaskComments from './TaskComments'
@@ -143,9 +143,17 @@ const ProjectMatrix = ({ devId, boards, hierarchy, busy, matchesCard, searching,
       </div>
     }} />
 }
-const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards }) => {
+const BoardLayout = ({ scoped, children }) => {
+  if (scoped) return Children.toArray(children)[1]
+  return <SplitPane devId="7tb882x" defaultSize={236} minSize={200} maxSize={480} storageKey="kanban-sidebar-width" stackBelow={760} stackedSize="auto">{children}</SplitPane>
+}
+
+const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = '', workspaceId }) => {
   const { url, navigate } = useBrowserLocation()
-  const route = readRoute(url)
+  const [scopedTaskId, setScopedTaskId] = useState('')
+  const route = scopedBoardId
+    ? { boardId: scopedBoardId, taskId: scopedTaskId, view: 'board', invalid: false }
+    : readRoute(url)
   const { view } = route
   const [search, setSearch] = useState('')
   const query = search.trim().toLowerCase()
@@ -182,16 +190,19 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards }) => {
   const visibleBoards = view === 'matrix' ? boards : board ? [board] : []
   const cardCount = visibleBoards.reduce((total, item) => total + item.boardColumnsByBoardId.nodes.reduce((count, column) => count + activeCards(column).length, 0), 0)
   const matchingCount = visibleBoards.reduce((total, item) => total + item.boardColumnsByBoardId.nodes.reduce((count, column) => count + activeCards(column).filter(matchesCard).length, 0), 0)
+  const fullPageUrl = new URL(routeUrl(url, { boardId: activeId, taskId: route.taskId }))
+  if (workspaceId) fullPageUrl.searchParams.set('workspace', workspaceId)
 
   useEffect(() => {
+    if (scopedBoardId) return
     const id = board?.id || ''
     try { localStorage.setItem('kanban-board', id) } catch { /* Storage is optional. */ }
-  }, [board?.id])
+  }, [board?.id, scopedBoardId])
   useEffect(() => {
-    if (!route.invalid && !route.boardId && board) {
+    if (!scopedBoardId && !route.invalid && !route.boardId && board) {
       navigate(routeUrl(url, { boardId: board.id, view }), { replace: true })
     }
-  }, [url.href, board?.id, route.invalid, route.boardId, view, navigate])
+  }, [url.href, board?.id, route.invalid, route.boardId, view, navigate, scopedBoardId])
   useEffect(() => {
     setEditor(null)
     setError('')
@@ -199,6 +210,11 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards }) => {
   const navigateTo = (state, options) => {
     setEditor(null)
     setError('')
+    if (scopedBoardId && (!state.boardId || state.boardId === scopedBoardId)) {
+      setScopedTaskId(state.taskId || '')
+      return
+    }
+    // Related tasks on another board open the full page, outside this popup.
     navigate(routeUrl(url, { boardId: activeId, view, ...state }), options)
   }
   const closeEditor = () => {
@@ -284,7 +300,7 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards }) => {
   return (
     <DevScope id={devId} state={{ board: activeId, busy }}>
         <div className="kanban__workspace">
-          <SplitPane devId="7tb882x" defaultSize={236} minSize={200} maxSize={480} storageKey="kanban-sidebar-width" stackBelow={760} stackedSize="auto">
+          <BoardLayout scoped={Boolean(scopedBoardId)}>
           <DevScope id="j56xrh1">
           <aside className="kanban__sidebar" inert={Boolean(editor)}>
             <div className="kanban__brand"><span aria-hidden="true">▥</span> Kanban</div>
@@ -316,9 +332,11 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards }) => {
           </DevScope>
           <main className="kanban__main" inert={Boolean(editor)}>
             <header className="kanban__board-header">
-              <div className="kanban__eyebrow">MY WORKSPACE / {view === 'matrix' ? 'MATRIX' : 'BOARD'}</div>
+              <div className="kanban__eyebrow">{scopedBoardId ? board?.title || 'Workspace board' : `MY WORKSPACE / ${view === 'matrix' ? 'MATRIX' : 'BOARD'}`}</div>
               <DevScope id="86i9hrw"><FormInput type="search" className="kanban__search" field={{ value: search, onChange: (event) => setSearch(event.target.value) }} aria-label={view === 'matrix' ? 'Search cards across all projects' : 'Search cards on this board'} placeholder={view === 'matrix' ? 'Search all projects’ cards…' : 'Search this board’s cards…'} /></DevScope>
               <span role="status">{busy ? 'Saving…' : query ? `${matchingCount} of ${cardCount} cards` : `${cardCount} cards`}</span>
+              {scopedBoardId && <Button variant="ghost" size="sm" disabled={busy} onClick={onSwitchUser}>Switch user</Button>}
+              {scopedBoardId && board && <a className="kanban__expand" href={fullPageUrl.href} aria-label={`Open ${board.title} full page`}>Full page <span aria-hidden="true">↗</span></a>}
             </header>
             {error && !editor && <div className="kanban__error-banner" role="alert">{error}<Button variant="secondary" size="sm" disabled={busy} onClick={() => setError('')} devId="vva6h9m">Dismiss</Button></div>}
             {routeError && <div className="kanban__error-banner" role="alert">{routeError}</div>}
@@ -373,8 +391,8 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards }) => {
               </div>
             </DevScope>}
           </main>
-          </SplitPane>
-          <PopupDisplay backdropDevId="v3varah" closeDevId="dhzhr12" contentDevId="tsk9wm9" devId="2foeazy" isOpen={Boolean(editor)} close={() => { if (!busy) closeEditor() }} lockScroll panelClassName="kanban__editor">
+          </BoardLayout>
+          <PopupDisplay backdropDevId="v3varah" closeDevId="dhzhr12" contentDevId="tsk9wm9" devId="2foeazy" isOpen={Boolean(editor)} close={() => { if (!busy) closeEditor() }} lockScroll={!scopedBoardId} panelClassName="kanban__editor">
             {editor ? <Editor devId="z22w4qd" user={user} key={`${editor.kind}-${editor.item.id || 'new'}`} editor={editor} columns={editorColumns} hierarchy={hierarchy} busy={busy} error={error} onSave={save} onDelete={() => remove(editor)} onArchive={() => toggleArchive(editor.item, { close: !editor.item.archivedAt })} onOpenCard={(boardId, item) => openEditor('card', item, boardId)} onCommentChange={change} /> : <span />}
           </PopupDisplay>
         </div>

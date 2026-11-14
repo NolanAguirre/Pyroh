@@ -57,3 +57,5 @@ export const saveCard = (card, title, description, columnId, authorId, boardId, 
   }, undefined, boardId)
 }
 export const signIn = (name) => mutate('signIn', 'SignInInput', { userName: name }, `user { ${USER_FIELDS} }`)
+export const getOrCreateBoard = (externalId, title) => mutate('getOrCreateBoard', 'GetOrCreateBoardInput',
+  { externalKey: externalId, boardTitle: title }, 'board { id externalId title }')
