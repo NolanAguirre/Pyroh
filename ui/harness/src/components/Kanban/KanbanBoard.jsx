@@ -1,23 +1,29 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { readRoute, routeUrl } from './navigation'
 import { BOARDS_QUERY, archiveCard, mutate, moveCard, moveColumn, restoreCard, saveCard } from './api'
 import TaskComments from './TaskComments'
+import CardRelationships from './CardRelationships'
+import { createCardHierarchy } from './hierarchy'
 import { Button, PopupDisplay, OrderDisplay, Matrix, FormInput, DevScope, Fold, FoldTrigger, FoldContent, SplitPane, useBrowserLocation } from 'component-library'
 import KanbanQuery from './KanbanQuery'
 
 
 
-const Editor = ({ devId, user, editor, columns, busy, error, onSave, onDelete, onArchive, onCommentChange, popup }) => {
+const Editor = ({ devId, user, editor, columns, hierarchy, busy, error, onSave, onDelete, onArchive, onOpenCard, onCommentChange, popup }) => {
   const [title, setTitle] = useState(editor.item.title || '')
   const [description, setDescription] = useState(editor.item.description || '')
   const [columnId, setColumnId] = useState(editor.item.columnId || '')
+  const [parentId, setParentId] = useState(editor.item.parentId || '')
+  const children = hierarchy.getChildren(editor.item.id)
+  const parents = hierarchy.getParents(editor.item.id)
+  const unavailableParent = parentId && !parents.some((card) => card.id === parentId)
   const noun = editor.kind === 'boardColumn' ? 'column' : editor.kind
   return (
     <DevScope id={devId} state={{ mode: editor.kind, item: editor.item.id || undefined, busy: busy || undefined }}>
     <div role="dialog" aria-modal="true" aria-label={`${editor.item.id ? 'Edit' : 'New'} ${noun}`}>
     <form onSubmit={(event) => {
       event.preventDefault()
-      if (title.trim()) onSave({ title: title.trim(), description, columnId })
+      if (title.trim()) onSave({ title: title.trim(), description, columnId, parentId: parentId || null })
     }}>
       <h2>{editor.item.id ? `Edit ${noun}` : `New ${noun}`}</h2>
       {editor.kind === 'card' && editor.item.id && <p className="kanban__comments-empty">Created by {editor.item.userByAuthorId?.name || 'Unknown author'}{editor.item.archivedAt && ' · Archived'}</p>}
@@ -28,6 +34,15 @@ const Editor = ({ devId, user, editor, columns, busy, error, onSave, onDelete, o
           <label>Column<DevScope id="ntbho75"><select value={columnId} onChange={(event) => setColumnId(event.target.value)}>
             {columns.map((column) => <option key={column.id} value={column.id}>{column.title}</option>)}
           </select></DevScope></label>
+          <label>Parent task<select value={parentId} onChange={(event) => setParentId(event.target.value)} aria-describedby="kanban-parent-help">
+            <option value="">No parent (root task)</option>
+            {unavailableParent && <option value={parentId} disabled>Current parent cannot be kept — remove it</option>}
+            {parents.map((card) => <option key={card.id} value={card.id}>{card.title} · {card.boardTitle}{card.archivedAt ? ' · Archived' : ''}</option>)}
+          </select></label>
+          <p id="kanban-parent-help" className="kanban__comments-empty">{children.length
+            ? 'This task is an epic. Remove or reassign its children, including archived children, before choosing a parent.'
+            : 'Choose a root task to make this its child. Choose No parent to remove the relationship.'}</p>
+          {editor.item.id && <CardRelationships card={hierarchy.getCard(editor.item.id) || editor.item} hierarchy={hierarchy} busy={busy} onOpenCard={onOpenCard} expanded />}
         </>}
         {error && <p role="alert" className="kanban__error">{error}</p>}
         <div className="kanban__editor-actions">
@@ -55,7 +70,7 @@ const archivedCards = (column) => column.cardsByColumnId.nodes.filter((card) => 
   .sort((a, b) => b.archivedAt.localeCompare(a.archivedAt))
 const columnKey = (column) => column.title.trim().toLowerCase()
 
-const ProjectMatrix = ({ devId, boards, busy, matchesCard, searching, onSelectBoard, onOpenCard, onMoveCard }) => {
+const ProjectMatrix = ({ devId, boards, hierarchy, busy, matchesCard, searching, onSelectBoard, onOpenCard, onMoveCard }) => {
   const [draggedId, setDragged] = useState(null)
   const draggedBoard = boards.find((board) => board.boardColumnsByBoardId.nodes.some((column) => activeCards(column).some((card) => card.id === draggedId)))
   const draggedCard = draggedBoard?.boardColumnsByBoardId.nodes.flatMap(activeCards).find((card) => card.id === draggedId)
@@ -122,6 +137,7 @@ const ProjectMatrix = ({ devId, boards, busy, matchesCard, searching, onSelectBo
       setTimeout(() => { suppressClick.current = false }, 0) }} onDragOver={(event) => dragOver(event, card.id, project.id)} onDrop={(event) => dropCard(event, project, column, card.id)} onClick={() => { if (suppressClick.current) return
       onOpenCard(project.id, card) }}><span>{card.title}</span>{card.description && <small>{card.description}</small>}<small>By {card.userByAuthorId?.name || 'Unknown author'}</small></button>
             </DevScope>
+            <CardRelationships card={card} hierarchy={hierarchy} busy={busy} onOpenCard={onOpenCard} />
           </article>
         </DevScope>)}
       </div>
@@ -135,6 +151,7 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards }) => {
   const query = search.trim().toLowerCase()
   const matchesCard = (card) => !query || `${card.title}\n${card.description || ''}`.toLowerCase().includes(query)
   const boards = allBoards.nodes
+  const hierarchy = useMemo(() => createCardHierarchy(boards), [boards])
   const board = route.invalid ? null : route.boardId
     ? boards.find((item) => item.id === route.boardId) || null
     : boards.find((item) => item.id === rememberedBoard()) || boards[0] || null
@@ -219,9 +236,16 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards }) => {
     if (kind === 'card' && item.id) navigateTo({ boardId, taskId: item.id })
     else setEditor({ kind, item })
   }
-  const save = ({ title, description, columnId }) => change(() => {
+  const save = ({ title, description, columnId, parentId }) => change(() => {
     const { kind, item } = editor
-    if (kind === 'card') return saveCard(item, title, description, columnId, user.id, editor.boardId || activeId)
+    if (kind === 'card') {
+      if (parentId) {
+        const parent = hierarchy.getCard(parentId)
+        if (!parent || parent.id === item.id || parent.parentId) throw new Error('Choose another root task as the parent, or remove the parent.')
+        if (hierarchy.getChildren(item.id).length) throw new Error('A task with children, including archived children, cannot have a parent.')
+      }
+      return saveCard(item, title, description, columnId, user.id, editor.boardId || activeId, parentId)
+    }
     const type = kind === 'board' ? 'Board' : 'BoardColumn'
     if (item.id) return mutate(`update${type}ById`, `Update${type}ByIdInput`, { id: item.id, [`${kind}Patch`]: { title } }, undefined, kind === 'board' ? undefined : activeId)
     return mutate(`create${type}`, `Create${type}Input`, { [kind]: { title, ...(kind === 'boardColumn' ? { boardId: activeId } : {}) } }, undefined, kind === 'board' ? undefined : activeId)
@@ -229,7 +253,8 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards }) => {
   const remove = ({ kind, item }) => {
     const noun = kind === 'boardColumn' ? 'column' : kind
     const contents = kind === 'board' ? ' and all its columns and cards' : kind === 'boardColumn' ? ' and all its cards' : ''
-    if (!window.confirm(`Delete ${noun} “${item.title}”${contents}? This cannot be undone.`)) return
+    const children = kind === 'card' && hierarchy.getChildren(item.id).length ? ' Its children will become root tasks.' : ''
+    if (!window.confirm(`Delete ${noun} “${item.title}”${contents}? This cannot be undone.${children}`)) return
     const type = kind === 'boardColumn' ? 'BoardColumn' : kind === 'board' ? 'Board' : 'Card'
     change(() => mutate(`delete${type}ById`, `Delete${type}ByIdInput`, { id: item.id }, undefined, kind === 'board' ? undefined : editor?.boardId || activeId), { close: true })
   }
@@ -297,7 +322,7 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards }) => {
             {routeError && <div className="kanban__error-banner" role="alert">{routeError}</div>}
             {query && matchingCount === 0 && <p className="kanban__search-empty" role="status">No matching cards. Try another search or clear the search.</p>}
             {!board && !error && !routeError && <div className="kanban__empty-state"><span aria-hidden="true">▥</span><h2>A little space to get things done.</h2><p>Create a board for your next project.</p><Button onClick={() => openEditor('board')} devId="gh69869">Create a board</Button></div>}
-            {view === 'matrix' && boards.length > 0 && <ProjectMatrix devId="dg0n347" boards={boards} busy={busy} matchesCard={matchesCard} searching={Boolean(query)} onSelectBoard={selectBoard} onOpenCard={(boardId, item) => openEditor('card', item, boardId)} onMoveCard={(cardId, columnId, beforeCardId, boardId) => change(() => moveCard(cardId, columnId, beforeCardId, boardId))} />}
+            {view === 'matrix' && boards.length > 0 && <ProjectMatrix devId="dg0n347" boards={boards} hierarchy={hierarchy} busy={busy} matchesCard={matchesCard} searching={Boolean(query)} onSelectBoard={selectBoard} onOpenCard={(boardId, item) => openEditor('card', item, boardId)} onMoveCard={(cardId, columnId, beforeCardId, boardId) => change(() => moveCard(cardId, columnId, beforeCardId, boardId))} />}
             {view === 'board' && <DevScope id="4aob8se">
               <div className="kanban__board-canvas" aria-busy={busy}>
                 {columns.map((column, columnIndex) => <DevScope key={column.id} id="crlq97n" state={{ column: column.id }}>
@@ -313,6 +338,7 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards }) => {
                         <DevScope id="azspmti">
                           <button className="kanban__card-content" disabled={busy} onClick={() => openEditor('card', card)}><span>{card.title}</span>{card.description && <small>{card.description}</small>}<small>By {card.userByAuthorId?.name || 'Unknown author'}</small></button>
                         </DevScope>
+                        <CardRelationships card={card} hierarchy={hierarchy} busy={busy} onOpenCard={(boardId, item) => openEditor('card', item, boardId)} />
                         <div className="kanban__card-footer"><span className="kanban__card-hint">{card.description ? '≡ Description' : 'Drag to move'}</span><span className="kanban__card-actions"><DevScope id="rsyskc2"><button className="kanban__icon-button" aria-label={`Archive ${card.title}`} disabled={busy} onClick={() => toggleArchive(card)}><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="5" rx="1" /><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" /><path d="M10 12h4" /></svg></button></DevScope><OrderDisplay id={card.id} order={index + 1} totalCount={activeCards(column).length} updating={busy} move={(id, direction) => reorderCard(column, id, direction)} /></span></div>
                       </article>
                     </DevScope>)}
@@ -323,7 +349,10 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards }) => {
                     <FoldTrigger>Archived {archivedCards(column).filter(matchesCard).length}</FoldTrigger>
                     <FoldContent><ul className="kanban__archived-cards">
                       {archivedCards(column).map((card) => matchesCard(card) && <DevScope key={card.id} id="6lulof0" state={{ card: card.id }}><li>
+                        <div className="kanban__archived-details">
                         <button className="kanban__archived-title" disabled={busy} onClick={() => openEditor('card', card)}>{card.title}</button>
+                        <CardRelationships card={card} hierarchy={hierarchy} busy={busy} onOpenCard={(boardId, item) => openEditor('card', item, boardId)} />
+                        </div>
                         <Button variant="ghost" size="sm" disabled={busy} onClick={() => toggleArchive(card)} aria-label={`Restore ${card.title}`} devId="kowenq7">Restore</Button>
                       </li></DevScope>)}
                     </ul></FoldContent>
@@ -336,7 +365,7 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards }) => {
           </main>
           </SplitPane>
           <PopupDisplay backdropDevId="v3varah" closeDevId="dhzhr12" contentDevId="tsk9wm9" devId="2foeazy" isOpen={Boolean(editor)} close={() => { if (!busy) closeEditor() }} lockScroll panelClassName="kanban__editor">
-            {editor ? <Editor devId="z22w4qd" user={user} key={`${editor.kind}-${editor.item.id || 'new'}`} editor={editor} columns={editorColumns} busy={busy} error={error} onSave={save} onDelete={() => remove(editor)} onArchive={() => toggleArchive(editor.item, { close: !editor.item.archivedAt })} onCommentChange={change} /> : <span />}
+            {editor ? <Editor devId="z22w4qd" user={user} key={`${editor.kind}-${editor.item.id || 'new'}`} editor={editor} columns={editorColumns} hierarchy={hierarchy} busy={busy} error={error} onSave={save} onDelete={() => remove(editor)} onArchive={() => toggleArchive(editor.item, { close: !editor.item.archivedAt })} onOpenCard={(boardId, item) => openEditor('card', item, boardId)} onCommentChange={change} /> : <span />}
           </PopupDisplay>
         </div>
       </DevScope>
