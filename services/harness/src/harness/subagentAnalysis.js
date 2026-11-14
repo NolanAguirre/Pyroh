@@ -7,9 +7,9 @@ const runIndex = require('../store/runIndexStore')
 const { readJson } = require('../store/jsonFile')
 const { parseInputCommand } = require('../prompt/triggers')
 const { createRequestMetrics, summarizeRequestMetrics } = require('../agents/requestMetrics')
-const { createContextAnalysis } = require('./transcriptContext')
+const { readTranscript } = require('./transcriptContext')
+const { createSubagentReplay } = require('./subagentReplay')
 
-const fields = ['input', 'output', 'cacheRead', 'cacheWrite', 'fresh', 'reasoning', 'total', 'requests']
 const number = (value) => Number.isSafeInteger(value) && value >= 0
 const field = (object, names) => {
   for (const name of names) if (number(object?.[name])) return object[name]
@@ -52,13 +52,6 @@ const parseAssumptions = (text = '') => {
   return result
 }
 
-const aggregate = (rows) => Object.fromEntries(fields.map(key => {
-  const known = rows.filter(row => row[key] !== null)
-  return [key, { value: known.length === rows.length ? sum(known.map(row => row[key])) : null,
-    subtotal: known.reduce((total, row) => total + row[key], 0), covered: known.length, count: rows.length }]
-}))
-const metric = (value) => value.value !== null ? fmt(value.value)
-  : `unknown (${fmt(value.subtotal)} known; ${value.covered}/${value.count} runs)`
 const requestFields = (keys) => [
   ...(keys.includes('inputTokens') ? ['input'] : []),
   ...(keys.includes('cacheReadTokens') ? ['cacheRead'] : []),
@@ -212,6 +205,7 @@ const collect = (current, writeDir, cutoff) => {
   }
 
   const agents = []
+  const allLinks = []
   const seen = new Set()
   const seenRuns = new Set()
   const pending = [{ id: source.id, ancestors: [], depth: 0 }]
@@ -248,22 +242,14 @@ const collect = (current, writeDir, cutoff) => {
     if (node.expectedRunId && !records.has(node.expectedRunId)) {
       warnings.add(`Linked run ${node.expectedRunId} in ${node.id} is missing; its usage is unknown.`)
     }
+    const transcript = readTranscript(dir, cutoff, warnings)
     const events = new Map()
-    if (dir) {
-      try {
-        for (const line of fs.readFileSync(path.join(dir, 'events.jsonl'), 'utf8').split('\n')) {
-          if (!line.trim()) continue
-          let event
-          try { event = JSON.parse(line) } catch { warnings.add(`Incomplete transcript lines in ${node.id}; request coverage may be missing.`); continue }
-          if (!number(event.ts) || event.ts > cutoff || !['model_request', 'model_request_evidence', 'model_request_metrics'].includes(event.type)) continue
-          if (!events.has(event.runId)) events.set(event.runId, [])
-          events.get(event.runId).push(event)
-        }
-      } catch (err) {
-        warnings.add(`Request transcript unavailable for ${node.id}: ${err.code || err.message}`)
-      }
+    for (const entry of transcript) {
+      if (!events.has(entry.event.runId)) events.set(entry.event.runId, [])
+      events.get(entry.event.runId).push(entry.event)
     }
     const rows = []
+    const containers = []
     const included = new Set()
     for (const { record, file } of records.values()) {
       if (record.startedAt > cutoff) continue
@@ -282,7 +268,7 @@ const collect = (current, writeDir, cutoff) => {
       seenRuns.add(key)
       included.add(record.id)
       // Workflow controller runs are containers, not additive model usage.
-      if (record.workflow) { excluded += 1; continue }
+      if (record.workflow) { containers.push({ record, file }); excluded += 1; continue }
       const complete = number(record.endedAt) && record.endedAt <= cutoff
       const provider = record.provider || session.provider
       const reported = usage.has(record.id) ? usage.get(record.id).usage : record.usage
@@ -290,24 +276,24 @@ const collect = (current, writeDir, cutoff) => {
       if (!complete) warnings.add(`Run ${record.id} was ongoing or lacked a completion timestamp at cutoff; usage is unknown.`)
       const evidence = requestEvidence(events.get(record.id) || [], tokens, provider, record.modelRequests, cutoff)
       rows.push({ ...tokens, requests: complete ? evidence.requests : null, requestFields: evidence.fields, requestEvidence: evidence,
-        id: record.id, sessionId: node.id, provider, model: record.model || session.model || 'unknown',
+        record, file, id: record.id, sessionId: node.id, provider, model: record.model || session.model || 'unknown',
         startedAt: record.startedAt, endedAt: complete ? record.endedAt : null, status: complete ? record.status || 'finished' : 'incomplete at cutoff' })
     }
     rows.sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0) || a.id.localeCompare(b.id))
-    agents.push({ id: node.id, depth: node.depth, session, rows })
+    agents.push({ id: node.id, depth: node.depth, session, dir, rows, containers, events: transcript })
     const links = [...(relations.get(node.id) || [])]
     for (const { record } of records.values()) {
-      if (included.has(record.id)) for (const id of record.workflowChildren || []) links.push({ sessionId: id, parentRunId: record.id })
+      if (included.has(record.id)) for (const id of record.workflowChildren || []) links.push({ sessionId: id, parentRunId: record.id, workflow: true, createdAt: record.startedAt })
     }
     if (dir) {
       try {
-        for (const { record: state } of usageStore.jsonRecords(path.join(dir, 'delegation'))) {
+        for (const { record: state, file: linkFile } of usageStore.jsonRecords(path.join(dir, 'delegation'))) {
           if (!state || !included.has(state.runId)) continue
           for (const child of Object.values(state.children || {})) {
             if (child.createdAt > cutoff) continue
             if (!child.sessionId) { warnings.add(`Unlocated child spawn in ${state.runId}${child.error ? `: ${child.error}` : ''}; no usage available.`); continue }
             hint(child.sessionId, child.sessionPath)
-            links.push({ ...child, parentRunId: state.runId })
+            links.push({ ...child, parentRunId: state.runId, source: { file: linkFile, field: `children.${child.resultId || child.sessionId}` } })
           }
         }
       } catch (err) { warnings.add(`Delegation links unavailable for ${node.id}: ${err.message}`) }
@@ -317,77 +303,51 @@ const collect = (current, writeDir, cutoff) => {
         if (records.has(link.parentRunId)) continue
         warnings.add(`Parent run ${link.parentRunId} for linked child ${link.sessionId} is missing; parent usage is unknown.`)
       }
+      allLinks.push({ ...link, parentSessionId: node.id })
       pending.push({ id: link.sessionId, expectedRunId: link.runId, depth: node.depth + 1, ancestors: [...node.ancestors, node.id] })
     }
   }
-  const sourcesForContext = new Map([...sessions.values()].map(session => [session.id, locate(session.id)]))
-  for (const agent of agents) sourcesForContext.set(agent.id, locate(agent.id))
-  const context = createContextAnalysis([...sourcesForContext.values()].filter(Boolean), writeDir, cutoff, agents)
-  return { source, agents, warnings: [...warnings], excluded, cutoff, context }
+  return { source, agents, links: allLinks, warnings: [...warnings], excluded, cutoff }
 }
 
-// The counterfactual keeps coordinator work and child output constant. It is
-// an input-token scenario, not evidence of quality, elapsed-time or cash savings.
-const comparison = (data, assumptions, summaries) => {
-  const children = data.agents.filter(agent => agent.depth > 0 && agent.rows.length)
-  if (!children.length) return ['**Worth it?** No subagent work found.']
-  const root = data.agents.find(agent => agent.depth === 0)
-  const parentContext = root ? summaries.get(root.id).current : null
-  const childRows = children.flatMap(agent => agent.rows)
-  const totals = aggregate(childRows)
-  const stats = children.map(agent => summaries.get(agent.id))
-  const turns = assumptions.requests ?? sum(stats.map(stat => stat.turns))
-  const shared = assumptions.shared ?? 0
-  const output = assumptions.output ?? totals.output.value
-  const mergedContext = parentContext !== null ? parentContext - shared : null
-  const mergedInput = mergedContext !== null && mergedContext >= 0 && turns > 0 ? mergedContext * turns : null
-  const available = !data.warnings.length && mergedInput !== null && output !== null && totals.total.value !== null
-  const difference = available ? mergedInput + output - totals.total.value : null
-  const lines = [difference === null
-    ? '**Worth it?** Unclear: usage, turns, or context is missing.'
-    : difference > 0
-      ? `**Worth it?** The rough model favors subagents by about ${fmt(difference)} tokens.`
-      : difference < 0
-        ? `**Worth it?** The rough model favors doing the work in the coordinator by about ${fmt(-difference)} tokens.`
-        : '**Worth it?** No token advantage in this model.']
-  lines.push(`Subagents used ${metric(totals.total)} tokens across ${fmt(turns)}${assumptions.requests !== undefined ? ' assumed combined' : stats.some(stat => stat.turnsEstimated) ? ' estimated' : ''} model turns.`)
-  if (available) {
-    lines.push(`Why: at the coordinator’s current context, (${fmt(parentContext)} − ${fmt(shared)} shared deduction) × ${fmt(turns)} turns + ${fmt(output)} output ≈ ${fmt(mergedInput + output)} tokens for the child work. Existing coordinator work stays constant; future context growth is not modeled.`)
-  } else {
-    lines.push('The comparison needs known child usage, a current coordinator context, and measured or estimated child turns. Incomplete work or missing delegation records blocks a verdict.')
-  }
-  lines.push(`This assumes ${assumptions.requests === undefined ? 'the same number of turns' : 'your combined turn count'} and ${assumptions.output === undefined ? 'the same output' : 'your output estimate'}${assumptions.shared === undefined ? ', with no shared-context deduction (shared=0)' : ''}. It does not measure work quality, time saved, or dollar cost.`)
-  return lines
-}
+const rangeText = value => `${fmt(value.estimate)} (${fmt(value.lower)} to ${value.upper === null ? 'unknown upper bound' : fmt(value.upper)})`
+const measuredText = value => value.value === null
+  ? `unknown (${fmt(value.knownSubtotal)} known, ${value.coveredRuns}/${value.runs} runs)` : fmt(value.value)
 
 const analyzeSubagents = (session, writeDir, assumptions = {}) => {
   const data = collect(session, writeDir, Date.now())
-  const summaries = new Map(data.agents.map(agent => [agent.id, data.context.describe(agent)]))
-  const estimate = (value, estimated) => `${estimated ? '~' : ''}${fmt(value)}`
+  const replay = createSubagentReplay(data, assumptions)
+  const destination = path.join(paths.sessionDir(session.id, writeDir), 'analysis')
+  fs.mkdirSync(destination, { recursive: true })
+  const artifact = path.join(destination, `subagent-replay-${data.cutoff}.json`)
+  fs.writeFileSync(artifact, `${JSON.stringify(replay, null, 2)}\n`)
   const lines = [
-    '## Subagent analysis',
-    '', ...comparison(data, assumptions, summaries).flatMap(line => [line, '']),
-    '| Agent | Model turns | Current context | Input tokens | Turn basis |',
-    '| --- | ---: | ---: | ---: | --- |',
-    ...data.agents.filter(agent => agent.rows.length).map(agent => {
-      const summary = summaries.get(agent.id)
-      const label = `${agent.depth ? 'Subagent' : 'Coordinator'} ${agent.session.name || agent.id} (${agent.session.provider || agent.rows[0].provider})`
-      return `| ${cell(label)} | ${estimate(summary.turns, summary.turnsEstimated)} | ${estimate(summary.current, summary.currentEstimated)} | ${metric(aggregate(agent.rows).input)} | ${cell(summary.turnBasis)} |`
-    }),
+    '## Subagent analysis', '',
+    'Whole coordinator replay, including recursively inserted child work and all later coordinator requests.', '',
+    '| Measured usage | Input | Output | Total |',
+    '| --- | ---: | ---: | ---: |',
+    ...Object.entries(replay.measured).map(([label, values]) => `| ${label} | ${measuredText(values.input)} | ${measuredText(values.output)} | ${measuredText(values.total)} |`),
     '',
-    '~ means estimated. Measured turns use reconciled model requests; tool calls are not turns. Estimates cover work recorded so far, not remaining work.',
-    'Turn estimates use provider-reported counts, input divided by reported or calibrated context, or measured history from the same provider (preferring the same model). With no suitable evidence, the rough fallback assumes 8,000 input tokens/turn, or 3 turns/run when input is missing. Estimates never fall below observed response counts.',
+    `Replay input: ${rangeText(replay.estimate.input)}.`,
+    `Replay generated output: ${rangeText(replay.estimate.output)}.`,
+    `Replay total: ${rangeText(replay.estimate.total)}.`,
+    `Replay minus measured combined total: ${rangeText(replay.estimate.difference)}. Positive means more tokens in this scenario.`,
+    '',
+    `Turns: ${replay.confidenceCounts.measured} measured, ${replay.confidenceCounts.inferred} inferred, ${replay.confidenceCounts.allocated} allocated. Removed ${replay.removed.blocks} blocks and ${replay.removed.turns} justified empty turns.`,
+    `Coverage cutoff: ${new Date(data.cutoff).toISOString()}. ${replay.coverage.complete ? 'All replay regions have calibration coverage.' : `${replay.coverage.gaps.length} recorded gaps, ${replay.coverage.unplacedSessions.length} unplaced sessions. Unknown upper bounds remain explicit.`}`,
+    `First unsupported turn: ${replay.coverage.firstUnsupportedTurn || 'none'}.`,
+    '',
+    ...replay.tokenizer.identities.map(identity => `Tokenizer: ${cell(identity.package)} ${cell(identity.version || 'unavailable')}, ${cell(identity.encoding)}, model ${cell(identity.model)}${identity.approximation ? ' (proxy encoding)' : ''}. ${cell(identity.unavailable || identity.reason)}`),
+    'Requests are tokenized as assembled retained histories. Original-session calibration uses response input only, with signed residuals kept as uncertainty. Tool results are not generated output. Hidden reasoning counts are never appended as text.',
+    'Ranges are sensitivity estimates, not guarantees. Missing content, response boundaries, compaction or model coverage can leave the upper bound unknown. The point estimate covers placed recorded work only.',
+    'Child insertion follows spawn points, then creation time and session ID. Unique findings, instructions, refreshes, edited-file reads and the final answer remain unless exact replacement is proven.',
+    '',
+    `[Full replay evidence and assumptions](${artifact})`,
+    'The JSON includes full turns, blocks, dispositions, source links, deterministic order, run-total attribution, measured usage and calibration samples. This is a token scenario, not a quality, time or cost verdict.',
   ]
-  if (data.agents.some(agent => summaries.get(agent.id).currentEstimated
-    || summaries.get(agent.id).turnsEstimated)) {
-    lines.push('', `Transcript context estimates use average tokens/character from ${data.context.samples} eligible GPT/Claude agents and assume even context growth within each run. Turn estimates remain available without calibration.`,
-      'Calibration excludes known compaction, context resets, inherited history, incomplete data, and agents above 2M reported tokens. Hidden compaction and provider differences can still skew estimates.')
-    const reasons = [...new Set(data.agents.filter(agent => agent.rows.length)
-      .map(agent => summaries.get(agent.id).reason).filter(Boolean))]
-    if (reasons.length) lines.push(`Context calibration limits: ${reasons.map(cell).join(' ')}`)
-  }
-  if (data.warnings.length) lines.push('', `Coverage: ${data.warnings.slice(0, 2).map(cell).join(' ')}${data.warnings.length > 2 ? ` (${data.warnings.length - 2} more gaps.)` : ''}`)
+  if (Object.keys(assumptions).length) lines.push('', 'Legacy shared/requests/output overrides are recorded in the artifact but are not applied to ordered replay.')
+  if (replay.coverage.gaps.length) lines.push('', ...replay.coverage.gaps.slice(0, 5).map(item => `- ${cell(item.reason)}`))
   return lines.join('\n')
 }
 
-module.exports = { analyzeSubagents, parseAssumptions }
+module.exports = { analyzeSubagents, parseAssumptions, requestEvidence }
