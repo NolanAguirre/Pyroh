@@ -132,7 +132,8 @@ const createSubagentReplay = (data, assumptions = {}) => {
         .sort((a, b) => b.order - a.order || a.id.localeCompare(b.id))
       const matches = direct.length ? direct : taskMatches
       if (matches.length) {
-        selected = { link, call: matches[0], inferred: direct.length !== 1 }
+        selected = { link, call: matches[0], inferred: direct.length !== 1,
+          proven: direct.length === 1 || (!direct.length && taskMatches.length === 1 && Boolean(link.source && link.parentRunId)) }
         break
       }
     }
@@ -150,6 +151,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
     if (!insertions.has(anchorId)) insertions.set(anchorId, [])
     insertions.get(anchorId).push({ sessionId: child.id, parentSessionId: selected.link.parentSessionId,
       parentRunId: selected.link.parentRunId, anchorId, inferred: Boolean(selected.inferred),
+      proven: Boolean(selected.proven),
       createdAt: selected.link.createdAt || child.session.createdAt || 0,
       sources: [selected.link.source, ...(selected.call?.sources || [])].filter(Boolean) })
     linked.add(child.id)
@@ -185,27 +187,45 @@ const createSubagentReplay = (data, assumptions = {}) => {
     evidence.blocks.filter(block => block.sessionId === agent.id && block.kind === 'text')]))
   const taskBlocks = new Map(data.agents.map(agent => [agent.id,
     evidence.blocks.filter(block => block.sessionId === agent.id && block.kind === 'prompt')]))
-  const replacement = (result, at) => {
+  const replacement = (result, at, method = null) => {
     if (!result || typeof result !== 'object' || Array.isArray(result)) return null
     const childId = result.sessionId
-    if (!linked.has(childId) || !visited.has(childId)) return null
-    if (result.error || (result.state && result.state !== 'completed')) return null
+    if (!linked.has(childId) || !visited.has(childId) || !Number.isFinite(at)) return null
+    if (result.error) return null
+    const activeReceipt = ['spawn', 'status', 'wait'].includes(method)
+      && ['starting', 'running', 'subagent'].includes(result.state)
+    if (result.state && result.state !== 'completed' && !activeReceipt) return null
+    if (activeReceipt) {
+      const child = agents.get(childId)
+      if (!child.rows.length || child.rows.some(row => !row.endedAt || row.record?.error
+        || row.status !== 'completed' || row.record?.transcriptStatus === 'incomplete')) return null
+    }
     const permitted = new Set(['sessionId', 'runId', 'latestRunId', 'parentSessionId', 'parentRunId', 'resultId', 'task',
       'depth', 'lineage', 'usage', 'normalizedUsage', 'durationMs', 'done', 'state', 'status', 'finalResponse',
       'name', 'provider', 'model', 'mode', 'createdAt', 'startedAt', 'endedAt', 'dontReturn', 'childKind',
-      'delivery', 'questions', 'pendingQuestions', 'error', 'collectedAt'])
+      'delivery', 'questions', 'pendingQuestions', 'error', 'collectedAt', 'workflow', 'workspaceId',
+      'transcriptLink', 'nativeSpawningBlocked', 'warning'])
     if (Object.keys(result).some(key => !permitted.has(key))) return null
-    if ((result.questions?.length || result.pendingQuestions?.length)) return null
+    if (result.warning != null && result.warning !== 'Native spawning cannot be fully blocked by Grok; the child is instructed to use only harness delegation.') return null
+    if (['questions', 'pendingQuestions'].some(key => result[key] != null
+      && (!Array.isArray(result[key]) || result[key].length))) return null
     const dependencies = []
     if (result.task) {
+      if (typeof result.task !== 'string') return null
       const task = taskBlocks.get(childId)?.find(block => content(block).trim() === result.task.trim() && position.get(block.id) < at)
       if (!task) return null
       dependencies.push(task.id)
     }
     if (result.finalResponse) {
+      if (typeof result.finalResponse !== 'string') return null
       const final = finalBlocks.get(childId)?.find(block => content(block) === result.finalResponse && position.get(block.id) < at)
       if (!final) return null
       dependencies.push(final.id)
+    }
+    if (activeReceipt) {
+      const task = taskBlocks.get(childId)?.find(block => position.get(block.id) < at)
+      if (!task) return null
+      dependencies.push(task.id)
     }
     return dependencies
   }
@@ -220,13 +240,14 @@ const createSubagentReplay = (data, assumptions = {}) => {
     if (method === 'spawn') {
       const child = children.length === 1 ? children[0] : null
       const task = child && taskBlocks.get(child.sessionId)?.find(item => input?.task && content(item).trim() === input.task.trim())
-      if (!task || child.inferred || !visited.has(child.sessionId) || result?.error) continue
+      if (!task || !child.proven || !visited.has(child.sessionId) || result?.error) continue
       // Removal substitutes the explicit child task at this spawn point.
-      if (result && replacement(unpack(result.content), position.get(result.id)) === null) continue
+      const dependencies = result ? replacement(unpack(result.content), position.get(result.id), method) : []
+      if (dependencies === null) continue
       remove(block, 'Delegation spawn is replaced by child work and its intact task.', [task.id])
-      if (result) remove(result, 'Delegation receipt is replaced by inserted child work.', [task.id])
+      if (result) remove(result, 'Delegation receipt is replaced by inserted child work.', [...new Set([task.id, ...dependencies])])
     } else if (result && !result.error) {
-      const dependencies = replacement(unpack(result.content), position.get(result.id))
+      const dependencies = replacement(unpack(result.content), position.get(result.id), method)
       if (dependencies === null) continue
       remove(block, 'Delegation control call has no retained content beyond its replaced receipt.', dependencies)
       remove(result, 'Known delegation wrapper, findings and task are already present verbatim.', dependencies)
@@ -250,6 +271,30 @@ const createSubagentReplay = (data, assumptions = {}) => {
       if (['Delegated child results', 'Automatic continuation instructions'].includes(block.label)) {
         remove(block, 'Recorded automatic handoff wrapper, all results already retained verbatim.', dependencies)
       }
+    }
+  }
+
+  // Only exact duplicates tied to a removed handoff qualify as assistant overhead.
+  // Unclassified prose may contain decisions, even beside a delegation call.
+  const lastRootText = finalBlocks.get(root?.id)?.at(-1)?.id
+  for (const turn of evidence.turns) {
+    const generated = turn.blocks.map(id => blocks.get(id)).filter(block => block.generated)
+    const calls = generated.filter(block => delegation(block) && dispositions.get(block.id).action === 'remove')
+    const prompts = evidence.blocks.filter(block => block.sessionId === turn.sessionId && block.runId === turn.runId
+      && block.label === 'Delegated child results' && dispositions.get(block.id).action === 'remove')
+    const dependencies = [...new Set([...calls, ...prompts].flatMap(block => [
+      ...dispositions.get(block.id).dependencies,
+      ...(block.resultId ? dispositions.get(block.resultId)?.dependencies || [] : []),
+    ]))]
+    if (!calls.length && !prompts.length) continue
+    for (const block of generated) {
+      if (block.kind !== 'text' || block.id === lastRootText || block.fallback) continue
+      const duplicate = dependencies.find(id => {
+        const original = blocks.get(id)
+        return original && position.get(id) < position.get(block.id)
+          && dispositions.get(id).action === 'retain' && content(original) === content(block)
+      })
+      if (duplicate) remove(block, 'Exact handoff text is already retained in inserted child work.', [duplicate])
     }
   }
 
@@ -281,14 +326,18 @@ const createSubagentReplay = (data, assumptions = {}) => {
     } else previousRead = { call: block, result }
   }
   for (const turn of evidence.turns) {
+    if (turn.confidence === 'allocated' && !turn.blocks.length) {
+      turnDispositions.set(turn.id, { turnId: turn.id, action: 'sensitivity',
+        reason: 'Synthetic request padding has no transcript boundary, included only in the allocated-request sensitivity scenario.',
+        sources: turn.sources })
+      continue
+    }
     const generated = turn.blocks.map(id => blocks.get(id)).filter(block => block.generated)
-    if (turn.confidence !== 'measured' || !generated.length) continue
+    if (!generated.length) continue
     const retained = generated.filter(block => dispositions.get(block.id).action !== 'remove')
-    const laterCoordinatorWork = ordered.some(action => action.kind === 'request' && action.sessionId === root?.id
-      && position.get(action.id) > position.get(turn.id))
-    if (!retained.length && laterCoordinatorWork && generated.every(block => dispositions.get(block.id).action === 'remove')) {
+    if (!retained.length && generated.every(block => dispositions.get(block.id).action === 'remove')) {
       turnDispositions.set(turn.id, { turnId: turn.id, action: 'remove',
-        reason: 'All generated content is proven delegation/read overhead, remaining work still has a response turn.',
+        reason: 'All recorded generated content is proven delegation/read overhead. Boundary confidence remains separate evidence.',
         sources: turn.sources, dependencies: generated.flatMap(block => dispositions.get(block.id).dependencies) })
     }
   }
@@ -297,6 +346,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
   const retainedHistory = []
   const visible = new Set()
   const estimates = []
+  const allocatedEstimates = []
   let regionUnsupported = false
   let activeModel = null
   let currentRootThread = null
@@ -336,6 +386,15 @@ const createSubagentReplay = (data, assumptions = {}) => {
     }
     const turn = turns.get(action.id)
     if (turnDispositions.get(turn.id).action === 'remove') continue
+    if (turnDispositions.get(turn.id).action === 'sensitivity') {
+      const request = tokenizer.request(retainedHistory, action.targetModel)
+      allocatedEstimates.push({ turnId: turn.id, sessionId: turn.sessionId, runId: turn.runId,
+        model: action.targetModel, confidence: turn.confidence, sources: turn.sources,
+        requestFingerprint: request.fingerprint, requestBlockIds: retainedHistory.map(block => block.id),
+        generatedBlockIds: [], input: range(request.tokens, 0, false), output: range(0, 0, false),
+        reason: 'Assume an extra request at the allocated position using the retained history. No output text is invented.' })
+      continue
+    }
     if (turn.confidence !== 'measured') regionUnsupported = true
     if (activeModel && activeModel !== action.targetModel) regionUnsupported = true
     activeModel = action.targetModel
@@ -404,14 +463,27 @@ const createSubagentReplay = (data, assumptions = {}) => {
     lower: total.lower !== null && measuredTotal !== null ? total.lower - measuredTotal : null,
     upper: total.upper !== null && measuredTotal !== null ? total.upper - measuredTotal : null,
     meaning: 'Estimated whole coordinator replay minus measured coordinator and descendant usage. Positive means more tokens in this scenario.' }
+  const allocatedInput = { estimate: sum(allocatedEstimates.map(item => item.input.estimate)),
+    lower: 0, upper: allocatedEstimates.length ? null : 0 }
+  const paddedInput = { estimate: sum([input.estimate, allocatedInput.estimate]),
+    lower: input.lower, upper: sum([input.upper, allocatedInput.upper]) }
+  const paddedTotal = { estimate: sum([paddedInput.estimate, output.estimate]),
+    lower: total.lower, upper: sum([paddedInput.upper, output.upper]) }
+  const paddedDifference = { estimate: paddedTotal.estimate !== null && measuredTotal !== null ? paddedTotal.estimate - measuredTotal : null,
+    lower: difference.lower, upper: paddedTotal.upper !== null && measuredTotal !== null ? paddedTotal.upper - measuredTotal : null }
   const ignoredAssumptions = Object.keys(assumptions).map(key => `${key}=${assumptions[key]}`)
   if (ignoredAssumptions.length) gap(`Legacy scalar overrides are recorded but not applied to ordered replay: ${ignoredAssumptions.join(', ')}.`)
-  return freeze({ version: 1, cutoff: data.cutoff, sourceSessionId: root?.id || null,
+  const gapReasons = [...new Set(gaps.map(item => item.reason))].map(reason => ({ reason,
+    count: gaps.filter(item => item.reason === reason).length }))
+  return freeze({ version: 2, cutoff: data.cutoff, sourceSessionId: root?.id || null,
     measured, measuredRuns: data.agents.flatMap(agent => agent.rows.map(row => ({ sessionId: row.sessionId, runId: row.id,
       provider: row.provider, model: row.model, source: row.usageSource, status: row.status,
       usage: Object.fromEntries(['input', 'output', 'cacheRead', 'cacheWrite', 'fresh', 'reasoning', 'total', 'requests'].map(field => [field, row[field]])) }))),
-    estimate: { input, output, total, difference, scope: 'All placed coordinator and recursive descendant work through cutoff.' },
-    coverage: { complete: estimates.length > 0 && !gaps.length && estimates.every(item => item.supported && item.output.upper !== null), gaps, unplacedSessions: unplaced,
+    estimate: { input, output, total, difference, scope: 'Placed recorded coordinator and recursive descendant work through cutoff, excluding synthetic allocated requests.' },
+    sensitivity: { allocatedRequests: { requests: allocatedEstimates.length, incrementalInput: allocatedInput,
+      input: paddedInput, output, total: paddedTotal, difference: paddedDifference, replayTurns: allocatedEstimates,
+      assumption: 'Add every placed allocated request at its synthetic position with the full retained history. Request counts and positions are uncertain, and no generated output is invented.' } },
+    coverage: { complete: estimates.length > 0 && !gaps.length && estimates.every(item => item.supported && item.output.upper !== null), gaps, gapReasons, unplacedSessions: unplaced,
       cutoff: data.cutoff, measuredUsageComplete: measured.combined.total.value !== null && !data.warnings.length,
       firstUnsupportedTurn: estimates.find(item => !item.supported || item.output.upper === null)?.turnId || null },
     confidenceCounts: Object.fromEntries(['measured', 'inferred', 'allocated'].map(confidence => [confidence,
@@ -431,6 +503,9 @@ const createSubagentReplay = (data, assumptions = {}) => {
       'Unknown compaction summaries, resets, model transitions, context limits and boundary allocations prevent a precise full-history estimate.',
       'Exact read removal requires identical call and result in the same run without intervening tools, prompts, refresh requests or instruction-file reads.',
       'Allocated turn usage conserves run totals for attribution only. It does not fabricate transcript text or request measurements.',
+      'The primary estimate excludes allocated requests without recorded blocks. Their repeated-history input appears only in the explicit sensitivity scenario.',
+      'Measured and inferred requests are removed only when every recorded generated block has an explicit removal disposition. Mixed turns retain their useful output and request.',
+      'Assistant handoff text is removed only with an exact retained duplicate tied to the removed delegation. Unclassified prose and the last coordinator answer remain.',
       'Estimates do not measure quality, time or money and do not imply a categorical delegation verdict.',
       ...(ignoredAssumptions.length ? [`Unapplied legacy assumptions: ${ignoredAssumptions.join(', ')}`] : []),
     ],
