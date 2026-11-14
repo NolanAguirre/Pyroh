@@ -77,14 +77,21 @@ const createSubagentReplay = (data, assumptions = {}) => {
         if (block.kind === 'prompt') {
           const entry = agent.events.find(item => item.event.captureId && item.event.captureId === block.captureId)
           const nextThread = entry?.event.providerAgentId
-          if (thread && nextThread && thread !== nextThread) { history = []; region += 1; uncertain = true }
+          if (thread && nextThread && thread !== nextThread) {
+            history = []
+            region += 1
+            uncertain = true
+          }
           if (nextThread) thread = nextThread
         }
         history.push(block)
         continue
       }
       const turn = turns.get(action.id)
-      if (model && model !== turn.model) { region += 1; uncertain = true }
+      if (model && model !== turn.model) {
+        region += 1
+        uncertain = true
+      }
       model = turn.model
       const request = tokenizer.request(history, model)
       const generated = tokenizer.output(turn.blocks.map(id => blocks.get(id)), model)
@@ -119,12 +126,15 @@ const createSubagentReplay = (data, assumptions = {}) => {
     for (const link of candidates) {
       const calls = evidence.blocks.filter(block => block.sessionId === link.parentSessionId
         && (!link.parentRunId || block.runId === link.parentRunId) && delegation(block) === 'spawn')
-      const matches = calls.filter(call => {
-        const result = unpack(blocks.get(call.resultId)?.content)
-        const input = parsed(call.content)
-        return result?.sessionId === child.id || (link.task && input?.task === link.task)
-      })
-      if (matches.length) { selected = { link, call: matches[0] }; break }
+      const direct = calls.filter(call => unpack(blocks.get(call.resultId)?.content)?.sessionId === child.id)
+      const taskMatches = calls.filter(call => link.task && parsed(call.content)?.task === link.task
+        && (!link.createdAt || call.ts <= link.createdAt))
+        .sort((a, b) => b.order - a.order || a.id.localeCompare(b.id))
+      const matches = direct.length ? direct : taskMatches
+      if (matches.length) {
+        selected = { link, call: matches[0], inferred: direct.length !== 1 }
+        break
+      }
     }
     if (!selected) {
       const link = candidates[0] || { parentSessionId: child.session.parentSessionId, parentRunId: child.session.parentRunId }
@@ -132,7 +142,10 @@ const createSubagentReplay = (data, assumptions = {}) => {
       const anchor = [...parentActions].reverse().find(action => action.runId === link.parentRunId)
       if (anchor) selected = { link, anchor, inferred: !link.workflow }
     }
-    if (!selected) { gap('Child has no recoverable parent spawn anchor, its work remains an unplaced region.', { sessionId: child.id }); continue }
+    if (!selected) {
+      gap('Child has no recoverable parent spawn anchor, its work remains an unplaced region.', { sessionId: child.id })
+      continue
+    }
     const anchorId = selected.call?.id || selected.anchor.id
     if (!insertions.has(anchorId)) insertions.set(anchorId, [])
     insertions.get(anchorId).push({ sessionId: child.id, parentSessionId: selected.link.parentSessionId,
@@ -140,7 +153,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
       createdAt: selected.link.createdAt || child.session.createdAt || 0,
       sources: [selected.link.source, ...(selected.call?.sources || [])].filter(Boolean) })
     linked.add(child.id)
-    if (selected.inferred) gap('Spawn position is inferred at the end of the linked parent run.', { sessionId: child.id })
+    if (selected.inferred) gap('Spawn position is inferred from task text or the linked parent run boundary.', { sessionId: child.id })
   }
   for (const children of insertions.values()) children.sort((a, b) => a.createdAt - b.createdAt || a.sessionId.localeCompare(b.sessionId))
 
@@ -148,7 +161,10 @@ const createSubagentReplay = (data, assumptions = {}) => {
   const visited = new Set()
   const active = new Set()
   const append = (id, parentModel = null, ancestry = []) => {
-    if (active.has(id)) { gap('Delegation cycle prevents a dependency-safe insertion.', { sessionId: id }); return }
+    if (active.has(id)) {
+      gap('Delegation cycle prevents a dependency-safe insertion.', { sessionId: id })
+      return
+    }
     if (visited.has(id)) return
     active.add(id)
     visited.add(id)
@@ -204,7 +220,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
     if (method === 'spawn') {
       const child = children.length === 1 ? children[0] : null
       const task = child && taskBlocks.get(child.sessionId)?.find(item => input?.task && content(item).trim() === input.task.trim())
-      if (!task || !visited.has(child.sessionId) || result?.error) continue
+      if (!task || child.inferred || !visited.has(child.sessionId) || result?.error) continue
       // Removal substitutes the explicit child task at this spawn point.
       if (result && replacement(unpack(result.content), position.get(result.id)) === null) continue
       remove(block, 'Delegation spawn is replaced by child work and its intact task.', [task.id])
@@ -245,7 +261,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
     const key = `${block.sessionId}:${block.runId}`
     if (key !== priorRun) previousRead = null
     priorRun = key
-    if (['prompt', 'boundary'].includes(block.kind)) previousRead = null
+    if (['prompt', 'boundary'].includes(block.kind) || (['text', 'thinking'].includes(block.kind) && content(block).trim())) previousRead = null
     if (block.kind !== 'tool_call' || dispositions.get(block.id).action === 'remove') continue
     const input = parsed(block.content)
     const file = input?.path || input?.file_path || input?.file
@@ -253,7 +269,10 @@ const createSubagentReplay = (data, assumptions = {}) => {
     const instruction = typeof file === 'string' && /(?:^|\/)(?:AGENTS\.md|SKILL\.md|[^/]*instructions?[^/]*)$/i.test(file)
     const eligible = pureRead(block) && file && !instruction && !input.refresh && !input.force && !input.no_cache
       && result && !result.error && [undefined, null, 0].includes(result.exitCode)
-    if (!eligible) { previousRead = null; continue }
+    if (!eligible) {
+      previousRead = null
+      continue
+    }
     if (previousRead && previousRead.call.fingerprint === block.fingerprint
       && previousRead.result.fingerprint === result.fingerprint
       && position.get(previousRead.result.id) < position.get(block.id)) {
@@ -263,7 +282,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
   }
   for (const turn of evidence.turns) {
     const generated = turn.blocks.map(id => blocks.get(id)).filter(block => block.generated)
-    if (turn.confidence === 'allocated' || !generated.length) continue
+    if (turn.confidence !== 'measured' || !generated.length) continue
     const retained = generated.filter(block => dispositions.get(block.id).action !== 'remove')
     const laterCoordinatorWork = ordered.some(action => action.kind === 'request' && action.sessionId === root?.id
       && position.get(action.id) > position.get(turn.id))
@@ -332,6 +351,10 @@ const createSubagentReplay = (data, assumptions = {}) => {
       && (rootRow ? item.runId === rootRow.id : position.get(item.id) <= position.get(turn.id)))
       .map(item => item.contextLimit).filter(known)
     const limit = coordinatorLimits.at(-1) ?? null
+    if (limit === null) {
+      regionUnsupported = true
+      gap('Coordinator context limit is unavailable for this replay turn.', { turnId: turn.id })
+    }
     const overLimit = limit !== null && request.tokens !== null && request.tokens + (output.tokens || 0) > limit
     if (overLimit) {
       regionUnsupported = true
@@ -359,9 +382,15 @@ const createSubagentReplay = (data, assumptions = {}) => {
     return [field, { value: sum(values), knownSubtotal: values.reduce((sum, value) => sum + (value || 0), 0),
       coveredRuns: values.filter(known).length, runs: values.length }]
   }))
+  const missingUsage = data.warnings.some(reason => /Linked child .*unlocated|Linked run .*missing|Source session .*unlocated|Parent run .*missing|Run metadata missing|Incomplete records|Run index unavailable|Unlocated child spawn/i.test(reason))
   const measured = { coordinator: baseline(data.agents.filter(agent => agent.depth === 0).flatMap(agent => agent.rows)),
     descendants: baseline(data.agents.filter(agent => agent.depth > 0).flatMap(agent => agent.rows)),
     combined: baseline(data.agents.flatMap(agent => agent.rows)) }
+  if (missingUsage) {
+    for (const group of [measured.descendants, measured.combined]) {
+      for (const field of Object.values(group)) field.value = null
+    }
+  }
   if (gaps.length || unplaced.length || !estimates.length) {
     input.upper = null
     output.upper = null
@@ -378,10 +407,13 @@ const createSubagentReplay = (data, assumptions = {}) => {
   const ignoredAssumptions = Object.keys(assumptions).map(key => `${key}=${assumptions[key]}`)
   if (ignoredAssumptions.length) gap(`Legacy scalar overrides are recorded but not applied to ordered replay: ${ignoredAssumptions.join(', ')}.`)
   return freeze({ version: 1, cutoff: data.cutoff, sourceSessionId: root?.id || null,
-    measured, estimate: { input, output, total, difference, scope: 'All placed coordinator and recursive descendant work through cutoff.' },
+    measured, measuredRuns: data.agents.flatMap(agent => agent.rows.map(row => ({ sessionId: row.sessionId, runId: row.id,
+      provider: row.provider, model: row.model, source: row.usageSource, status: row.status,
+      usage: Object.fromEntries(['input', 'output', 'cacheRead', 'cacheWrite', 'fresh', 'reasoning', 'total', 'requests'].map(field => [field, row[field]])) }))),
+    estimate: { input, output, total, difference, scope: 'All placed coordinator and recursive descendant work through cutoff.' },
     coverage: { complete: estimates.length > 0 && !gaps.length && estimates.every(item => item.supported && item.output.upper !== null), gaps, unplacedSessions: unplaced,
       cutoff: data.cutoff, measuredUsageComplete: measured.combined.total.value !== null && !data.warnings.length,
-      firstUnsupportedTurn: estimates.find(item => !item.supported)?.turnId || null },
+      firstUnsupportedTurn: estimates.find(item => !item.supported || item.output.upper === null)?.turnId || null },
     confidenceCounts: Object.fromEntries(['measured', 'inferred', 'allocated'].map(confidence => [confidence,
       evidence.turns.filter(turn => turn.confidence === confidence).length])),
     removed: { blocks: [...dispositions.values()].filter(item => item.action === 'remove').length,

@@ -268,7 +268,11 @@ const collect = (current, writeDir, cutoff) => {
       seenRuns.add(key)
       included.add(record.id)
       // Workflow controller runs are containers, not additive model usage.
-      if (record.workflow) { containers.push({ record, file }); excluded += 1; continue }
+      if (record.workflow) {
+        containers.push({ record, file })
+        excluded += 1
+        continue
+      }
       const complete = number(record.endedAt) && record.endedAt <= cutoff
       const provider = record.provider || session.provider
       const reported = usage.has(record.id) ? usage.get(record.id).usage : record.usage
@@ -276,6 +280,8 @@ const collect = (current, writeDir, cutoff) => {
       if (!complete) warnings.add(`Run ${record.id} was ongoing or lacked a completion timestamp at cutoff; usage is unknown.`)
       const evidence = requestEvidence(events.get(record.id) || [], tokens, provider, record.modelRequests, cutoff)
       rows.push({ ...tokens, requests: complete ? evidence.requests : null, requestFields: evidence.fields, requestEvidence: evidence,
+        usageSource: { file: dir && fs.existsSync(path.join(dir, 'usage', `${record.id}.json`))
+          ? path.join(dir, 'usage', `${record.id}.json`) : file, field: 'usage' },
         record, file, id: record.id, sessionId: node.id, provider, model: record.model || session.model || 'unknown',
         startedAt: record.startedAt, endedAt: complete ? record.endedAt : null, status: complete ? record.status || 'finished' : 'incomplete at cutoff' })
     }

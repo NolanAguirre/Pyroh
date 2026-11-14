@@ -5,6 +5,7 @@ const { fingerprint, freeze } = require('./replayTokenizer')
 
 const known = value => Number.isSafeInteger(value) && value >= 0
 const text = value => value == null ? '' : typeof value === 'string' ? value : JSON.stringify(value)
+const contentText = value => typeof value === 'string' ? value : text(value)
 const total = values => values.every(known) ? values.reduce((sum, value) => sum + value, 0) : null
 const median = values => {
   const sorted = values.filter(value => value > 0).sort((a, b) => a - b)
@@ -29,13 +30,22 @@ const readTranscript = (dir, cutoff, warnings) => {
       if (!line.trim()) return
       let event
       try { event = JSON.parse(line) }
-      catch { warnings.add(`Unreadable transcript record: ${file}:${index + 1}`); return }
-      if (!known(event.ts)) { warnings.add(`Transcript timestamp missing: ${file}:${index + 1}`); return }
+      catch {
+        warnings.add(`Unreadable transcript record: ${file}:${index + 1}`)
+        return
+      }
+      if (!known(event.ts)) {
+        warnings.add(`Transcript timestamp missing: ${file}:${index + 1}`)
+        return
+      }
       if (event.ts > cutoff) return
       const hash = fingerprint(event)
       const source = { file, line: index + 1, link: `${file}:${index + 1}` }
       const copy = copies.get(hash)
-      if (copy && copy.source.file !== file) { copy.sources.push(source); return }
+      if (copy && copy.source.file !== file) {
+        copy.sources.push(source)
+        return
+      }
       const entry = { event, source, sources: [source], fingerprint: hash }
       copies.set(hash, entry)
       events.push(entry)
@@ -156,22 +166,30 @@ const createTranscriptEvidence = (agents) => {
         }
         addGap(row, 'Provider prompt capture missing: instructions and tool schemas may be absent.')
       }
-      if (!runBlocks.some(block => block.kind === 'text') && row.record?.result) {
+      const finalText = text(row.record?.result)
+      const capturedText = runBlocks.filter(block => block.kind === 'text').map(block => contentText(block.content)).join('')
+      if (finalText && !capturedText.includes(finalText)) {
         add('final-result', { kind: 'text', role: 'assistant', content: text(row.record.result), generated: true,
           visibility: 'conversation', lifetime: 'session', fallback: true }, {
           order: (entries.at(-1)?.order ?? 0) + 0.5, event: { ts: row.endedAt }, sources: [{ file: row.file, field: 'result' }],
         })
-        addGap(row, 'Only final text is available, intermediate generated content may be missing.')
+        addGap(row, 'Final run text was recovered outside streamed response blocks, its boundary is inferred.')
       }
       runBlocks.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+      for (const block of runBlocks) {
+        if (block.kind === 'tool_call' && !block.resultId) addGap(row, 'Tool-result content is missing or unavailable.', block.sources)
+      }
       const responses = responseRecords(row, entries)
       const runTurns = responses.map((response, index) => {
         const start = response.starts.length ? Math.min(...response.starts) : null
-        const end = response.ends.length ? Math.max(...response.ends) : null
+        const completedAt = response.record.lastObservedAt ?? response.record.observedAt
+        const completionEntry = known(completedAt) && response.record.status === 'completed'
+          ? entries.filter(entry => entry.event.ts <= completedAt).at(-1) : null
+        const end = response.ends.length ? Math.max(...response.ends) : completionEntry?.order ?? null
         return { id: `${row.sessionId}:${row.id}:response:${index}`, sessionId: row.sessionId, runId: row.id,
           responseKey: response.key, responseId: response.record.requestId,
           model: response.record.model || row.model, provider: row.provider, sources: response.sources,
-          confidence: row.requestEvidence?.coverage === 'complete' && start !== null && end !== null ? 'measured' : 'inferred',
+          confidence: row.requestEvidence?.coverage === 'complete' && response.starts.length > 0 && response.ends.length > 0 ? 'measured' : 'inferred',
           reason: start !== null ? 'Recorded response start and transcript order.' : 'Response identity with inferred content boundary.',
           start, end, order: start ?? end, blocks: [], measuredUsage: response.record.usage || null,
           usageReconciled: row.requestEvidence?.coverage === 'complete' }
@@ -189,16 +207,24 @@ const createTranscriptEvidence = (agents) => {
         }
         if (!turn && block.generated) {
           if (!inferred || afterResult) {
+            const unassigned = runTurns.find(item => item.responseId && item.start === null && item.end === null && !item.blocks.length)
+            if (unassigned) inferred = unassigned
+            else {
             inferred = { id: `${row.sessionId}:${row.id}:inferred:${runTurns.length}`, sessionId: row.sessionId, runId: row.id,
               model: row.model, provider: row.provider, confidence: 'inferred',
               reason: 'Generated content after a prompt/tool-result boundary, without a matched response ID.',
               order: block.order - 0.01, start: null, end: null, blocks: [], sources: block.sources,
               measuredUsage: null, usageReconciled: false }
             runTurns.push(inferred)
+            }
           }
           turn = inferred
         }
-        if (turn) { block.turnId = turn.id; turn.blocks.push(block.id); afterResult = false }
+        if (turn) {
+          block.turnId = turn.id
+          turn.blocks.push(block.id)
+          afterResult = false
+        }
         if (['tool_result', 'prompt', 'boundary'].includes(block.kind)) afterResult = true
       }
       const peers = history.filter(item => item.provider === row.provider && item.model === row.model)
@@ -252,7 +278,10 @@ const createTranscriptEvidence = (agents) => {
             : 'Run total allocated equally, conflicting or incomplete response usage remains separate evidence.'
         })
         const recipient = [...runTurns].reverse().find((turn, reverseIndex) => !preserve || observed[runTurns.length - reverseIndex - 1] === null)
-        if (recipient && remainder > 0) { recipient.attributedUsage[field] += remainder; remainder = 0 }
+        if (recipient && remainder > 0) {
+          recipient.attributedUsage[field] += remainder
+          remainder = 0
+        }
         accounting.residual[field] = known(budget) ? remainder : null
       }
       runAccounting.push(accounting)

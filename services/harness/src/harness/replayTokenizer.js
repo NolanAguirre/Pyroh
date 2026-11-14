@@ -32,7 +32,10 @@ const createReplayTokenizer = () => {
       const file = path.join(dir, 'package.json')
       if (fs.existsSync(file)) {
         const metadata = JSON.parse(fs.readFileSync(file, 'utf8'))
-        if (metadata.name === 'js-tiktoken') { version = metadata.version; break }
+        if (metadata.name === 'js-tiktoken') {
+          version = metadata.version
+          break
+        }
       }
       dir = path.dirname(dir)
     }
@@ -71,7 +74,8 @@ const createReplayTokenizer = () => {
     type: block.kind, ...(block.name ? { name: block.name } : {}),
     ...(block.toolId ? { tool_call_id: block.toolId } : {}), content: block.content }))), model)
   const output = (blocks, model) => count(blocks.filter(block => block.generated).map(block =>
-    typeof block.content === 'string' ? block.content : serialize(block.content)).join('\n'), model, 'generated-text-v1')
+    block.kind === 'tool_call' ? serialize({ name: block.name, arguments: block.content })
+      : typeof block.content === 'string' ? block.content : serialize(block.content)).join('\n'), model, 'generated-text-v1')
   return { request, output, identities: () => [...identities.values()], cacheSize: () => cache.size }
 }
 
