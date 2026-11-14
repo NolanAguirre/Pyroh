@@ -127,6 +127,7 @@ const createTranscriptEvidence = (agents) => {
           const call = add(`call:${id}`, { kind: 'tool_call', toolId: id, name: event.name || '', content: '',
             visibility: 'conversation', lifetime: 'session', generated: true }, entry)
           if (event.name) call.name = event.name
+          if (event.status !== undefined) call.status = event.status
           if (event.input !== undefined) call.content = event.input
           else if (event.inputDelta !== undefined) call.content = text(call.content) + text(event.inputDelta)
           if (event.output !== undefined || event.outputDelta !== undefined) {
@@ -177,7 +178,13 @@ const createTranscriptEvidence = (agents) => {
       }
       runBlocks.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
       for (const block of runBlocks) {
-        if (block.kind === 'tool_call' && !block.resultId) addGap(row, 'Tool-result content is missing or unavailable.', block.sources)
+        if (block.kind !== 'tool_call' || block.resultId) continue
+        const capturedFileChange = block.name === 'fileChange' && block.status === 'completed'
+          && Array.isArray(block.content) && block.content.length > 0
+          && block.content.every(change => typeof change?.path === 'string' && typeof change?.diff === 'string')
+        // Completed file changes carry their patches in input, with no separate output payload.
+        if (capturedFileChange) block.resultRepresentation = 'input-diff'
+        else addGap(row, 'Tool-result content is missing or unavailable.', block.sources)
       }
       const responses = responseRecords(row, entries)
       const runTurns = responses.map((response, index) => {
