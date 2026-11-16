@@ -171,7 +171,7 @@
 .kanban__epic-table { border-collapse: separate; border-spacing: 0; table-layout: fixed; width: max-content; }
 .kanban__epic-table th, .kanban__epic-table td { box-sizing: border-box; vertical-align: top; text-align: left; border-right: .0625rem solid #4a5262; border-bottom: .0625rem solid #4a5262; }
 .kanban__epic-table thead th { position: sticky; top: 0; z-index: 2; background: #252830; border-top: .0625rem solid #4a5262; }
-.kanban__epic-heading { width: 38rem; min-width: 38rem; max-width: 38rem; padding: .75rem; background: #252830; border-left: .0625rem solid #4a5262; font-size: .9375rem; font-weight: 500; }
+.kanban__epic-heading { width: 19rem; min-width: 19rem; max-width: 19rem; padding: .75rem; background: #252830; border-left: .0625rem solid #4a5262; font-size: .9375rem; font-weight: 500; }
 .kanban__epic-heading > .button { display: flex; margin-top: .5rem; }
 .kanban__status-heading, .kanban__epic-cell { width: 38rem; min-width: 38rem; max-width: 38rem; padding: .75rem; background: #2c313c; }
 .kanban__status-heading--collapsed, .kanban__epic-cell--collapsed { width: 2.5rem; min-width: 2.5rem; max-width: 2.5rem; padding: .25rem; }
