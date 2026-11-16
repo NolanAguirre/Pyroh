@@ -5,13 +5,14 @@ const fs = require('fs')
 const net = require('net')
 const paths = require('../store/paths')
 const { createLineReader, encode } = require('../hostProtocol')
-const { createPtyStore } = require('./ptyStore')
+const { preparePty } = require('../../scripts/prepare-pty')
 
 const FOREGROUND = process.argv.includes('--foreground')
 
 const log = (line) => process.stdout.write(`[pty-host ${new Date().toISOString()}] ${line}\n`)
 
 const createPtyHost = () => {
+  const { createPtyStore } = require('./ptyStore')
   const data = Object.create(null)
   data.clients = new Set()
   data.server = null
@@ -129,6 +130,11 @@ const createPtyHost = () => {
   return { start, stop }
 }
 
-if (require.main === module) createPtyHost().start()
+if (require.main === module) {
+  preparePty().then(() => createPtyHost().start()).catch((error) => {
+    console.error(error.message)
+    process.exitCode = 1
+  })
+}
 
 module.exports = { createPtyHost }

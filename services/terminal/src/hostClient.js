@@ -8,6 +8,7 @@ const { spawn } = require('child_process')
 const config = require('./config')
 const paths = require('./store/paths')
 const { createLineReader, encode } = require('./hostProtocol')
+const { preparePty } = require('../scripts/prepare-pty')
 
 const HOST_ENTRY = path.join(__dirname, 'ptyHost', 'index.js')
 const REQUEST_TIMEOUT = 5000
@@ -63,6 +64,8 @@ const createHostClient = () => {
     try {
       return await connectOnce()
     } catch {
+      // Finish any native rebuild before starting the host's five-second wait.
+      await preparePty()
       spawnHost()
     }
     for (let attempt = 0; attempt < CONNECT_ATTEMPTS; attempt += 1) {

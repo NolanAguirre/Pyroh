@@ -1,0 +1,59 @@
+#!/usr/bin/env node
+const path = require('path')
+const { execFile } = require('child_process')
+const { promisify } = require('util')
+
+const run = promisify(execFile)
+const serviceDir = path.resolve(__dirname, '..')
+let preparation
+
+const probe = () => run(process.execPath, ['-e', "require('node-pty')"], {
+  cwd: serviceDir,
+  timeout: 10000,
+})
+
+const prepare = async () => {
+  try {
+    await probe()
+    return
+  } catch (error) {
+    // A missing package needs installation, not a native rebuild.
+    try {
+      require.resolve('node-pty')
+    } catch {
+      throw new Error('node-pty is missing. Run make services.terminal.install from the project root.')
+    }
+    console.error(`node-pty failed to load with ${process.execPath} (${process.version}, ${process.arch}); rebuilding once.`)
+    console.error(error.stderr || error.message)
+  }
+
+  try {
+    await run('npm', ['rebuild', 'node-pty', '--ignore-scripts=false', '--foreground-scripts'], {
+      cwd: serviceDir,
+      // npm and node-gyp must use the same Node executable as the host.
+      env: {
+        ...process.env,
+        PATH: `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH || ''}`,
+      },
+      maxBuffer: 4 * 1024 * 1024,
+    })
+    await probe()
+  } catch (error) {
+    throw new Error(`node-pty preparation failed for ${process.execPath} (${process.version}, ${process.arch}). Fix the native build error below, run make services.terminal.install from the project root, then restart the terminal service.\n${error.stderr || error.stdout || error.message}`)
+  }
+}
+
+// Share startup work and retain failures so reconnects cannot loop on rebuilds.
+const preparePty = () => {
+  if (!preparation) preparation = prepare()
+  return preparation
+}
+
+if (require.main === module) {
+  preparePty().catch((error) => {
+    console.error(error.message)
+    process.exitCode = 1
+  })
+}
+
+module.exports = { preparePty }

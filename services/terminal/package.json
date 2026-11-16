@@ -5,6 +5,7 @@
   "type": "commonjs",
   "main": "src/server/index.js",
   "scripts": {
+    "postinstall": "node scripts/prepare-pty",
     "start": "node src/server/index.js"
   },
   "license": "ISC",
