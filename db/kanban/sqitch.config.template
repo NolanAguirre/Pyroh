@@ -3,7 +3,9 @@
 	plan_file = sqitch.plan
 	top_dir = .
 [engine "pg"]
-	target = db:pg:kanban
+	target = local
+[target "local"]
+	uri = db:pg://${PGUSER}@${PGHOST}:${PGPORT}/${PGDATABASE}
 [deploy]
 	mode = change
 	verify = false

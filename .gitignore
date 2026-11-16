@@ -46,6 +46,8 @@ tmp/
 # generated Sqitch configuration
 /db/analytics/sqitch.config
 /db/analytics/sqitch.config.??????
+/db/kanban/sqitch.config
+/db/kanban/sqitch.config.??????
 
 # editor and os
 .DS_Store

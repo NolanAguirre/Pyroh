@@ -1,0 +1,25 @@
+#!/bin/sh
+set -eu
+
+cd "$(dirname "$0")/.."
+
+: "${PGHOST:?Set PGHOST in env-dir}"
+: "${PGPORT:?Set PGPORT in env-dir}"
+: "${PGUSER:?Set PGUSER in env-dir}"
+: "${PGDATABASE:?Set PGDATABASE in env-dir}"
+
+umask 077
+config_tmp=$(mktemp ./sqitch.config.XXXXXX)
+trap 'rm -f "$config_tmp"' 0
+trap 'exit 1' HUP INT TERM
+envsubst '${PGHOST} ${PGPORT} ${PGUSER} ${PGDATABASE}' < sqitch.config.template > "$config_tmp"
+mv "$config_tmp" sqitch.config
+trap - 0 HUP INT TERM
+
+# Sqitch defaults to sqitch.conf; explicitly select the rendered configuration.
+SQITCH_CONFIG="$(pwd)/sqitch.config"
+export SQITCH_CONFIG
+
+if [ "$#" -gt 0 ]; then
+    exec "$@"
+fi

@@ -409,7 +409,7 @@ db.mcpdevid.revert:
 	$(MAKE) -C db/mcpdevid revert
 
 # Kanban shares the harness UI and nginx entry point.
-.PHONY: services.kanban.help services.kanban.install services.kanban.prepare services.kanban.start db.kanban.help db.kanban.deploy db.kanban.status infrastructure.kanban.register
+.PHONY: services.kanban.help services.kanban.install services.kanban.prepare services.kanban.start db.kanban.help db.kanban.init db.kanban.render db.kanban.deploy db.kanban.status db.kanban.verify db.kanban.revert infrastructure.kanban.register
 
 help: services.kanban.help db.kanban.help
 
@@ -428,14 +428,26 @@ services.kanban.start:
 	$(MAKE) -C services/kanban start
 
 db.kanban.help:
-	@echo 'db/kanban: db.kanban.deploy db.kanban.status'
+	@echo 'db/kanban: db.kanban.init db.kanban.render db.kanban.deploy db.kanban.status db.kanban.verify db.kanban.revert'
 	@$(MAKE) --no-print-directory -C db/kanban help
 
-db.kanban.deploy:
+db.kanban.init: ## Create the kanban database
+	$(MAKE) -C db/kanban init
+
+db.kanban.render: ## Render kanban Sqitch config using env-dir
+	$(MAKE) -C db/kanban render
+
+db.kanban.deploy: ## Deploy pending kanban Sqitch changes
 	$(MAKE) -C db/kanban deploy
 
-db.kanban.status:
+db.kanban.status: ## Show kanban Sqitch status
 	$(MAKE) -C db/kanban status
+
+db.kanban.verify: ## Run kanban Sqitch verify scripts
+	$(MAKE) -C db/kanban verify
+
+db.kanban.revert: ## Refuse revert (forward-only)
+	$(MAKE) -C db/kanban revert
 
 infrastructure.kanban.register:
 	$(MAKE) -C infrastructure/kanban register

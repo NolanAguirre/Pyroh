@@ -11,7 +11,7 @@ help:
 	@echo 'dev      Start the API on loopback (PORT defaults to 6011)'
 	@echo 'start    Start the API on loopback (PORT defaults to 6011)'
 	@echo 'Loads ENV_DIR/default then ENV_DIR/$$ENV_USER (defaults to $$USER).'
-	@echo 'DATABASE_URL is shared with db/kanban; deploy that database before starting.'
+	@echo 'DATABASE_URL must point at the database configured in db/kanban/env-dir; deploy it before starting.'
 	@echo 'dev and start prepare dependencies before launching the API.'
 
 install:
