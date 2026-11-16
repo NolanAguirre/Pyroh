@@ -96,6 +96,17 @@
 .kanban__editor-title { padding-right: 1.75rem; }
 .kanban__editor-epic input { width: auto; }
 .kanban__advanced { margin-top: 1.25rem; }
+.kanban__advanced .fold { border: 0.0625rem solid #5a6374; border-radius: 0.5rem; background: #252830; }
+.kanban__advanced .fold__trigger { padding: 0.75rem 1rem; background: transparent; color: #f2f4f7; font-size: 0.875rem; font-weight: 600; }
+.kanban__advanced .fold__trigger:hover,
+.kanban__advanced .fold__trigger--open { background: #3a4150; color: #8ec0ff; }
+.kanban__advanced .fold__trigger-icon { font-size: 0.75rem; margin-left: 0.5rem; }
+.kanban__advanced .fold__content-inner { display: grid; gap: 1rem; padding: 1rem; border-top: 0.0625rem solid #5a6374; color: #f2f4f7; line-height: 1.45; }
+.kanban__advanced-field { display: grid; gap: 0.375rem; }
+.kanban__editor .kanban__advanced label { margin-top: 0; }
+.kanban__editor .kanban__editor-epic { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.kanban__advanced-hint { margin: 0; color: #c5ccd6; font-size: 0.8125rem; font-weight: 400; line-height: 1.45; }
+.kanban__advanced-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; align-items: start; }
 .kanban__created { margin-top: 1.25rem; }
 .kanban__editor fieldset { padding: 0; margin: 0; border: 0; min-width: 0; }
 .kanban__editor label { display: grid; gap: 0.5rem; margin-top: 1.25rem; font-size: .875rem; font-weight: 600; }
@@ -134,6 +145,7 @@
   .kanban__board-canvas { padding: 1.25rem 1rem; min-height: 0; gap: 0.875rem; }
   .kanban__column { flex-basis: min(19rem, 85vw); width: min(19rem, 85vw); }
   .kanban__editor { padding: 1.5rem 1.125rem; }
+  .kanban__advanced-pair { grid-template-columns: 1fr; }
 }
 
 .kanban { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; flex: 1; color: #f2f4f7; background: #1e2128; color-scheme: dark; }

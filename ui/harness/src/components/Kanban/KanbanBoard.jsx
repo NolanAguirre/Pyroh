@@ -40,29 +40,35 @@ const Editor = ({ devId, user, editor, boards, hierarchy, busy, error, onSave, o
             <Fold>
               <FoldTrigger>Advanced</FoldTrigger>
               <FoldContent>
-                <label className="kanban__editor-epic">Epic<input type="checkbox" checked={epicLocked || epic} disabled={epicLocked} onChange={(event) => setEpic(event.target.checked)} aria-describedby="kanban-epic-help" /></label>
-                <p id="kanban-epic-help" className="kanban__comments-empty">Only epics appear when nesting a task under a parent.</p>
-                <label>Parent task<select value={parentId} onChange={(event) => setParentId(event.target.value)} aria-describedby="kanban-parent-help">
-                  <option value="">No parent (root task)</option>
-                  {unavailableParent && <option value={parentId} disabled>Current parent cannot be kept — remove it</option>}
-                  {parents.map((card) => <option key={card.id} value={card.id}>{card.title} · {card.boardTitle}{card.archivedAt ? ' · Archived' : ''}</option>)}
-                </select></label>
-                <p id="kanban-parent-help" className="kanban__comments-empty">{children.length
-                  ? 'This task has children. Remove or reassign them, including archived children, before choosing a parent.'
-                  : 'Choose an epic to nest this task under it. Choose No parent to remove the relationship.'}</p>
-                <label>Board<select value={boardId} onChange={(event) => {
-                  const destinationId = event.target.value
-                  const destinationColumns = boards.find((board) => board.id === destinationId)?.boardColumnsByBoardId.nodes || []
-                  setBoardId(destinationId)
-                  setColumnId(destinationColumns[0]?.id || '')
-                }}>
-                  {boards.map((board) => <option key={board.id} value={board.id}>{board.title}</option>)}
-                </select></label>
-                <label>Column<DevScope id="ntbho75"><select required disabled={!columns.length} value={validColumn ? columnId : ''} onChange={(event) => setColumnId(event.target.value)}>
-                  {!validColumn && <option value="">{columns.length ? 'Choose a column' : 'No columns available'}</option>}
-                  {columns.map((column) => <option key={column.id} value={column.id}>{column.title}</option>)}
-                </select></DevScope></label>
-                {!columns.length && <p className="kanban__comments-empty" role="status">This board has no columns. Add a column to it or choose another board before saving.</p>}
+                <div className="kanban__advanced-field">
+                  <label className="kanban__editor-epic">Epic<input type="checkbox" checked={epicLocked || epic} disabled={epicLocked} onChange={(event) => setEpic(event.target.checked)} aria-describedby="kanban-epic-help" /></label>
+                  <p id="kanban-epic-help" className="kanban__advanced-hint">Only epics appear when nesting a task under a parent.</p>
+                </div>
+                <div className="kanban__advanced-field">
+                  <label>Parent task<select value={parentId} onChange={(event) => setParentId(event.target.value)} aria-describedby="kanban-parent-help">
+                    <option value="">No parent (root task)</option>
+                    {unavailableParent && <option value={parentId} disabled>Current parent cannot be kept — remove it</option>}
+                    {parents.map((card) => <option key={card.id} value={card.id}>{card.title} · {card.boardTitle}{card.archivedAt ? ' · Archived' : ''}</option>)}
+                  </select></label>
+                  <p id="kanban-parent-help" className="kanban__advanced-hint">{children.length
+                    ? 'This task has children. Remove or reassign them, including archived children, before choosing a parent.'
+                    : 'Choose an epic to nest this task under it. Choose No parent to remove the relationship.'}</p>
+                </div>
+                <div className="kanban__advanced-pair">
+                  <label>Board<select value={boardId} onChange={(event) => {
+                    const destinationId = event.target.value
+                    const destinationColumns = boards.find((board) => board.id === destinationId)?.boardColumnsByBoardId.nodes || []
+                    setBoardId(destinationId)
+                    setColumnId(destinationColumns[0]?.id || '')
+                  }}>
+                    {boards.map((board) => <option key={board.id} value={board.id}>{board.title}</option>)}
+                  </select></label>
+                  <label>Column<DevScope id="ntbho75"><select required disabled={!columns.length} value={validColumn ? columnId : ''} onChange={(event) => setColumnId(event.target.value)}>
+                    {!validColumn && <option value="">{columns.length ? 'Choose a column' : 'No columns available'}</option>}
+                    {columns.map((column) => <option key={column.id} value={column.id}>{column.title}</option>)}
+                  </select></DevScope></label>
+                </div>
+                {!columns.length && <p className="kanban__advanced-hint" role="status">This board has no columns. Add a column to it or choose another board before saving.</p>}
               </FoldContent>
             </Fold>
           </div>
