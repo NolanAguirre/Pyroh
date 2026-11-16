@@ -160,7 +160,7 @@
 
 .kanban__search { flex: 1 1 13.75rem; max-width: 26.25rem; min-width: 0; padding: .5625rem .75rem; border: .0625rem solid #5a6374; border-radius: .375rem; background: #1e2128; color: #f2f4f7; }
 
-.popup__panel.kanban__popup { display: flex; width: 90rem; height: calc(100dvh - 4rem); min-width: 0; max-width: calc(100vw - 2rem); max-height: calc(100dvh - 4rem); padding: 0; overflow: hidden; }
+.popup__panel.kanban__popup { display: flex; width: 80vw; height: calc(100dvh - 4rem); min-width: 0; max-width: 80vw; max-height: calc(100dvh - 4rem); padding: 0; overflow: hidden; }
 .kanban__popup .kanban__toolbar { flex-shrink: 0; }
 .kanban__popup .kanban__toolbar h1 { overflow-wrap: anywhere; }
 .kanban__expand { flex-shrink: 0; color: #8ec0ff; font-size: .875rem; text-decoration: none; padding: .5rem; }
