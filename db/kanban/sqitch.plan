@@ -11,3 +11,4 @@ v1.006.0 [v1.005.0] 2026-11-14T16:57:16Z nolan <nolan@nolan> # Workspace board a
 v1.007.0 [v1.006.0] 2026-11-14T21:18:00Z nolan <nolan@nolan> # Mark tasks as epics for nesting
 v1.008.0 [v1.007.0] 2026-11-14T21:19:00Z nolan <nolan@nolan> # Move cards between boards
 v1.009.0 [v1.008.0] 2026-11-14T21:34:01Z nolan <nolan@nolan> # Persistent epic rows and task ordering within parent and status
+v1.010.0 [v1.009.0] 2026-11-16T00:00:00Z nolan <nolan@nolan> # Allow moving tasks without an epic
