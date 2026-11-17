@@ -9,7 +9,8 @@
 !**/env-dir/default/**
 
 # dependencies
-node_modules/
+# Ignore dependency directories at every depth.
+**/node_modules/
 
 # python
 .venv/
