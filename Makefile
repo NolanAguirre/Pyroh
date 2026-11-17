@@ -1,6 +1,6 @@
 .PHONY: services.terminal.install services.terminal.build services.terminal.start services.terminal.stop-host services.terminal.host services.terminal.help services.editor.install services.editor.build services.editor.start services.editor.help services.git.install services.git.build services.git.start services.git.help
 
-.PHONY: help install install.js install.py start \
+.PHONY: help install install.system install.js install.py start \
 	services.harness.install services.harness.start services.harness.cli services.harness.models services.harness.models.refresh services.harness.tool-stats services.harness.index.rebuild \
 	services.categorizer.install services.categorizer.install.js services.categorizer.install.python services.categorizer.install.model services.categorizer.start services.categorizer.consumer \
 	services.analytics.install services.analytics.build services.analytics.start services.analytics.sync services.analytics.backfill \
@@ -81,6 +81,7 @@ help: ## Show this help
 	@printf '%s\n' '  services.git.start               git: Start the foreground API server'
 	@printf '%s\n' '  services.git.help                git: Show service help'
 	@printf '%s\n' '  install                          Install all services and UIs, including python venvs'
+	@printf '%s\n' '  install.system                   Install Ubuntu/Fedora system deps (ARGS="--start-postgres" optional)'
 	@printf '%s\n' '  install.js                       Install only JS packages across all services and UIs'
 	@printf '%s\n' '  install.py                       Install python venvs for the GPU services'
 	@printf '%s\n' '  start                            Start the harness stack; Ctrl+C closes the terminal host and shells'
@@ -296,6 +297,9 @@ services.git.start: ## git: Start the foreground API server
 
 services.git.help: ## git: Show service help
 	$(MAKE) -C services/git help
+
+install.system: ## Install Ubuntu/Fedora system dependencies
+	sh scripts/install-system-deps $(ARGS)
 
 install: ## Install all services and UIs, including python venvs
 	$(MAKE) services.harness.install

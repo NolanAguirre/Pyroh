@@ -1,0 +1,148 @@
+#!/bin/sh
+set -eu
+
+usage() {
+    cat <<'EOF'
+Usage: sh scripts/install-system-deps [--start-postgres]
+
+Install system dependencies on Ubuntu or Fedora using sudo when needed.
+Includes PostgreSQL, SQLite, Sqitch and its drivers, nginx, Python,
+native build tools, Git, ripgrep, envdir, and s6-setsid.
+Installs distro Node/npm only when they are missing; requires Node >=22.13.
+Fedora installs Sqitch from CPAN and builds missing s6 helpers from source.
+
+  --start-postgres  Initialize Fedora's default cluster if absent, then
+                    enable and start PostgreSQL (requires systemd).
+  -h, --help        Show this help.
+
+Package managers may start services during installation. This script does
+not create application databases, change authentication, run migrations,
+install npm/Python app packages, or install GPU drivers or model weights.
+EOF
+}
+
+die() {
+    printf '%s\n' "$*" >&2
+    exit 1
+}
+
+start_postgres=0
+for arg do
+    case "$arg" in
+        --start-postgres) start_postgres=1 ;;
+        -h|--help) usage; exit 0 ;;
+        *) usage >&2; die "Unknown option: $arg" ;;
+    esac
+done
+
+[ -r /etc/os-release ] || die 'This installer supports Ubuntu and Fedora only.'
+. /etc/os-release
+case "${ID:-}" in
+    ubuntu|fedora) ;;
+    *) die "Unsupported distribution: ${ID:-unknown}. Expected Ubuntu or Fedora." ;;
+esac
+
+as_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+if [ "$(id -u)" -ne 0 ]; then
+    command -v sudo >/dev/null 2>&1 || die 'Run as root or install sudo first.'
+    sudo -v
+fi
+
+if [ "$start_postgres" -eq 1 ]; then
+    [ -d /run/systemd/system ] || die '--start-postgres requires a running systemd instance.'
+fi
+
+# Preserve runtimes installed through a user's Node version manager.
+set --
+if ! command -v node >/dev/null 2>&1; then
+    set -- "$@" nodejs
+fi
+if ! command -v npm >/dev/null 2>&1; then
+    set -- "$@" npm
+fi
+
+case "$ID" in
+    ubuntu)
+        as_root apt-get update
+        as_root apt-get install -y \
+            ca-certificates curl build-essential python3 python3-venv python3-pip \
+            git ripgrep nginx daemontools s6 \
+            postgresql postgresql-client postgresql-contrib sqlite3 \
+            sqitch libdbd-pg-perl libdbd-sqlite3-perl "$@"
+        ;;
+    fedora)
+        as_root dnf install -y \
+            ca-certificates curl gcc gcc-c++ make python3 python3-pip \
+            git ripgrep nginx tar gzip \
+            postgresql-server postgresql postgresql-contrib sqlite \
+            perl-devel perl-App-cpanminus perl-DBD-Pg perl-DBD-SQLite "$@"
+        if ! command -v sqitch >/dev/null 2>&1; then
+            as_root cpanm --notest --mirror https://cpan.metacpan.org --mirror-only App::Sqitch
+        fi
+
+        # Fedora does not provide these helpers in its standard repositories.
+        # Build in isolation and install only the two binaries the app uses.
+        if ! command -v s6-setsid >/dev/null 2>&1 || ! command -v envdir >/dev/null 2>&1; then
+            build_dir=$(mktemp -d "${TMPDIR:-/tmp}/pyroh-deps.XXXXXX")
+            trap 'rm -rf "$build_dir"' 0
+            trap 'exit 1' HUP INT TERM
+            skalibs_version=2.16.0.0
+            s6_version=2.15.1.1
+            (
+                cd "$build_dir"
+                curl -fL --retry 3 -o skalibs.tar.gz \
+                    "https://skarnet.org/software/skalibs/skalibs-$skalibs_version.tar.gz"
+                curl -fL --retry 3 -o s6.tar.gz \
+                    "https://skarnet.org/software/s6/s6-$s6_version.tar.gz"
+                tar -xzf skalibs.tar.gz
+                tar -xzf s6.tar.gz
+                cd "skalibs-$skalibs_version"
+                ./configure --prefix="$build_dir/local" --disable-shared
+                make
+                make install
+                cd "../s6-$s6_version"
+                ./configure --prefix="$build_dir/local" --disable-execline \
+                    --with-include="$build_dir/local/include" \
+                    --with-lib="$build_dir/local/lib" \
+                    --with-sysdeps="$build_dir/local/lib/skalibs/sysdeps"
+                make
+                make install
+            )
+            as_root install -d /usr/local/bin
+            if ! command -v s6-setsid >/dev/null 2>&1; then
+                as_root install -m 755 "$build_dir/local/bin/s6-setsid" /usr/local/bin/s6-setsid
+            fi
+            if ! command -v envdir >/dev/null 2>&1; then
+                as_root install -m 755 "$build_dir/local/bin/s6-envdir" /usr/local/bin/envdir
+            fi
+        fi
+        ;;
+esac
+
+if [ "$start_postgres" -eq 1 ]; then
+    if [ "$ID" = fedora ]; then
+        # The distro setup command refuses nonempty data directories.
+        # Never reinitialize an existing cluster.
+        if ! as_root test -f /var/lib/pgsql/data/PG_VERSION; then
+            as_root postgresql-setup --initdb --unit postgresql
+        fi
+    fi
+    as_root systemctl enable --now postgresql.service
+fi
+
+printf '%s\n' \
+    'System packages installed.' \
+    'Configure PostgreSQL credentials and PGHOST/PGPORT in your env-dir before starting the app.' \
+    'Use make install as your normal user to install application packages.'
+
+# Older Ubuntu repositories ship Node versions without built-in node:sqlite.
+if ! node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 13) ? 0 : 1)' ; then
+    die 'Node >=22.13 is still required. Install a current Node LTS with npm, then rerun this script.'
+fi
