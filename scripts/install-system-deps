@@ -5,13 +5,16 @@ usage() {
     cat <<'EOF'
 Usage: sh scripts/install-system-deps [--start-postgres]
 
-Install system dependencies on Ubuntu or Fedora using sudo when needed.
+Install system dependencies on Ubuntu, Fedora, or Amazon Linux 2023
+using sudo when needed. Amazon Linux 2 is not supported.
 Includes PostgreSQL, SQLite, Sqitch and its drivers, nginx, Python,
 native build tools, Git, ripgrep, envdir, and s6-setsid.
 Installs distro Node/npm only when they are missing; requires Node >=22.13.
-Fedora installs Sqitch from CPAN and builds missing s6 helpers from source.
+Fedora/Amazon Linux install Sqitch from CPAN and build missing s6 helpers
+from source. Amazon Linux uses PostgreSQL 15 and Node 22 packages, and
+enables AWS's SPAL repository for ripgrep (requires a recent AL2023 release).
 
-  --start-postgres  Initialize Fedora's default cluster if absent, then
+  --start-postgres  Initialize the default RPM-based cluster if absent, then
                     enable and start PostgreSQL (requires systemd).
   -h, --help        Show this help.
 
@@ -35,11 +38,14 @@ for arg do
     esac
 done
 
-[ -r /etc/os-release ] || die 'This installer supports Ubuntu and Fedora only.'
+[ -r /etc/os-release ] || die 'This installer supports Ubuntu, Fedora, and Amazon Linux 2023 only.'
 . /etc/os-release
 case "${ID:-}" in
     ubuntu|fedora) ;;
-    *) die "Unsupported distribution: ${ID:-unknown}. Expected Ubuntu or Fedora." ;;
+    amzn)
+        [ "${VERSION_ID:-}" = 2023 ] || die 'Amazon Linux 2023 is required; Amazon Linux 2 is not supported.'
+        ;;
+    *) die "Unsupported distribution: ${ID:-unknown}. Expected Ubuntu, Fedora, or Amazon Linux 2023." ;;
 esac
 
 as_root() {
@@ -61,11 +67,17 @@ fi
 
 # Preserve runtimes installed through a user's Node version manager.
 set --
+node_package=nodejs
+npm_package=npm
+if [ "$ID" = amzn ]; then
+    node_package=nodejs22
+    npm_package=nodejs22-npm
+fi
 if ! command -v node >/dev/null 2>&1; then
-    set -- "$@" nodejs
+    set -- "$@" "$node_package"
 fi
 if ! command -v npm >/dev/null 2>&1; then
-    set -- "$@" npm
+    set -- "$@" "$npm_package"
 fi
 
 case "$ID" in
@@ -77,22 +89,49 @@ case "$ID" in
             postgresql postgresql-client postgresql-contrib sqlite3 \
             sqitch libdbd-pg-perl libdbd-sqlite3-perl "$@"
         ;;
-    fedora)
+    fedora|amzn)
+        build_dir=$(mktemp -d "${TMPDIR:-/tmp}/pyroh-deps.XXXXXX")
+        trap 'rm -rf "$build_dir"' 0
+        trap 'exit 1' HUP INT TERM
+
+        if [ "$ID" = amzn ]; then
+            # Keep an installed PostgreSQL major instead of replacing it.
+            postgres_package=postgresql15
+            for major in 18 17 16 15; do
+                if rpm -q "postgresql$major-server" >/dev/null 2>&1; then
+                    postgres_package=postgresql$major
+                    break
+                fi
+            done
+            set -- "$@" "$postgres_package" "$postgres_package-server" "$postgres_package-contrib"
+            # AL2023 AMIs normally have curl-minimal; full curl conflicts with it.
+            if ! command -v curl >/dev/null 2>&1; then
+                set -- "$@" curl-minimal
+            fi
+            if ! command -v rg >/dev/null 2>&1; then
+                as_root dnf install -y spal-release || die 'SPAL requires a recent AL2023 repository release. Update your Amazon Linux release, then rerun.'
+                as_root dnf --enablerepo=amazonlinux-spal install -y ripgrep
+            fi
+        else
+            set -- "$@" curl ripgrep postgresql-server postgresql postgresql-contrib perl-App-cpanminus
+        fi
         as_root dnf install -y \
-            ca-certificates curl gcc gcc-c++ make python3 python3-pip \
-            git ripgrep nginx tar gzip \
-            postgresql-server postgresql postgresql-contrib sqlite \
-            perl-devel perl-App-cpanminus perl-DBD-Pg perl-DBD-SQLite "$@"
+            ca-certificates gcc gcc-c++ make python3 python3-pip \
+            git nginx tar gzip sqlite \
+            perl-devel perl-DBD-Pg perl-DBD-SQLite "$@"
         if ! command -v sqitch >/dev/null 2>&1; then
-            as_root cpanm --notest --mirror https://cpan.metacpan.org --mirror-only App::Sqitch
+            if command -v cpanm >/dev/null 2>&1; then
+                as_root "$(command -v cpanm)" --notest --mirror https://cpan.metacpan.org --mirror-only App::Sqitch
+            else
+                # AL2023 has no perl-App-cpanminus package in its core repo.
+                curl -fL --retry 3 -o "$build_dir/cpanm" https://cpanmin.us
+                as_root perl "$build_dir/cpanm" --notest --mirror https://cpan.metacpan.org --mirror-only App::Sqitch
+            fi
         fi
 
-        # Fedora does not provide these helpers in its standard repositories.
+        # These RPM distributions do not provide the helpers in their core repos.
         # Build in isolation and install only the two binaries the app uses.
         if ! command -v s6-setsid >/dev/null 2>&1 || ! command -v envdir >/dev/null 2>&1; then
-            build_dir=$(mktemp -d "${TMPDIR:-/tmp}/pyroh-deps.XXXXXX")
-            trap 'rm -rf "$build_dir"' 0
-            trap 'exit 1' HUP INT TERM
             skalibs_version=2.16.0.0
             s6_version=2.15.1.1
             (
@@ -127,7 +166,7 @@ case "$ID" in
 esac
 
 if [ "$start_postgres" -eq 1 ]; then
-    if [ "$ID" = fedora ]; then
+    if [ "$ID" = fedora ] || [ "$ID" = amzn ]; then
         # The distro setup command refuses nonempty data directories.
         # Never reinitialize an existing cluster.
         if ! as_root test -f /var/lib/pgsql/data/PG_VERSION; then
