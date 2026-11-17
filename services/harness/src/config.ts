@@ -5,7 +5,7 @@ import fs = require('node:fs')
 const HARNESS_DB_PATH = process.env.HARNESS_DB_PATH
 
 // Expand a leading `~` to the current user's home dir. Env-dir files are
-// exported verbatim, so `~/personal` would otherwise stay literal.
+// exported verbatim, so `~` would otherwise stay literal.
 const expandHome = (raw: string): string => {
   if (raw === '~') return os.homedir()
   if (raw.startsWith('~/')) return path.join(os.homedir(), raw.slice(2))
@@ -20,7 +20,7 @@ const resolveWriteDir = () => {
 // Machine-local default work dir. Relative work dirs resolve against it; any
 // dir under the home dir is allowed.
 const resolveWorkBase = () => {
-  const raw = process.env.HARNESS_BASE_PATH || path.join(os.homedir(), 'personal')
+  const raw = process.env.HARNESS_BASE_PATH || os.homedir()
   return path.resolve(expandHome(raw))
 }
 

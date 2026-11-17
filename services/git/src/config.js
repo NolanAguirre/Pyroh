@@ -2,7 +2,7 @@ const path = require('path')
 const os = require('os')
 
 // Expand a leading `~` to the current user's home dir. Env-dir files are
-// exported verbatim, so `~/personal` would otherwise stay literal.
+// exported verbatim, so `~` would otherwise stay literal.
 const expandHome = (raw) => {
   if (raw === '~') return os.homedir()
   if (raw.startsWith('~/')) return path.join(os.homedir(), raw.slice(2))
@@ -15,7 +15,7 @@ const resolveWriteDir = () => {
 }
 
 const resolveWorkBase = () => {
-  const raw = process.env.HARNESS_BASE_PATH || path.join(os.homedir(), 'personal')
+  const raw = process.env.HARNESS_BASE_PATH || os.homedir()
   return path.resolve(expandHome(raw))
 }
 
