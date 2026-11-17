@@ -11,7 +11,8 @@ Includes PostgreSQL, SQLite, Sqitch and its drivers, nginx, Python,
 native build tools, Git, ripgrep, envdir, and s6-setsid.
 Installs distro Node/npm only when they are missing; requires Node >=22.13.
 Fedora/Amazon Linux install Sqitch from CPAN and build missing s6 helpers
-from source. Amazon Linux uses PostgreSQL 15 and Node 22 packages, and
+from source. Amazon Linux preserves an installed PostgreSQL major (defaults
+to 15), uses Node 22 packages, and
 enables AWS's SPAL repository for ripgrep (requires a recent AL2023 release).
 
   --start-postgres  Initialize the default RPM-based cluster if absent, then
@@ -98,7 +99,9 @@ case "$ID" in
             # Keep an installed PostgreSQL major instead of replacing it.
             postgres_package=postgresql15
             for major in 18 17 16 15; do
-                if rpm -q "postgresql$major-server" >/dev/null 2>&1; then
+                if rpm -q "postgresql$major-server" >/dev/null 2>&1 ||
+                    rpm -q "postgresql$major" >/dev/null 2>&1 ||
+                    rpm -q "postgresql$major-contrib" >/dev/null 2>&1; then
                     postgres_package=postgresql$major
                     break
                 fi
