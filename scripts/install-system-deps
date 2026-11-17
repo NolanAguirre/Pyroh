@@ -8,7 +8,7 @@ Usage: sh scripts/install-system-deps [--start-postgres]
 Install system dependencies on Ubuntu, Fedora, or Amazon Linux 2023
 using sudo when needed. Amazon Linux 2 is not supported.
 Includes PostgreSQL, SQLite, Sqitch and its drivers, nginx, Python,
-native build tools, Git, ripgrep, envdir, and s6-setsid.
+native build tools, Git, ripgrep, envdir, s6-setsid, and s6-setlock.
 Installs distro Node/npm only when they are missing; requires Node >=22.13.
 Fedora/Amazon Linux install Sqitch from CPAN and build missing s6 helpers
 from source. Amazon Linux preserves an installed PostgreSQL major (defaults
@@ -133,8 +133,10 @@ case "$ID" in
         fi
 
         # These RPM distributions do not provide the helpers in their core repos.
-        # Build in isolation and install only the two binaries the app uses.
-        if ! command -v s6-setsid >/dev/null 2>&1 || ! command -v envdir >/dev/null 2>&1; then
+        # Build in isolation and install only the binaries the app uses.
+        if ! command -v s6-setsid >/dev/null 2>&1 ||
+            ! command -v s6-setlock >/dev/null 2>&1 ||
+            ! command -v envdir >/dev/null 2>&1; then
             skalibs_version=2.16.0.0
             s6_version=2.15.1.1
             (
@@ -160,6 +162,9 @@ case "$ID" in
             as_root install -d /usr/local/bin
             if ! command -v s6-setsid >/dev/null 2>&1; then
                 as_root install -m 755 "$build_dir/local/bin/s6-setsid" /usr/local/bin/s6-setsid
+            fi
+            if ! command -v s6-setlock >/dev/null 2>&1; then
+                as_root install -m 755 "$build_dir/local/bin/s6-setlock" /usr/local/bin/s6-setlock
             fi
             if ! command -v envdir >/dev/null 2>&1; then
                 as_root install -m 755 "$build_dir/local/bin/s6-envdir" /usr/local/bin/envdir
