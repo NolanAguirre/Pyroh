@@ -44,6 +44,7 @@ const WorkspaceSection = ({ workspaces, workspace, onSelectWorkspace, onWorkspac
 
   const deleteWorkspace = async () => {
     if (!workspace || deleteBusy || !onDeleteWorkspace) return
+    if (!window.confirm(`Remove workspace "${workspace.name}"?`)) return
     setDeleteBusy(true)
     setDeleteError('')
     try {
