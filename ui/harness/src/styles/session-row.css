@@ -91,9 +91,22 @@
   color: var(--accent);
 }
 
+.session-row__collapse-btn {
+  opacity: 1;
+}
+
+.session-row__collapse-btn svg {
+  transition: transform 0.15s ease;
+}
+
+.session-row__collapse-btn--collapsed svg {
+  transform: rotate(-90deg);
+}
+
 .session-row__pin-btn svg,
 .session-row__trash-btn svg,
-.session-row__restore-btn svg {
+.session-row__restore-btn svg,
+.session-row__collapse-btn svg {
   width: 12px;
   height: 12px;
   display: block;

@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { Badge, DevScope, ScrollingText } from 'component-library'
-import { PinIcon, RestoreIcon, TrashIcon } from './icons'
+import { ChevronIcon, PinIcon, RestoreIcon, TrashIcon } from './icons'
 import { formatCompactNumber, formatDuration } from '../../format'
 
 const STATUS_VARIANT = {
@@ -72,7 +72,19 @@ const LastInteraction = memo(({ timestamp, provider, model }) => {
   )
 })
 
-const SessionRow = memo(({ session, active, onSelect, onRename, onArchive, archiveBusy, onPin, pinBusy }) => {
+const SessionRow = memo(({
+  session,
+  active,
+  onSelect,
+  onRename,
+  onArchive,
+  archiveBusy,
+  onPin,
+  pinBusy,
+  hasChildren = false,
+  collapsed = false,
+  onToggleCollapsed,
+}) => {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(session.name || '')
   const [busy, setBusy] = useState(false)
@@ -128,6 +140,11 @@ const SessionRow = memo(({ session, active, onSelect, onRename, onArchive, archi
     onPin(session.id, !session.pinned)
   }
 
+  const handleCollapseClick = (event) => {
+    event.stopPropagation()
+    onToggleCollapsed(session.id)
+  }
+
   const isLive = session.status === 'running' || session.status === 'awaiting_input'
   const isSubagent = Boolean(session.parentSessionId) && session.childKind !== 'fork'
   const tokenTotal = session.totals?.tokens?.total ?? 0
@@ -172,6 +189,20 @@ const SessionRow = memo(({ session, active, onSelect, onRename, onArchive, archi
             </DevScope>
           ) : (
             <div className="session-row__title-wrap">
+              {hasChildren && !isSubagent && (
+                <DevScope id="k8c3n5v" state={{ collapsed }}>
+                  <button
+                    type="button"
+                    className={`session-row__edit-btn session-row__collapse-btn${collapsed ? ' session-row__collapse-btn--collapsed' : ''}`}
+                    title={collapsed ? 'Show subagents' : 'Hide subagents'}
+                    aria-label={collapsed ? 'Show subagents' : 'Hide subagents'}
+                    aria-expanded={!collapsed}
+                    onClick={handleCollapseClick}
+                  >
+                    <ChevronIcon />
+                  </button>
+                </DevScope>
+              )}
               <DevScope id="q2n6w8r" state={{ pinned: Boolean(session.pinned) }}>
                 <button
                   type="button"

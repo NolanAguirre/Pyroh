@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import {
   Badge,
   Popup,
@@ -66,6 +66,16 @@ const SessionsSidebar = ({
     onPin: (...args) => handlers.current.onPin(...args),
   }), [])
 
+  const [collapsedIds, setCollapsedIds] = useState(() => new Set())
+  const toggleCollapsed = useCallback((id) => {
+    setCollapsedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
   const groupedSessions = useMemo(() => {
     const ids = new Set(shownSessions.map(session => session.id))
     const wasteParentId = (session) => (
@@ -100,6 +110,8 @@ const SessionsSidebar = ({
 
   const renderSession = ({ session, children }, nested = false) => {
     const waste = session.mode === 'token-waste' && session.sourceSessionId
+    const collapsible = !nested && children.length > 0
+    const collapsed = collapsible && collapsedIds.has(session.id)
     return (
       <div
         key={session.id}
@@ -116,8 +128,11 @@ const SessionsSidebar = ({
           archiveBusy={archiveBusy}
           onPin={rowHandlers.onPin}
           pinBusy={pinBusy}
+          hasChildren={collapsible}
+          collapsed={collapsed}
+          onToggleCollapsed={toggleCollapsed}
         />
-        {children.map(child => renderSession(child, true))}
+        {!collapsed && children.map(child => renderSession(child, true))}
       </div>
     )
   }
