@@ -42,12 +42,16 @@ const start = async () => {
     console.log(`GraphiQL: http://127.0.0.1:${PORT}/graphiql`)
   })
 
+  let stopping = false
   const stop = () => {
+    if (stopping) return
+    stopping = true
     server.close(() => pool.end().finally(() => process.exit(0)))
+    server.closeAllConnections()
     setTimeout(() => process.exit(1), 8000).unref()
   }
-  process.once('SIGINT', stop)
-  process.once('SIGTERM', stop)
+  process.on('SIGINT', stop)
+  process.on('SIGTERM', stop)
 }
 
 start().catch((error) => {

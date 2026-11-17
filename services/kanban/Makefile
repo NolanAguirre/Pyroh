@@ -29,4 +29,4 @@ dev: prepare
 	$(RUN_WITH_ENV) npm run dev
 
 start: prepare
-	$(RUN_WITH_ENV) npm start
+	exec $(RUN_WITH_ENV) node index.js

@@ -1,6 +1,7 @@
 #!/bin/sh
 
 make_command=$1
+stack_parent_pid=$PPID
 pids=
 terminal_pid=
 signal_status=0
@@ -157,6 +158,11 @@ launch ui/harness dev
 
 # Polling avoids a signal arriving just before an otherwise blocking wait.
 while [ "$signal_status" -eq 0 ]; do
+    # A killed parent make cannot forward signals to this launcher.
+    if ! kill -s 0 "$stack_parent_pid" 2>/dev/null; then
+        request_stop 143
+        break
+    fi
     running=0
     for running_pid in $pids; do
         if kill -s 0 "$running_pid" 2>/dev/null; then
