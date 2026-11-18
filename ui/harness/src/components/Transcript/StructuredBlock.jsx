@@ -1,6 +1,19 @@
 import { Badge, DevScope, Fold, FoldTrigger, FoldContent } from 'component-library'
 
-const StructuredBlock = ({ event }) => (
+const displayText = (value) => {
+  if (value == null) return ''
+  return typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+}
+
+const StructuredBlock = ({ event }) => {
+  const plan = event.plan ?? []
+  // Live and persisted provider events can contain text or malformed steps.
+  const isStepList = Array.isArray(plan) && plan.every((step) => step
+    && typeof step.step === 'string'
+    && (step.status == null || typeof step.status === 'string'))
+  const explanation = displayText(event.explanation)
+
+  return (
   <DevScope id="hr4f8s6" state={{ type: event.type }}>
     <div className="tx tx--tool">
       <Fold>
@@ -14,9 +27,9 @@ const StructuredBlock = ({ event }) => (
             <pre className="tx__pre tx__pre--diff">{event.diff}</pre>
           ) : (
             <div className="tx__plan-content">
-              {event.explanation && <p className="tx__plan-expl">{event.explanation}</p>}
-              <ol className="tx__plan-list">
-                {(event.plan || []).map((step, i) => (
+              {explanation && <p className="tx__plan-expl">{explanation}</p>}
+              {isStepList ? <ol className="tx__plan-list">
+                {plan.map((step, i) => (
                   <li key={i} className="tx__plan-step">
                     <span className="tx__plan-step-text">{step.step}</span>
                     <Badge size="small" variant={step.status === 'completed' ? 'success' : step.status === 'in_progress' ? 'info' : 'neutral'}>
@@ -24,13 +37,14 @@ const StructuredBlock = ({ event }) => (
                     </Badge>
                   </li>
                 ))}
-              </ol>
+              </ol> : <pre className="tx__pre">{displayText(plan)}</pre>}
             </div>
           )}
         </FoldContent>
       </Fold>
     </div>
   </DevScope>
-)
+  )
+}
 
 export default StructuredBlock
