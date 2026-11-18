@@ -2,6 +2,7 @@ import { Children, useEffect, useMemo, useRef, useState } from 'react'
 import { readRoute, routeUrl } from './navigation'
 import { BOARDS_QUERY, archiveCard, mutate, moveCard, moveColumn, moveTask, moveEpicRow, restoreCard, saveCard } from './api'
 import TaskComments from './TaskComments'
+import TaskAttachments from './TaskAttachments'
 import CardRelationships from './CardRelationships'
 import { createCardHierarchy } from './hierarchy'
 import { Button, PopupDisplay, Matrix, FormInput, DevScope, Fold, FoldTrigger, FoldContent, SplitPane, useBrowserLocation } from 'component-library'
@@ -84,6 +85,7 @@ const Editor = ({ devId, user, editor, boards, hierarchy, busy, error, onSave, o
         </div>
       </fieldset>
     </form>
+    {editor.kind === 'card' && <TaskAttachments cardId={editor.item.id} busy={busy} />}
     {editor.kind === 'card' && (editor.item.id
       ? <TaskComments devId="d6klsew" user={user} cardId={editor.item.id} busy={busy} onChange={onCommentChange} />
       : <p className="kanban__comments-empty">Save this card to add comments.</p>)}

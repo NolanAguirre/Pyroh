@@ -42,7 +42,7 @@ const uuid = (value) => {
 const createRoute = (path, methods) => {
   const handle = async (request, response) => {
     try {
-      const action = methods[request.method]
+      const action = Object.hasOwn(methods, request.method) ? methods[request.method] : null
       if (!action) {
         response.setHeader('Allow', Object.keys(methods).join(', '))
         throw fail(405, 'Method not allowed')

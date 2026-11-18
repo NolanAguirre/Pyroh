@@ -4,6 +4,12 @@ const createApi = require('./lib/api')
 const isLocalRequest = require('./lib/local-request')
 const createGraphqlRoute = require('./routes/graphql')
 const createGraphiqlRoute = require('./routes/graphiql')
+const createLocalStorage = require('./lib/local-storage')
+const createPresignedUrlRoute = require('./routes/presigned-url')
+const createLocalUploadRoute = require('./routes/local-upload')
+const createAttachmentCompleteRoute = require('./routes/attachment-complete')
+const createAttachmentsRoute = require('./routes/attachments')
+const createLocalFileRoute = require('./routes/local-file')
 
 const DATABASE_URL = process.env.DATABASE_URL
 const PORT = Number(process.env.PORT || 6011)
@@ -14,8 +20,14 @@ const start = async () => {
 
   const pool = new Pool({ connectionString: DATABASE_URL })
   const api = createApi(pool)
-  const routes = [createGraphqlRoute(api), createGraphiqlRoute(api)]
+  const storage = createLocalStorage(pool)
+  const routes = [
+    createGraphqlRoute(api), createGraphiqlRoute(api), createPresignedUrlRoute(storage),
+    createLocalUploadRoute(storage), createAttachmentCompleteRoute(storage),
+    createAttachmentsRoute(storage), createLocalFileRoute(storage),
+  ]
   await api.prepare()
+  await storage.prepare()
 
   const server = http.createServer((request, response) => {
     // Allow local clients and same-origin requests through the harness proxy.
@@ -35,6 +47,7 @@ const start = async () => {
 
   server.on('error', (error) => {
     console.error(error.message)
+    storage.stop()
     pool.end().finally(() => process.exit(1))
   })
   server.listen(PORT, '127.0.0.1', () => {
@@ -46,6 +59,7 @@ const start = async () => {
   const stop = () => {
     if (stopping) return
     stopping = true
+    storage.stop()
     server.close(() => pool.end().finally(() => process.exit(0)))
     server.closeAllConnections()
     setTimeout(() => process.exit(1), 8000).unref()
