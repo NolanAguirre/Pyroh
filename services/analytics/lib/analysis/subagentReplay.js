@@ -1,4 +1,5 @@
 const { createTranscriptEvidence } = require('./transcriptContext')
+const { createFittedReplayEvidence } = require('./replayFit')
 const { createReplayTokenizer, serialize, fingerprint, freeze } = require('./replayTokenizer')
 
 const known = value => Number.isFinite(value) && value >= 0
@@ -70,8 +71,9 @@ const range = (point, uncertainty, supported) => ({ estimate: point,
   upper: point === null || !supported ? null : point + uncertainty })
 
 const createSubagentReplay = (data, assumptions = {}) => {
-  const evidence = createTranscriptEvidence(data.agents)
   const tokenizer = createReplayTokenizer()
+  const fitted = createFittedReplayEvidence(data, createTranscriptEvidence(data.agents), tokenizer)
+  const { evidence, calibration, reconstruction } = fitted
   const blocks = new Map(evidence.blocks.map(block => [block.id, block]))
   const turns = new Map(evidence.turns.map(turn => [turn.id, turn]))
   const agents = new Map(data.agents.map(agent => [agent.id, agent]))
@@ -103,68 +105,6 @@ const createSubagentReplay = (data, assumptions = {}) => {
       return local.sort((a, b) => a.order - b.order || (a.sectionIndex ?? 0) - (b.sectionIndex ?? 0) || a.id.localeCompare(b.id))
     })
     sessionActions.set(agent.id, actions)
-  }
-
-  // Calibration is always per original session/model/region, before any removal.
-  const calibration = []
-  for (const agent of data.agents) {
-    let history = []
-    let region = 0
-    let model = null
-    let thread = null
-    let uncertain = Boolean(agent.session.fork)
-    const samples = new Map()
-    for (const action of sessionActions.get(agent.id)) {
-      if (action.kind === 'container') continue
-      if (action.kind === 'block') {
-        const block = blocks.get(action.id)
-        if (block.kind === 'boundary') {
-          region += 1
-          uncertain = true
-          if (block.boundary === 'reset') history = []
-          continue
-        }
-        if (block.fallback || block.visibility === 'provider-dependent' || block.images?.length) uncertain = true
-        if (block.kind === 'prompt') {
-          const entry = agent.events.find(item => item.event.captureId && item.event.captureId === block.captureId)
-          const nextThread = entry?.event.providerAgentId
-          if (thread && nextThread && thread !== nextThread) {
-            history = []
-            region += 1
-            uncertain = true
-          }
-          if (nextThread) thread = nextThread
-        }
-        history.push(block)
-        continue
-      }
-      const turn = turns.get(action.id)
-      if (model && model !== turn.model) {
-        region += 1
-        uncertain = true
-      }
-      model = turn.model
-      const request = tokenizer.request(history, model)
-      const generated = tokenizer.output(turn.blocks.map(id => blocks.get(id)), model)
-      const input = turn.measuredUsage?.inputTokens
-      const eligible = turn.usageReconciled && turn.confidence === 'measured' && known(input) && request.tokens !== null
-      const key = `${agent.id}:${model}:${region}`
-      if (!samples.has(key)) samples.set(key, { sessionId: agent.id, model, region, samples: [] })
-      samples.get(key).samples.push({ turnId: turn.id, sources: turn.sources, measuredInput: input ?? null,
-        reconstructedInput: request.tokens, requestFingerprint: request.fingerprint,
-        measuredOutput: turn.measuredUsage?.outputTokens ?? null, generatedOutput: generated.tokens,
-        outputResidual: known(turn.measuredUsage?.outputTokens) && generated.tokens !== null
-          ? turn.measuredUsage.outputTokens - generated.tokens : null,
-        residual: eligible ? input - request.tokens : null, eligible,
-        reliableRegion: eligible && !uncertain,
-        reason: eligible ? 'Per-response input only. Signed residual remains uncertainty.'
-          : 'Missing reconciled input or trustworthy response boundary, excluded from calibration.' })
-    }
-    for (const group of samples.values()) {
-      const residuals = group.samples.filter(sample => sample.reliableRegion).map(sample => sample.residual)
-      calibration.push({ ...group, residualEnvelope: residuals.length ? Math.max(...residuals.map(Math.abs)) : null,
-        interpretation: 'Observed residual envelope is a sensitivity range, not a statistical guarantee or removable overhead.' })
-    }
   }
 
   const insertions = new Map()
@@ -445,6 +385,10 @@ const createSubagentReplay = (data, assumptions = {}) => {
     }
   }
 
+  const retentionBreaks = ordered.map((action, index) => ({ action, index })).filter(({ action }) =>
+    action.kind === 'block' && ['compaction', 'reset'].includes(blocks.get(action.id)?.boundary)
+      || action.kind === 'request' && turns.get(action.id)?.fitting?.contextLoss).map(item => item.index)
+  const crossesRetentionBreak = (before, after) => retentionBreaks.some(index => index > before && index < after)
   // Captured source roles identify instruction sections. User tasks remain intact.
   const systemPrompts = new Map()
   for (const action of ordered) {
@@ -458,7 +402,9 @@ const createSubagentReplay = (data, assumptions = {}) => {
     }
     const key = serialize([block.sectionKind, content(block).trim()])
     const previous = systemPrompts.get(key)
-    if (previous) remove(block, 'Repeated captured system section is already retained once in the coordinator history.', [previous.id])
+    if (previous && !crossesRetentionBreak(position.get(previous.id), position.get(block.id))) {
+      remove(block, 'Repeated captured system section is already retained once in the coordinator history.', [previous.id])
+    }
     else systemPrompts.set(key, block)
   }
 
@@ -508,7 +454,8 @@ const createSubagentReplay = (data, assumptions = {}) => {
       const invalid = disposition.dependencies.some(id => {
         const replacements = retainedDependencies(id, new Set([disposition.blockId]))
         return replacements === null || (position.get(id) < position.get(disposition.blockId)
-          && replacements.some(dependency => position.get(dependency) >= position.get(disposition.blockId)))
+          && replacements.some(dependency => position.get(dependency) >= position.get(disposition.blockId)
+            || crossesRetentionBreak(position.get(dependency), position.get(disposition.blockId))))
       })
       if (!invalid) continue
       const block = blocks.get(disposition.blockId)
@@ -543,25 +490,45 @@ const createSubagentReplay = (data, assumptions = {}) => {
   const removedOverheadTurns = overheadTurns.filter(turn => turnDispositions.get(turn.turnId).action === 'remove')
   if (overheadTurns.length) gap('Delegation-only language and relay excerpts are classified heuristically, not proven semantically equivalent.',
     { turnIds: overheadTurns.map(turn => turn.turnId) })
-  gap('Captured prompts do not establish complete provider prefixes, tool schemas or provider message framing. Tokenized visible context is a point estimate with an unknown upper bound.')
-  if (evidence.blocks.some(block => block.visibility === 'provider-dependent')) {
-    gap('Provider-dependent reasoning is excluded from visible replay input and output. Its cost and retention in a hypothetical coordinator execution are unknown.')
-  }
+  gap('Original-session usage constrains the reconstruction, but incomplete provider framing, context retention and inferred request grouping prevent a uniquely determined replay.')
   const entryAccounting = []
   const estimates = []
-  const retainedHistory = []
+  let retainedHistory = []
   const visible = new Set()
   const charged = new Set()
   const requested = new Set()
-  const retainedOutputs = []
+  let retainedOutputs = []
+  let cachedAtoms = new Map()
+  const opaqueAtoms = new Map()
+  const replayWeights = new Map(fitted.blockWeights)
+  const cachingAssumption = 'Assume previously sent retained context is cached. New content, including prior generated output and tool results, is fresh on its first input appearance and cached thereafter. Input includes cache reads.'
+  const weighted = (block, model, weights, output = false) => {
+    const allocation = weights.get(block.id)
+    const count = output ? tokenizer.output([block], model).tokens : tokenizer.request([block], model).tokens
+    const empty = output ? 0 : tokenizer.request([], model).tokens
+    const raw = count === null || empty === null ? null : Math.max(0, count - empty)
+    if (!allocation) return raw
+    if (allocation.tokens === null || raw === null) return null
+    if (allocation.model === model || !allocation.visible) return allocation.tokens
+    return Math.max(0, Math.round(allocation.tokens * raw / allocation.visible))
+  }
+  const resetContext = () => {
+    retainedHistory = []
+    retainedOutputs = []
+    cachedAtoms = new Map()
+    opaqueAtoms.clear()
+  }
   for (const action of ordered) {
     if (action.kind === 'container') continue
     if (action.kind === 'block') {
       const block = blocks.get(action.id)
       if (dispositions.get(block.id).action === 'remove' || visible.has(block.id)) continue
       if (block.kind === 'boundary') {
-        gap('Original context boundaries do not specify the single coordinator context. Retained visible history is carried forward without inventing compaction or replacement text.',
-          { blockId: block.id, boundary: block.boundary })
+        if (['compaction', 'reset'].includes(block.boundary)) {
+          resetContext()
+          gap('Recorded compaction/reset starts a new replay context region. Replacement text and retention are unknown, measured opaque context is preserved where available.',
+            { blockId: block.id, boundary: block.boundary })
+        }
         continue
       }
       if (block.visibility === 'provider-dependent' || block.kind === 'thinking') continue
@@ -574,61 +541,95 @@ const createSubagentReplay = (data, assumptions = {}) => {
       retainedHistory.push(block)
       visible.add(block.id)
       if (block.generated) retainedOutputs.push({ turnId: block.turnId, blockId: block.id,
-        tokens: tokenizer.output([block], action.targetModel).tokens, synthetic: false })
+        tokens: weighted(block, action.targetModel, fitted.outputWeights, true), synthetic: false })
       continue
     }
     const turn = turns.get(action.id)
+    for (const allocation of turn.fitting?.contextContributions || []) {
+      const block = blocks.get(allocation.blockId)
+      const raw = tokenizer.request([block], turn.model).tokens
+      const empty = tokenizer.request([], turn.model).tokens
+      replayWeights.set(block.id, { tokens: allocation.tokens, model: turn.model,
+        visible: raw === null || empty === null ? null : Math.max(0, raw - empty) })
+    }
     if (turnDispositions.get(turn.id).action === 'remove') continue
+    if (turn.fitting?.contextLoss) {
+      // An unrecorded retention change cannot carry an append-only cache claim.
+      resetContext()
+      const active = new Set(turn.fitting.contextContributions.map(item => item.blockId))
+      retainedHistory = ordered.slice(0, position.get(turn.id)).filter(item => item.kind === 'block')
+        .map(item => blocks.get(item.id)).filter(block => active.has(block.id) && visible.has(block.id)
+          && dispositions.get(block.id).action !== 'remove' && block.kind !== 'boundary'
+          && block.visibility !== 'provider-dependent' && block.kind !== 'thinking')
+      gap('An inferred context loss resets replay cache retention. The identity of retained content is uncertain.', { turnId: turn.id })
+    }
     requested.add(turn.id)
     const generated = turn.blocks.map(id => blocks.get(id)).filter(block => block.generated
       && block.visibility !== 'provider-dependent' && block.kind !== 'thinking'
       && dispositions.get(block.id).action !== 'remove' && !charged.has(block.id))
     generated.forEach(block => charged.add(block.id))
     const request = tokenizer.request(retainedHistory, action.targetModel)
-    const response = tokenizer.output(generated, action.targetModel)
-    if (!turn.blocks.length) gap('Recorded request has no captured generated content. No output or response text is fabricated.', { turnId: turn.id })
-    if (request.identity.approximation) gap('Coordinator model uses a proxy tokenizer, so token counts are approximate.', { turnId: turn.id, model: action.targetModel })
+    const opaque = fitted.opaqueContexts.get(turn.id)
+    if (opaque) opaqueAtoms.set(opaque.key, opaque.tokens)
+    const atoms = new Map([...opaqueAtoms].map(([key, tokens]) => [`opaque:${key}`, tokens]))
+    for (const block of retainedHistory) atoms.set(block.id, weighted(block, action.targetModel, replayWeights))
+    const requestInput = sum([...atoms.values()])
+    const cacheRead = requestInput === null ? null : [...atoms].reduce((count, [key, tokens]) =>
+      count + Math.min(tokens, cachedAtoms.get(key) || 0), 0)
+    const fresh = requestInput === null ? null : requestInput - cacheRead
+    cachedAtoms = atoms
+    const outputContributions = generated.map(block => ({ turnId: turn.id, blockId: block.id,
+      tokens: weighted(block, action.targetModel, fitted.outputWeights, true), synthetic: false }))
+    const opaqueOutput = turn.fitting?.unattributedOutput ?? 0
+    const responseOutput = sum([...outputContributions.map(item => item.tokens), opaqueOutput])
+    if (opaqueOutput > 0) gap('Unattributed measured output is retained on the surviving request, without inventing visible text or assuming its later context retention.', { turnId: turn.id, tokens: opaqueOutput })
+    if (!turn.blocks.length) gap('Recorded request has no captured generated content. Its fitted measured usage is retained without fabricated text.', { turnId: turn.id })
+    if (request.identity.approximation) gap('Coordinator model uses a proxy tokenizer, so content weights are approximate.', { turnId: turn.id, model: action.targetModel })
     if (request.identity.unavailable) gap(request.identity.unavailable, { turnId: turn.id })
     const limits = evidence.turns.filter(item => item.sessionId === root?.id && item.model === action.targetModel
       && position.get(item.id) <= position.get(turn.id)).map(item => item.contextLimit).filter(known)
     const contextLimit = limits.at(-1) ?? null
-    const contextLimitExceeded = contextLimit === null || request.tokens === null || response.tokens === null
-      ? null : request.tokens + response.tokens > contextLimit
+    const contextLimitExceeded = contextLimit === null || requestInput === null || responseOutput === null
+      ? null : requestInput + responseOutput > contextLimit
     if (contextLimit === null) gap('Coordinator context limit is unavailable for this replay turn.', { turnId: turn.id })
-    if (contextLimitExceeded) gap('Rebuilt visible context and output exceed the recorded coordinator context limit. No synthetic compaction is invented.',
+    if (contextLimitExceeded) gap('Fitted merged context and output exceed the coordinator context limit. No additional compaction is invented.',
       { turnId: turn.id, limit: contextLimit })
-    const outputContributions = generated.map(block => ({ turnId: turn.id, blockId: block.id,
-      tokens: tokenizer.output([block], action.targetModel).tokens, synthetic: false }))
     const entry = { turnId: turn.id, sessionId: turn.sessionId, runId: turn.runId, confidence: turn.confidence,
       disposition: 'retain', sources: turn.sources,
-      attributedOriginalInput: turn.measuredUsage?.inputTokens ?? null,
-      attributedOriginalOutput: turn.measuredUsage?.outputTokens ?? null,
-      retainedEntryInput: request.tokens, retainedOutput: response.tokens, outputContributions,
-      basis: 'Tokenized retained visible context and generated output. Original usage is audit evidence only.' }
+      attributedOriginalInput: turn.fitting?.input ?? null,
+      attributedOriginalOutput: turn.fitting?.output ?? null,
+      retainedEntryInput: requestInput, retainedOutput: responseOutput, outputContributions,
+      cacheRead, fresh, opaqueOutput,
+      basis: 'Original-session fitted content allocations, recalculated after removals and child insertion. Unassigned measured residuals remain explicit.' }
     entryAccounting.push(entry)
     estimates.push({ turnId: turn.id, sessionId: turn.sessionId, runId: turn.runId, model: action.targetModel,
       originalModel: turn.model, confidence: turn.confidence, sources: turn.sources,
-      requestFingerprint: request.fingerprint, requestEntryIds: [...requested],
+      candidateTurnIds: turn.candidateTurnIds, fittedOriginalInput: turn.fitting?.input ?? null,
+      requestFingerprint: fingerprint({ content: request.fingerprint, atoms: [...atoms] }), requestEntryIds: [...requested],
       requestOutputContributions: [...retainedOutputs], requestBlockIds: retainedHistory.map(block => block.id),
       generatedBlockIds: generated.map(block => block.id),
-      inputAdjustment: { attributedOriginalInput: entry.attributedOriginalInput, cumulativeRequestInput: request.tokens,
-        basis: 'Each unique retained message/tool enters history at its recorded position. The whole history is tokenized once for this request.' },
-      outputAdjustment: { attributedOriginalOutput: entry.attributedOriginalOutput, generatedOutput: response.tokens,
-        outputContributions, basis: 'Retained visible generated output is charged once, then enters later requests at its transcript position.' },
-      input: range(request.tokens, 0, false), output: range(response.tokens, 0, false),
+      inputAdjustment: { attributedOriginalInput: entry.attributedOriginalInput, cumulativeRequestInput: requestInput,
+        visibleInput: request.tokens, opaqueInput: sum([...opaqueAtoms.values()]),
+        basis: 'Fitted original context mass follows retained transcript additions. Shared retained content is charged once per rewritten request.' },
+      outputAdjustment: { attributedOriginalOutput: entry.attributedOriginalOutput, generatedOutput: responseOutput,
+        outputContributions, opaqueOutput, basis: 'Retained recorded output is charged once. Unattributed output remains separate from visible content.' },
+      input: range(requestInput, 0, false), output: range(responseOutput, 0, false),
+      cacheRead: range(cacheRead, 0, false), fresh: range(fresh, 0, false),
       contextLimit, contextLimitExceeded, supported: false,
-      uncertainty: 'Visible-context scenario only. Provider framing, hidden reasoning, missing context and alternative single-agent behavior are not measured.' })
+      uncertainty: 'Same recorded work and tools, with fitted grouping and context retention. Missing content, opaque allocations and inferred batching prevent a unique or bounded prediction.' })
   }
   for (const turn of evidence.turns.filter(item => turnDispositions.get(item.id).action === 'remove')) {
     entryAccounting.push({ turnId: turn.id, sessionId: turn.sessionId, runId: turn.runId,
       confidence: turn.confidence, disposition: 'remove', sources: turn.sources,
-      attributedOriginalInput: turn.measuredUsage?.inputTokens ?? null,
-      attributedOriginalOutput: turn.measuredUsage?.outputTokens ?? null,
-      retainedEntryInput: 0, retainedOutput: 0, outputContributions: [],
-      basis: 'Removed response has no request or generated output charge. Retained history is unchanged.' })
+      attributedOriginalInput: turn.fitting?.input ?? null,
+      attributedOriginalOutput: turn.fitting?.output ?? null,
+      retainedEntryInput: 0, retainedOutput: 0, outputContributions: [], cacheRead: 0, fresh: 0,
+      basis: 'Removed request has no input or output charge. Needed retained task content remains in later requests.' })
   }
   const input = range(sum(estimates.map(item => item.input.estimate)), 0, false)
   const output = range(sum(estimates.map(item => item.output.estimate)), 0, false)
+  const cacheRead = range(sum(estimates.map(item => item.cacheRead.estimate)), 0, false)
+  const fresh = range(sum(estimates.map(item => item.fresh.estimate)), 0, false)
   const total = range(sum([input.estimate, output.estimate]), 0, false)
   const baseline = group => Object.fromEntries(['input', 'output', 'cacheRead', 'cacheWrite', 'fresh', 'reasoning', 'total', 'requests'].map(field => {
     const values = group.map(row => row[field])
@@ -664,11 +665,11 @@ const createSubagentReplay = (data, assumptions = {}) => {
     measured, finalAnswer, measuredRuns: data.agents.flatMap(agent => agent.rows.map(row => ({ sessionId: row.sessionId, runId: row.id,
       provider: row.provider, model: row.model, source: row.usageSource, status: row.status,
       usage: Object.fromEntries(['input', 'output', 'cacheRead', 'cacheWrite', 'fresh', 'reasoning', 'total', 'requests'].map(field => [field, row[field]])) }))),
-    estimate: { input, output, total, difference,
-      scope: 'One coordinator conversation containing placed recorded work, tokenized at surviving observed or transcript-inferred requests through cutoff.' },
+    estimate: { input, output, total, difference, cacheRead, fresh, cachingAssumption,
+      scope: 'Same recorded work and tools in one coordinator conversation. Original individual sessions are fitted to measured input and active context before overhead removal and insertion.' },
     sensitivity: { withoutAllocatedRequests: {
       excludedRequests: 0, input, output, total, difference, replayTurns: estimates,
-      assumption: 'No requests are allocated from token totals or missing counts. This compatibility view equals the primary replay.' } },
+      assumption: 'Compatibility view of the primary fitted replay. Allocated requests are necessary for reconstruction and are not silently excluded.' } },
     coverage: { complete: estimates.length > 0 && !gaps.length && estimates.every(item => item.supported && item.output.upper !== null), gaps, gapReasons, unplacedSessions: unplaced,
       cutoff: data.cutoff, measuredUsageComplete: measured.combined.total.value !== null && !data.warnings.length,
       firstUnsupportedTurn: estimates.find(item => !item.supported || item.output.upper === null)?.turnId || null },
@@ -681,27 +682,29 @@ const createSubagentReplay = (data, assumptions = {}) => {
       insertions: [...insertions.values()].flat(), actions: ordered.map((action, index) => ({ ...action, index })) },
     tokenizer: { identities: tokenizer.identities(), cachedRequestsAndOutputs: tokenizer.cacheSize(),
       cacheKey: 'Content SHA-256 + encoding + tokenizer version + serialization version.' },
-    calibration, entryAccounting, assumptions: [
+    calibration, reconstruction, entryAccounting, assumptions: [
+      cachingAssumption,
       'Rebuild the same recorded work as one sequential coordinator conversation. This does not claim an exact alternate execution.',
-      'Measured combined usage remains the actual coordinator plus descendant usage. It is never added as text to replay history.',
-      'Retain observed request identities and infer requests only from generated content and prompt/tool-result boundaries. Missing counts or boundaries are reported, never synthesized from token volume.',
+      'Measured combined usage remains the actual coordinator plus descendant usage, including its recorded cache metrics. Total input already includes cache, so total usage is input plus output without adding cache again.',
+      'Cumulative provider snapshots constrain input through within-scope nondecreasing deltas. Unknown initial baselines and process resets are not treated as new request boundaries.',
+      'Fit each original individual session before merging. Preserve recorded response identities, prompt/context boundaries and complete response metrics. Measured cumulative input and active-context snapshots drive grouping and nonnegative context allocation.',
       'Recursively insert child work at captured spawn calls. Unplaced children remain explicit gaps, not guessed end-of-run insertions.',
-      'Each retained prompt, message and tool result enters history once at its transcript position. Each surviving request tokenizes that complete visible history once.',
+      'Captured transcript additions determine context growth weights. Fitted original context allocations are recalculated across retained prompts, generated messages and tool results at each surviving rewritten request.',
       'Generated output is charged once and enters context only after the request that generated it. Removing a handoff prompt does not erase earlier history.',
-      'Captured system sections are deduplicated by section kind and content within user messages. Captured delegation policy sections are removed. No scalar startup deduction or proportional run-budget allocation is applied.',
-      'Hidden/provider-dependent reasoning is not known visible context and is excluded from the point estimate. Its counterfactual cost and context retention remain unknown.',
-      'Retain visible history across recorded resets and compaction as an explicit scenario. Replacement summaries, hidden prefixes and lost context are not invented.',
+      'Captured system sections are deduplicated by section kind and content within user messages. Captured delegation policy sections are removed. Opaque context is retained separately because its redundancy cannot be proven.',
+      'Measured output beyond captured visible output remains an opaque output budget on surviving requests. Its later input retention is unknown and is not fabricated as text.',
+      'Compaction and reset break append-only regions. Fitted retention decreases also reset cache assumptions. Replacement summary text is unavailable, so retention remains an explicit scenario limitation.',
       'Tokenization uses an approximate message serialization and a proxy encoding where the coordinator tokenizer is unknown. Missing tool schemas, prefixes and context prevent a supported bounded total.',
-      'Calibration remains per original session/model/region using reconciled response usage. Signed residuals are diagnostic only, never new context or overhead deductions.',
+      'Fitting remains per original session with run totals and model/context regions. Complete response metrics take precedence over aggregate fitting. Incompatible totals, snapshots and missing requests leave explicit residuals, never negative allocations.',
       'Remove delegation wrappers only with retained task/findings evidence. Remove relay-only requests when every generated block is supported coordination or repeated findings, including a redundant final root relay.',
       'Useful mixed responses and novel synthesis remain. Retained child findings can supply the final answer instead of charging a duplicate coordinator relay.',
       'Coordination and relay classification is heuristic and explicitly recorded. Unmatched substantive text is retained.',
       'Removal proofs resolve to retained evidence. Invalid dependency chains restore the original content.',
-      'Request fingerprints represent serialized retained visible content, not original provider requests. Point estimates have unknown upper bounds where evidence is incomplete.',
+      'Request fingerprints include serialized retained visible content and fitted context allocations, not original provider requests. Zero fit residual does not establish an exact solution or a bounded counterfactual.',
       ...(ignoredAssumptions.length ? [`Unapplied legacy assumptions: ${ignoredAssumptions.join(', ')}`] : []),
     ],
-    turns: evidence.turns, blocks: evidence.blocks, blockDispositions: [...dispositions.values()],
-    turnDispositions: [...turnDispositions.values()], replayTurns: estimates, runAccounting: evidence.runAccounting,
+    originalTurns: fitted.originalTurns, turns: evidence.turns, blocks: evidence.blocks, blockDispositions: [...dispositions.values()],
+    turnDispositions: [...turnDispositions.values()], replayTurns: estimates, runAccounting: evidence.runAccounting.map(accounting => ({ ...accounting, reconstruction: reconstruction.find(item => item.sessionId === accounting.sessionId && item.runId === accounting.runId) })),
     sourceEvents: data.agents.map(agent => ({ sessionId: agent.id, events: agent.events })),
   })
 }

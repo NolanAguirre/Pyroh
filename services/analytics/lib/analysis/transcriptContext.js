@@ -63,6 +63,7 @@ const responseRecords = (row, events) => {
     const orders = [...(previous?.orders || []), ...(known(order) ? [order] : [])]
     const keepFinal = previous?.record.status === 'completed' && record.status !== 'completed'
     records.set(key, { key, record: keepFinal ? previous.record : { ...previous?.record, ...record }, sources, orders,
+      toolCallIds: [...new Set([...(previous?.toolCallIds || []), ...(record.toolCallIds || []), ...(record.toolCallId ? [record.toolCallId] : [])])],
       starts: [...(previous?.starts || []), ...(record.status === 'streaming' && known(order) ? [order] : [])],
       ends: [...(previous?.ends || []), ...(record.status === 'completed' && known(order) ? [order] : [])] })
   }
@@ -192,7 +193,8 @@ const createTranscriptEvidence = (agents) => {
           ? entries.filter(entry => entry.event.ts <= completedAt).at(-1) : null
         const end = response.ends.length ? Math.max(...response.ends) : completionEntry?.order ?? null
         return { id: `${row.sessionId}:${row.id}:response:${index}`, sessionId: row.sessionId, runId: row.id,
-          responseKey: response.key, responseId: response.record.requestId,
+          responseKey: response.key, responseId: response.record.requestId, requestStatus: response.record.status,
+          toolCallIds: response.toolCallIds,
           model: response.record.model || row.model, provider: row.provider, sources: response.sources,
           confidence: row.requestEvidence?.coverage === 'complete' && response.starts.length > 0 && response.ends.length > 0 ? 'measured' : 'inferred',
           reason: start !== null ? 'Recorded response start and transcript order.' : 'Response identity with inferred content boundary.',
@@ -205,6 +207,8 @@ const createTranscriptEvidence = (agents) => {
       for (const block of runBlocks) {
         let turn = null
         if (block.itemId) turn = runTurns.find(item => block.itemId === item.responseId || block.itemId.startsWith(`${item.responseId}:`))
+        if (!turn && block.generated && block.toolId) turn = runTurns.find(item => item.toolCallIds?.includes(block.toolId))
+        const matchedIdentity = Boolean(turn)
         if (!turn && block.generated) {
           turn = runTurns.find(item => item.start !== null && item.start <= block.order && (item.end === null || item.end >= block.order))
           if (!turn) turn = runTurns.find(item => item.start === null && item.end !== null && item.end >= block.order)
@@ -212,7 +216,7 @@ const createTranscriptEvidence = (agents) => {
           if (!turn && block.kind === 'tool_call') turn = [...runTurns].reverse().find(item => item.end !== null && item.end <= block.order
             && !runBlocks.some(result => result.kind === 'tool_result' && result.lastOrder > item.end && result.lastOrder < block.order))
         }
-        if (turn && block.generated && (block.kind !== 'tool_call' || inferred?.order > boundaryOrder)
+        if (turn && !matchedIdentity && block.generated && (block.kind !== 'tool_call' || inferred?.order > boundaryOrder)
           && turn.blocks.some(id => runBlocks.find(item => item.id === id)?.order < boundaryOrder)) {
           // A continuation consuming a completed tool result cannot be the request that produced that tool.
           turn = null
@@ -247,7 +251,7 @@ const createTranscriptEvidence = (agents) => {
         ? total(segments.map(segment => segment.reportedModelRequests)) : null
       const expectedRequests = known(row.requests) ? row.requests : reported
       const missingRequests = Math.max(0, (expectedRequests ?? row.requestEvidence?.observed ?? 0) - runTurns.length)
-      if (missingRequests) addGap(row, `${missingRequests} recorded requests have no recoverable identity or transcript boundary. No empty requests are invented.`)
+      if (missingRequests) addGap(row, `${missingRequests} recorded requests have no recoverable identity or transcript boundary. Missing request positions remain unresolved during usage fitting.`)
       if (!runTurns.length && (row.input > 0 || row.output > 0)) addGap(row, 'Usage exists without recoverable request boundaries or generated content.')
       for (const turn of runTurns) {
         const generated = runBlocks.filter(block => block.turnId === turn.id)
@@ -263,7 +267,7 @@ const createTranscriptEvidence = (agents) => {
       if (runTurns.some(turn => turn.confidence !== 'measured')) addGap(row, 'Some response boundaries are inferred from captured content, so replay timing remains uncertain.')
       if (!row.endedAt || row.record?.transcriptStatus === 'incomplete') addGap(row, 'Run or transcript is incomplete at cutoff.')
       if (agent.session.fork) addGap(row, 'Inherited provider history is not fully represented in this session.')
-      // Run totals are evidence, never new text or equal shares of reconstructed requests.
+      // Preserve original accounting for the constrained reconstruction stage.
       const accounting = { sessionId: row.sessionId, runId: row.id, measured: { input: row.input, output: row.output },
         expectedRequests, recoveredRequests: runTurns.length, missingRequests, residual: {} }
       for (const field of ['input', 'output']) {
@@ -273,7 +277,7 @@ const createTranscriptEvidence = (agents) => {
         runTurns.forEach((turn, index) => {
           turn.attributedUsage = turn.attributedUsage || {}
           turn.attributedUsage[field] = observed[index]
-          turn.attribution = 'Observed response usage only. Unassigned run usage stays in the residual and does not enter replay context.'
+          turn.attribution = 'Observed response usage before original-session reconstruction.'
         })
         accounting.residual[field] = known(row[field]) ? row[field] - subtotal : null
       }

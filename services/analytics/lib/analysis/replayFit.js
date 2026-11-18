@@ -60,7 +60,7 @@ const shape = groups => {
       for (const [index, group] of span.entries()) {
         const before = span.slice(0, index).filter(item => known(item.anchor)).at(-1)
         const after = span.slice(index + 1).find(item => known(item.anchor))
-        group.lower = before?.anchor ?? 0
+        group.lower = before?.anchor ?? group.contextSeed?.used ?? 0
         group.upper = after?.anchor ?? Infinity
         if (known(group.anchor)) {
           group.nominal = group.anchor
@@ -73,7 +73,10 @@ const shape = groups => {
         } else if (after) {
           group.nominal = after.visibleInput > 0 ? after.anchor * Math.min(1, (group.visibleInput || 0) / after.visibleInput) : 0
         } else if (before) group.nominal = before.anchor + Math.max(0, (group.visibleInput || 0) - (before.visibleInput || 0))
-        else group.nominal = group.visibleInput
+        else group.nominal = known(group.visibleInput) ? group.visibleInput + (group.contextSeed?.used || 0) : null
+        if (!known(group.anchor) && known(group.contextLimit)) {
+          group.upper = Math.min(group.upper, Math.max(0, group.contextLimit - (group.output || 0)))
+        }
       }
     }
   }
@@ -130,7 +133,7 @@ const snapshotsFor = (agent, row, cutoff) => {
       const input = inputUsage(raw.total)
       const previous = cumulative.get(key)
       if (known(input)) {
-        if (previous && input >= previous.input && input !== previous.input) budgets.push({
+        if (previous && input >= previous.input) budgets.push({
           kind: 'cumulative-input-delta', start: previous.order, end: entry.order,
           target: input - previous.input, source: entry.source,
         })
@@ -187,6 +190,7 @@ const createFittedReplayEvidence = (data, original, tokenizer) => {
     let region = 0
     let priorThread = null
     let priorModel = null
+    let priorFit = null
     const rows = [...agent.rows].sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0) || a.id.localeCompare(b.id))
     for (const row of rows) {
       const candidates = original.turns.filter(turn => turn.sessionId === agent.id && turn.runId === row.id)
@@ -242,8 +246,16 @@ const createFittedReplayEvidence = (data, original, tokenizer) => {
         const group = candidates.filter(turn => turn.order <= snapshot.order).at(-1)
         const boundary = local.some(block => block.kind === 'boundary' && ['compaction', 'reset'].includes(block.boundary)
           && block.order > (group?.order ?? -Infinity) && block.order <= snapshot.order)
-        if (!group || boundary || snapshot.phase === 'compaction') unmatchedSnapshots.push(snapshot)
-        else group.contextSnapshots.push(snapshot)
+        if (!group || boundary || snapshot.phase === 'compaction') {
+          const next = candidates.find(turn => turn.order > snapshot.order)
+          // A post-compaction observation measures the new region's opaque
+          // context. It is not the input of the response before compaction.
+          if (next && boundary && snapshot.phase !== 'compaction') {
+            for (const candidate of candidates.filter(turn => turn.region === next.region && turn.order >= next.order)) {
+              candidate.contextSeed = snapshot
+            }
+          } else unmatchedSnapshots.push(snapshot)
+        } else group.contextSnapshots.push(snapshot)
       }
       const accounting = original.runAccounting.find(item => item.sessionId === agent.id && item.runId === row.id)
       const targetRequests = accounting?.expectedRequests ?? null
@@ -289,17 +301,22 @@ const createFittedReplayEvidence = (data, original, tokenizer) => {
       if (merged) limitations.push('Unmeasured tool boundaries were grouped to fit usage. Tool-result dependencies inside these inferred batches are not fully known.')
       if (known(targetRequests) && targetRequests !== groups.length) limitations.push('Recorded request count cannot be placed without inventing requests or discarding hard boundaries.')
       if (groups.some(group => group.contextSnapshots.some(snapshot => !known(snapshot.input)))) limitations.push('Active-context snapshots may include output. Estimated response output is subtracted when input is not recorded separately.')
+      if (groups.some(group => group.contextSeed)) limitations.push('Post-compaction context is represented as opaque measured mass. Replacement summary text is unavailable.')
       if (unmatchedSnapshots.length) limitations.push('Some context snapshots lack an attributable request or describe compaction. They do not create request boundaries or summary text.')
       if (groups.some(group => group.contextLoss)) limitations.push('Measured context shrinks without a captured summary. A new retention region is required, with unknown retained content.')
       if (!known(row.input)) limitations.push('Cumulative input usage is unavailable. Unconstrained requests retain transcript-based estimates.')
       if (agent.session.fork) limitations.push('Inherited session content is incomplete.')
       if (groups.some(group => group.visibleInput === null)) limitations.push('Tokenizer unavailable for some captured context.')
       const constraints = []
+      const deferredBudgets = []
       const assigned = new Set()
       // Nonoverlapping measured intervals constrain subsets before the run total.
       for (const budget of budgets) {
         const subset = groups.filter(group => group.order > budget.start && group.order <= budget.end)
-        if (subset.some(group => assigned.has(group.id))) continue
+        if (subset.some(group => assigned.has(group.id))) {
+          deferredBudgets.push({ budget, subset })
+          continue
+        }
         fitBudget(subset, budget.target)
         subset.forEach(group => assigned.add(group.id))
         const fitted = total(subset.map(group => group.input))
@@ -308,6 +325,11 @@ const createFittedReplayEvidence = (data, original, tokenizer) => {
       const assignedInput = total(groups.filter(group => assigned.has(group.id)).map(group => group.input))
       fitBudget(groups.filter(group => !assigned.has(group.id)), known(row.input) && assignedInput !== null
         ? Math.max(0, row.input - assignedInput) : null)
+      for (const { budget, subset } of deferredBudgets) {
+        const fitted = total(subset.map(group => group.input))
+        constraints.push({ ...budget, fitted, residual: fitted === null ? null : budget.target - fitted,
+          interpretation: 'Overlapping cumulative constraint evaluated against the fitted interval allocations.' })
+      }
       const fittedInput = total(groups.map(group => group.input))
       const fittedOutput = total(groups.map(group => group.output))
       const inputResidual = known(row.input) && fittedInput !== null ? row.input - fittedInput : null
@@ -317,6 +339,14 @@ const createFittedReplayEvidence = (data, original, tokenizer) => {
         { kind: 'request-count', target: targetRequests, fitted: groups.length,
           residual: known(targetRequests) ? targetRequests - groups.length : null, source: row.requestEvidence?.detail })
       for (const group of groups) {
+        if (known(group.contextLimit)) constraints.push({ kind: 'context-limit', turnId: group.id,
+          target: group.contextLimit, fitted: known(group.input) && known(group.output) ? group.input + group.output : null,
+          residual: known(group.input) && known(group.output) ? Math.min(0, group.contextLimit - group.input - group.output) : null,
+          semantics: 'Upper bound on request input plus generated output.' })
+        if (group.contextSeed) constraints.push({ kind: 'post-compaction-context-floor', turnId: group.id,
+          target: group.contextSeed.used, fitted: known(group.input) ? Math.min(group.contextSeed.used, group.input) : null,
+          residual: known(group.input) ? Math.max(0, group.contextSeed.used - group.input) : null,
+          source: group.contextSeed.source })
         for (const snapshot of group.contextSnapshots) {
           const output = known(snapshot.output) ? snapshot.output : group.output
           const fitted = known(group.input) && known(output) ? group.input + output : null
@@ -326,7 +356,7 @@ const createFittedReplayEvidence = (data, original, tokenizer) => {
       }
       for (const snapshot of unmatchedSnapshots) constraints.push({ kind: 'unplaced-active-context', target: snapshot.used,
         fitted: null, residual: null, source: snapshot.source, semantics: snapshot.semantics })
-      if (constraints.some(constraint => known(Math.abs(constraint.residual)) && constraint.residual !== 0)) limitations.push('Measured constraints conflict with recoverable nonnegative request contexts. Residual usage is left unassigned.')
+      if (constraints.some(constraint => Number.isFinite(constraint.residual) && constraint.residual !== 0)) limitations.push('Measured constraints conflict with recoverable nonnegative request contexts. Residual usage is left unassigned.')
       const report = { sessionId: agent.id, runId: row.id, targetInput: row.input, fittedInput, inputResidual,
         targetOutput: row.output, fittedOutput, outputResidual, targetRequests, fittedRequests: groups.length,
         candidateRequests: candidates.length + merged, requestResidual: known(targetRequests) ? targetRequests - groups.length : null,
@@ -335,9 +365,19 @@ const createFittedReplayEvidence = (data, original, tokenizer) => {
       limitations.forEach(reason => gaps.push({ sessionId: agent.id, runId: row.id, reason }))
       // Persist context mass by block introduction. Growth is weighted by the
       // actual captured additions, with opaque mass kept separate from text.
-      let prior = null
+      let prior = priorFit
       for (const group of groups) {
         const activeHistory = group.history
+        const decrease = prior && prior.region === group.region && known(group.input) && known(prior.input) && group.input < prior.input
+        if (decrease) {
+          group.contextLoss = true
+          constraints.push({ kind: 'append-only-context', turnId: group.id, target: prior.input,
+            fitted: group.input, residual: prior.input - group.input,
+            semantics: 'Context cannot shrink within an append-only region. An unobserved retention change would be required.' })
+          limitations.push('Cumulative constraints require a context decrease without captured retention evidence.')
+          gaps.push({ sessionId: agent.id, runId: row.id, turnId: group.id,
+            reason: 'Fitted context decreases across cumulative constraints. Retention is unknown, so append-only reconstruction stops here.' })
+        }
         const reset = !prior || prior.region !== group.region || group.contextLoss
         const previousIds = new Set(reset ? [] : prior.history.map(block => block.id))
         const additions = activeHistory.filter(block => !previousIds.has(block.id))
@@ -348,8 +388,9 @@ const createFittedReplayEvidence = (data, original, tokenizer) => {
         })
         const captured = sum(weights)
         const increase = known(group.input) ? Math.max(0, group.input - (reset ? 0 : prior.input || 0)) : null
-        const visibleIncrease = known(increase) ? Math.min(increase, captured) : null
-        const contextKey = `${agent.id}:${row.id}:${group.region}:${group.contextLoss ? group.id : 'context'}`
+        const visibleIncrease = known(increase) ? Math.min(Math.max(0, increase - (reset ? group.contextSeed?.used || 0 : 0)), captured) : null
+        const contextKey = group.contextLoss ? `${agent.id}:${group.region}:${group.id}`
+          : !reset ? prior.contextKey : `${agent.id}:${group.region}:context`
         const allocations = new Map(reset ? [] : prior.contextContributions.map(item => [item.blockId, item.tokens]))
         let assignedMass = 0
         let cumulativeMass = 0
@@ -375,7 +416,7 @@ const createFittedReplayEvidence = (data, original, tokenizer) => {
         let cumulativeOutput = 0
         outputBlocks.forEach((block, index) => {
           cumulativeOutput += visibleWeights[index]
-          const next = known(group.output) && visibleTotal > 0 ? Math.round(group.output * cumulativeOutput / visibleTotal) : 0
+          const next = known(group.output) && visibleTotal > 0 ? Math.round(Math.min(group.output, visibleTotal) * cumulativeOutput / visibleTotal) : 0
           outputWeights.set(block.id, { tokens: next - assignedOutput, model: group.model, visible: visibleWeights[index] })
           assignedOutput = next
         })
@@ -389,11 +430,16 @@ const createFittedReplayEvidence = (data, original, tokenizer) => {
             region: group.region, contextKey, contextLoss: Boolean(group.contextLoss), opaqueContext: opaque,
             contextContributions: group.contextContributions, candidateTurnIds: group.candidateTurnIds,
             contextSnapshots: group.contextSnapshots, unattributedOutput: group.unattributedOutput,
-            inputResidual, outputResidual } }
+            inputResidual, outputResidual, contextSeed: group.contextSeed || null } }
         delete fitted.history
         turns.push(fitted)
         prior = group
+        priorFit = group
       }
+      report.requests = groups.map(group => ({ turnId: group.id, candidateTurnIds: group.candidateTurnIds,
+        responseId: group.responseId || null, boundary: group.responseId ? 'recorded-identity' : 'inferred-batch',
+        input: group.input, output: group.output, region: group.region, contextSnapshots: group.contextSnapshots,
+        opaqueContext: group.opaqueContext, unattributedOutput: group.unattributedOutput }))
       const regions = [...new Set(groups.map(group => group.region))]
       for (const value of regions) {
         const localGroups = groups.filter(group => group.region === value)
@@ -413,7 +459,7 @@ const createFittedReplayEvidence = (data, original, tokenizer) => {
       }
     }
   }
-  return { evidence: { ...original, turns, blocks, gaps }, calibration, reconstruction, blockWeights, outputWeights, opaqueContexts }
+  return { evidence: { ...original, turns, blocks, gaps }, originalTurns: original.turns, calibration, reconstruction, blockWeights, outputWeights, opaqueContexts }
 }
 
 module.exports = { createFittedReplayEvidence }

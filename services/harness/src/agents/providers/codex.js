@@ -4,6 +4,7 @@ const path = require('path')
 const config = require('../../config')
 const { createTransport } = require('./codexTransport')
 const { createCapture } = require('./codexTelemetry')
+const { createReader, requestUsage } = require('./codexEvidence')
 const { normalizeCodexOptions } = require('./codexOptions')
 const { composePromptWithProvenance } = require('../modes')
 const { capture } = require('../../prompt/provenance')
@@ -51,16 +52,6 @@ const normalizeUsage = (usage) => usage ? {
   totalTokens: usage.totalTokens ?? ((usage.inputTokens || 0) + (usage.outputTokens || 0)),
 } : null
 
-// Raw completion usage is evidence, so missing fields stay unknown. Installed
-// app-server schemas include both TokenUsage and TokenUsageBreakdown shapes.
-const requestUsage = usage => Object.fromEntries(Object.entries({
-  inputTokens: ['inputTokens', 'input_tokens'], outputTokens: ['outputTokens', 'output_tokens'],
-  cacheReadTokens: ['cachedInputTokens', 'cached_input_tokens'],
-  cacheWriteTokens: ['cacheWriteInputTokens', 'cache_write_input_tokens'],
-  reasoningTokens: ['reasoningOutputTokens', 'reasoning_output_tokens'],
-  totalTokens: ['totalTokens', 'total_tokens'],
-}).map(([key, names]) => [key, names.map(name => usage?.[name]).find(value => Number.isSafeInteger(value) && value >= 0) ?? null]))
-
 const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requestEvidence } = {}) => {
   const options = normalizeCodexOptions(codex)
   const harnessMcp = Array.isArray(tools.mcpServers) ? tools.mcpServers : []
@@ -78,8 +69,115 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
   let forkAttempted = false
   const serverRequests = new Map()
   const diagnostics = []
+  const turns = new Map()
+  let rollout = null
+  let evidenceTimer = null
 
-  const emit = (event) => active?.emit({ ...event, runId: active.id })
+  const emit = (event, turn = active) => turn?.emit({ provider: 'codex', providerAgentId: threadId,
+    runId: turn.id, providerRunId: turn.id, segmentId: turn.evidenceSegmentId, ...event })
+  const emitEvidence = (event, turn = active) => {
+    if (!turn || turn.evidence.has(event.evidenceId)) return
+    turn.evidence.add(event.evidenceId)
+    emit(event, turn)
+  }
+  const recordResponse = (responseId, usage, provenance, observedAt = Date.now(), turn = active) => {
+    if (!turn?.id || typeof responseId !== 'string' || !responseId) return
+    const previous = turn.responses.get(responseId)
+    const supplied = requestUsage(usage)
+    const merged = Object.fromEntries(Object.entries(supplied).map(([key, value]) => [key, value ?? previous?.usage[key] ?? null]))
+    const sources = [...new Set([...(previous?.sources || []), provenance])]
+    const fingerprint = JSON.stringify([merged, sources])
+    if (previous?.fingerprint === fingerprint) return
+    turn.responses.set(responseId, { usage: merged, sources, fingerprint })
+    emit({ type: 'model_request', version: 2, requestId: responseId, responseId,
+      evidenceScopeId: JSON.stringify([threadId, turn.id]), status: 'completed', observedAt,
+      model: turn.model, usage: merged, sources, provenance,
+      startedAt: null, durationMs: null,
+      timingSemantics: 'response completion evidence; request start and latency unavailable' }, turn)
+  }
+  const turnEvent = (status, source, turn = active) => {
+    const eventId = `${turn.evidenceSegmentId}:turn:${status}`
+    if (turn.lifecycle.has(eventId)) return
+    turn.lifecycle.add(eventId)
+    const observedAt = Date.now()
+    emit({ type: 'agent_turn', eventId, status, observedAt, model: turn.model,
+      reasoningEffort: turn.effort, startedAt: turn.startedAt,
+      endedAt: ['completed', 'cancelled', 'error'].includes(status) ? observedAt : null,
+      durationMs: ['completed', 'cancelled', 'error'].includes(status) ? observedAt - turn.startedAt : null,
+      provenance: source, timingSemantics: 'harness observed turn lifecycle; not model request latency' }, turn)
+  }
+  const bindTurn = (id) => {
+    if (!active || !id || (active.id && active.id !== id)) return
+    active.id = id
+    turns.set(id, active)
+    telemetry?.bindTurn(active.evidenceSegmentId, id)
+  }
+  const captureIssue = (source, issue) => {
+    if (!active) return
+    emitEvidence({ type: 'model_request_evidence', version: 2, kind: 'capture_issue',
+      evidenceId: `${active.evidenceSegmentId}:${source}:${issue}`, observedAt: Date.now(),
+      provenance: source, limitation: issue })
+  }
+  const drainEvidence = () => {
+    if (rollout) {
+      const batch = rollout.read()
+      if (batch.issue) captureIssue('codex rollout', batch.issue)
+      if (batch.remaining) captureIssue('codex rollout', 'Unread bytes remain after bounded drain')
+      if (batch.skipped) captureIssue('codex rollout', 'Malformed or oversized records skipped')
+      for (const record of batch.records) {
+        if (record?.type !== 'token_usage_record') continue
+        const value = record.payload
+        if (value?.thread_id !== threadId || !value.turn_id || !value.response_id) continue
+        const turn = turns.get(value.turn_id)
+        if (!turn) continue
+        const usage = requestUsage(value.usage)
+        const turnUsage = requestUsage(value.turn_token_usage)
+        const threadUsage = requestUsage(value.thread_token_usage)
+        const fingerprint = crypto.createHash('sha256').update(JSON.stringify([usage, turnUsage, threadUsage])).digest('hex')
+        const occurredAt = Date.parse(record.timestamp)
+        emitEvidence({ type: 'model_request_evidence', version: 2, kind: 'response_usage',
+          evidenceId: `${threadId}:${turn.id}:${value.response_id}:${fingerprint}`,
+          responseId: value.response_id, providerSessionId: value.session_id || null,
+          rootTurnId: value.root_turn_id || null, observedAt: Date.now(),
+          occurredAt: Number.isFinite(occurredAt) ? occurredAt : null,
+          usage, turnUsage, threadUsage, provenance: 'codex rollout:token_usage_record',
+          timingSemantics: 'provider usage record timestamp; not request duration' }, turn)
+        recordResponse(value.response_id, value.usage, 'codex rollout:token_usage_record', Date.now(), turn)
+      }
+    }
+    if (telemetry) {
+      const evidence = telemetry.drain()
+      const bySegment = new Map([...turns.values()].map(turn => [turn.evidenceSegmentId, turn]))
+      for (const [segmentId, records] of evidence.bySegment) {
+        const turn = bySegment.get(segmentId)
+        if (turn) for (const record of records) emitEvidence(record, turn)
+      }
+      for (const issue of evidence.issues) captureIssue('codex OTLP', issue)
+    }
+  }
+  const drainSafely = () => {
+    try { drainEvidence() }
+    catch (err) { captureIssue('codex capture', err.code || 'Evidence unavailable') }
+  }
+  const toolEvent = (item, completed, source = 'codex app-server:item', turn = active) => {
+    const key = item.id
+    if (!key) return
+    const previous = turn.executions.get(key)
+    if (previous?.completed || (!completed && previous)) return
+    const observedAt = Date.now()
+    const startedAt = previous?.startedAt ?? (completed ? null : observedAt)
+    const execution = { startedAt, completed, name: item.tool || item.type }
+    turn.executions.set(key, execution)
+    emit({ type: 'tool_execution', itemId: key, eventId: `${turn.evidenceSegmentId}:${key}:${completed ? 'end' : 'start'}`,
+      name: execution.name, toolType: item.type, status: item.status || (completed ? 'completed' : 'started'),
+      observedAt, startedAt, endedAt: completed ? observedAt : null,
+      durationMs: Number.isFinite(item.durationMs) && item.durationMs >= 0 ? item.durationMs : null,
+      observedDurationMs: completed && startedAt !== null ? observedAt - startedAt : null,
+      exitCode: Number.isInteger(item.exitCode) ? item.exitCode : null,
+      processId: typeof item.processId === 'string' || Number.isInteger(item.processId) ? item.processId : null,
+      server: item.server || null, hasError: Boolean(item.error),
+      provenance: source, timingSemantics: 'provider duration when supplied; observed duration uses item notifications' }, turn)
+  }
   const clearRequests = () => {
     for (const controller of serverRequests.values()) controller.abort()
     serverRequests.clear()
@@ -87,9 +185,15 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
   const finish = (status, error = null) => {
     if (!active || active.done) return
     active.done = true
+    drainSafely()
     telemetry?.endSegment(active.evidenceSegmentId, status)
     clearTimeout(active.cancelTimer)
     clearRequests()
+    for (const [id, execution] of active.executions) {
+      if (!execution.completed) toolEvent({ id, type: execution.name,
+        status: status === 'completed' ? 'unknown' : status }, true, 'harness turn ended without item completion')
+    }
+    turnEvent(status, 'harness turn result')
     const messages = [...active.messages.values()]
     const finals = messages.filter((item) => item.phase === 'final_answer')
     const result = {
@@ -116,20 +220,18 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
     if (!active || active.done || (params.threadId && params.threadId !== threadId)) return
     const eventTurnId = params.turnId || params.turn?.id
     if (eventTurnId && active.id && eventTurnId !== active.id) return
-    if (eventTurnId && !active.id) active.id = eventTurnId
-    if (eventTurnId) telemetry?.bindTurn(active.evidenceSegmentId, eventTurnId)
-    if (method === 'turn/started') emit({ type: 'status', status: 'running' })
+    if (eventTurnId) bindTurn(eventTurnId)
+    if (method === 'turn/started') {
+      turnEvent('started', 'codex app-server:turn/started')
+      emit({ type: 'status', status: 'running' })
+    }
     else if (method === 'rawResponse/completed') {
       // This optional notification exists in the installed app-server schema.
       // Require explicit ownership; never count a native child or an unbound
       // response. Its delivery contract does not establish full loop coverage.
       if (params.threadId !== threadId || !params.turnId || params.turnId !== active.id
         || typeof params.responseId !== 'string' || !params.responseId) return
-      emit({ type: 'model_request', version: 2, provider: 'codex', requestId: params.responseId,
-        evidenceScopeId: JSON.stringify([threadId, active.id]), providerAgentId: threadId,
-        status: 'completed', observedAt: Date.now(), usage: requestUsage(params.usage),
-        providerUsage: params.usage || null, provenance: 'codex app-server:rawResponse/completed',
-        timingSemantics: 'response_completion_observed; request start unavailable' })
+      recordResponse(params.responseId, params.usage, 'codex app-server:rawResponse/completed')
     }
     else if (method === 'turn/completed') {
       const status = params.turn.status
@@ -144,9 +246,12 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
       const snapshot = params.tokenUsage
       if (snapshot) {
         const fingerprint = crypto.createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')
-        emit({ type: 'model_request_evidence', version: 2, provider: 'codex',
+        emitEvidence({ type: 'model_request_evidence', version: 2, provider: 'codex',
           kind: 'token_usage_snapshot', evidenceId: `${threadId}:${active.id}:${fingerprint}`,
-          providerAgentId: threadId, observedAt: Date.now(), snapshot,
+          providerAgentId: threadId, observedAt: Date.now(), snapshot: {
+            total: requestUsage(snapshot.total), last: requestUsage(snapshot.last),
+            modelContextWindow: Number.isFinite(snapshot.modelContextWindow) ? snapshot.modelContextWindow : null,
+          },
           provenance: 'codex app-server:thread/tokenUsage/updated',
           timingSemantics: 'snapshot_observed; not a unique request boundary' })
       }
@@ -192,12 +297,19 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
     } else if (method === 'turn/diff/updated') {
       emit({ type: 'diff', itemId: 'turn-diff', diff: params.diff })
     } else if (method === 'model/rerouted') {
+      emit({ type: 'agent_turn', status: 'model_changed', observedAt: Date.now(),
+        model: params.toModel || null, previousModel: params.fromModel || active.model,
+        provenance: 'codex app-server:model/rerouted' })
+      active.model = params.toModel || active.model
       emit({ type: 'status', status: `Model changed: ${params.fromModel} → ${params.toModel} (${params.reason})` })
     } else if (method === 'item/started' || method === 'item/completed') {
       const item = params.item
       if (!item) return
       active.items.set(item.id, item)
       const completed = method === 'item/completed'
+      if (!['agentMessage', 'plan', 'reasoning', 'userMessage', 'contextCompaction'].includes(item.type)) {
+        toolEvent(item, completed)
+      }
       if (item.type === 'agentMessage' || item.type === 'plan') {
         if (!completed) return
         active.messages.set(item.id, { text: item.text || '', phase: item.phase })
