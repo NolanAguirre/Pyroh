@@ -2,7 +2,7 @@
 const childProperties = { sessionId: { type: 'string' }, runId: { type: 'string' } }
 const childSchema = { type: 'object', properties: childProperties, required: ['sessionId', 'runId'], additionalProperties: false }
 const tools = [
-  { name: 'terminal_prepare', description: 'Prepare a live terminal card for the user to review, edit, and run once. Does not execute the command. Use a stable retryKey for retries. Workspace and session come from this authenticated MCP connection. Terminal keystrokes and output stay outside the conversation.', inputSchema: {
+  { name: 'terminal_prepare', description: 'Use for commands requiring sudo so the user can enter their password and run the command themselves, or when the user explicitly asks for a terminal card. Use normal execution tools for other authorized commands. Prepare a live terminal card for the user to review, edit, and run once. Does not execute the command. Use a stable retryKey for retries. Workspace and session come from this authenticated MCP connection. Terminal keystrokes and output stay outside the conversation.', inputSchema: {
     type: 'object', properties: {
       command: { type: 'string', minLength: 1, maxLength: 65536 },
       cwd: { type: 'string', description: 'Optional directory relative to the workspace root.' },
