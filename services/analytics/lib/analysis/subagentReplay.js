@@ -1,6 +1,8 @@
 const { createTranscriptEvidence } = require('./transcriptContext')
 const { createReplayTokenizer, serialize, freeze } = require('./replayTokenizer')
 
+const DESCENDANT_STARTUP_TOKENS = 13000
+
 const known = value => Number.isFinite(value) && value >= 0
 const sum = values => values.every(known) ? values.reduce((total, value) => total + value, 0) : null
 const content = block => typeof block?.content === 'string' ? block.content : serialize(block?.content)
@@ -395,8 +397,20 @@ const createSubagentReplay = (data, assumptions = {}) => {
       assumption: 'Coordination-only thinking/prose and excerpt-only relay output are unnecessary in sequential replay. Unmatched synthesis is retained.' })
   }
 
-  // Keep tasks and user instructions. Identical captured system sections need only
-  // one copy in the flattened history, but never deduplicate across a boundary.
+  // Keep initial child system sections for the scalar startup adjustment so exact
+  // deduplication cannot discount the same prefix twice. Later duplicates still qualify.
+  const startupSystemBlocks = new Set()
+  for (const agent of data.agents.filter(agent => agent.depth > 0)) {
+    for (const action of sessionActions.get(agent.id) || []) {
+      if (action.kind === 'request') break
+      if (action.kind !== 'block') continue
+      const block = blocks.get(action.id)
+      if (block.generated) break
+      if (block.kind === 'prompt' && block.sectionKind === 'system') startupSystemBlocks.add(block.id)
+    }
+  }
+  // Keep tasks and user instructions. Deduplicate later system sections only
+  // within a boundary region.
   const systemPrompts = new Map()
   for (const action of ordered) {
     if (action.kind !== 'block') continue
@@ -411,7 +425,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
     const continuation = rows.get(`${block.sessionId}:${block.runId}`)?.record?.delegationDelivery
       && (taskBlocks.get(block.sessionId) || []).some(item => item.runId === block.runId
         && item.label === 'Delegated child results' && dispositions.get(item.id).action === 'remove')
-    if (previous && (delegated || continuation)) remove(block,
+    if (previous && !startupSystemBlocks.has(block.id) && (delegated || continuation)) remove(block,
       'Repeated captured system section is already present in the flattened delegation history.', [previous.id])
     else systemPrompts.set(key, block)
   }
@@ -503,6 +517,8 @@ const createSubagentReplay = (data, assumptions = {}) => {
   // Replay one growing coordinator history. Output text is added only when its block occurs.
   const retainedHistory = []
   const visible = new Set()
+  const insertedDescendants = new Set()
+  const activeStartupSessions = new Set()
   const estimates = []
   const allocatedEstimates = []
   const removedOverheadTurns = overheadTurns.filter(turn => turnDispositions.get(turn.turnId).action === 'remove')
@@ -511,7 +527,37 @@ const createSubagentReplay = (data, assumptions = {}) => {
   let regionUnsupported = overheadTurns.length > 0
   let activeModel = null
   let currentRootThread = null
+  const replayRequest = model => {
+    const request = tokenizer.request(retainedHistory, model)
+    const requestedDeduction = activeStartupSessions.size * DESCENDANT_STARTUP_TOKENS
+    const adjustedInput = known(request.tokens) ? Math.max(0, request.tokens - requestedDeduction) : null
+    return { ...request, tokens: adjustedInput,
+      inputAdjustment: { rawInput: request.tokens, startupTokensPerSession: DESCENDANT_STARTUP_TOKENS,
+        activeDescendantSessionIds: [...activeStartupSessions], requestedDeduction,
+        appliedDeduction: adjustedInput === null ? null : request.tokens - adjustedInput } }
+  }
+  const checkContextLimit = (action, turn, inputTokens, outputTokens, reportGaps = true) => {
+    const rootRow = action.sessionId === root?.id ? rows.get(`${root.id}:${turn.runId}`) : null
+    const coordinatorLimits = evidence.turns.filter(item => item.sessionId === root?.id && item.model === action.targetModel
+      && (rootRow ? item.runId === rootRow.id : position.get(item.id) <= position.get(turn.id)))
+      .map(item => item.contextLimit).filter(known)
+    const limit = coordinatorLimits.at(-1) ?? null
+    if (limit === null && reportGaps) {
+      regionUnsupported = true
+      gap('Coordinator context limit is unavailable for this replay turn.', { turnId: turn.id })
+    }
+    const overLimit = limit !== null && inputTokens !== null && inputTokens + (outputTokens || 0) > limit
+    if (overLimit && reportGaps) {
+      regionUnsupported = true
+      gap('Adjusted replay request and generated output exceed the recorded coordinator context limit. No synthetic compaction is invented.', { turnId: turn.id, limit })
+    }
+    return { contextLimit: limit, contextLimitExceeded: overLimit }
+  }
   for (const action of ordered) {
+    if (agents.get(action.sessionId)?.depth > 0 && !insertedDescendants.has(action.sessionId)) {
+      insertedDescendants.add(action.sessionId)
+      activeStartupSessions.add(action.sessionId)
+    }
     if (action.kind === 'container') continue
     if (action.kind === 'block') {
       const block = blocks.get(action.id)
@@ -521,6 +567,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
         if (block.boundary === 'reset' && action.sessionId === root?.id) {
           retainedHistory.length = 0
           visible.clear()
+          activeStartupSessions.clear()
         }
         continue
       }
@@ -530,6 +577,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
         if (currentRootThread && thread && currentRootThread !== thread) {
           retainedHistory.length = 0
           visible.clear()
+          activeStartupSessions.clear()
           regionUnsupported = true
           gap('Coordinator thread changed, retained replay history resets with an unknown provider prefix.', { blockId: block.id })
         }
@@ -548,45 +596,35 @@ const createSubagentReplay = (data, assumptions = {}) => {
     const turn = turns.get(action.id)
     if (turnDispositions.get(turn.id).action === 'remove') continue
     if (turnDispositions.get(turn.id).action === 'sensitivity') {
-      const request = tokenizer.request(retainedHistory, action.targetModel)
+      const request = replayRequest(action.targetModel)
+      const context = checkContextLimit(action, turn, request.tokens, 0, false)
       allocatedEstimates.push({ turnId: turn.id, sessionId: turn.sessionId, runId: turn.runId,
         model: action.targetModel, confidence: turn.confidence, sources: turn.sources,
         requestFingerprint: request.fingerprint, requestBlockIds: retainedHistory.map(block => block.id),
+        inputAdjustment: request.inputAdjustment, ...context,
         generatedBlockIds: [], input: range(request.tokens, 0, false), output: range(0, 0, false),
-        reason: 'Assume an extra request at the allocated position using the retained history. No output text is invented.' })
+        reason: 'Assume an extra request at the allocated position using retained history with the active descendant startup deduction. No output text is invented.' })
       continue
     }
     if (turn.confidence !== 'measured') regionUnsupported = true
     if (activeModel && activeModel !== action.targetModel) regionUnsupported = true
     activeModel = action.targetModel
-    const request = tokenizer.request(retainedHistory, action.targetModel)
+    const request = replayRequest(action.targetModel)
     const generated = turn.blocks.map(id => blocks.get(id)).filter(block => dispositions.get(block.id).action !== 'remove')
     const output = tokenizer.output(generated, action.targetModel)
     const groups = calibration.filter(group => group.sessionId === root?.id && group.model === action.targetModel && group.residualEnvelope !== null)
     const envelope = groups.length ? Math.max(...groups.map(group => group.residualEnvelope)) : null
     const outputSamples = calibration.flatMap(group => group.samples).filter(sample => sample.turnId === turn.id)
     const hiddenOutput = outputSamples.some(sample => sample.outputResidual !== null && sample.outputResidual !== 0)
-    const rootRow = action.sessionId === root?.id ? rows.get(`${root.id}:${turn.runId}`) : null
-    const coordinatorLimits = evidence.turns.filter(item => item.sessionId === root?.id && item.model === action.targetModel
-      && (rootRow ? item.runId === rootRow.id : position.get(item.id) <= position.get(turn.id)))
-      .map(item => item.contextLimit).filter(known)
-    const limit = coordinatorLimits.at(-1) ?? null
-    if (limit === null) {
-      regionUnsupported = true
-      gap('Coordinator context limit is unavailable for this replay turn.', { turnId: turn.id })
-    }
-    const overLimit = limit !== null && request.tokens !== null && request.tokens + (output.tokens || 0) > limit
-    if (overLimit) {
-      regionUnsupported = true
-      gap('Reconstructed request and generated output exceed the recorded coordinator context limit. No synthetic compaction is invented.', { turnId: turn.id, limit })
-    }
+    const context = checkContextLimit(action, turn, request.tokens, output.tokens)
     const supported = !regionUnsupported && !request.identity.approximation && envelope !== null
       && turn.confidence === 'measured' && !unplaced.length && !data.warnings.length
     estimates.push({ turnId: turn.id, sessionId: turn.sessionId, runId: turn.runId, model: action.targetModel,
       originalModel: turn.model, confidence: turn.confidence, requestFingerprint: request.fingerprint,
       requestBlockIds: retainedHistory.map(block => block.id), generatedBlockIds: generated.map(block => block.id),
+      inputAdjustment: request.inputAdjustment,
       input: range(request.tokens, envelope || 0, supported),
-      output: range(output.tokens, 0, supported && !hiddenOutput), contextLimit: limit, contextLimitExceeded: overLimit,
+      output: range(output.tokens, 0, supported && !hiddenOutput), ...context,
       outputResidual: outputSamples[0]?.outputResidual ?? null,
       residualUncertainty: envelope, supported, sources: turn.sources,
       uncertainty: supported ? 'Sensitivity envelope from original coordinator response-input residuals.'
@@ -643,7 +681,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
     estimate: { input, output, total, difference, scope: 'Placed recorded coordinator and recursive descendant work through cutoff, excluding synthetic allocated requests.' },
     sensitivity: { allocatedRequests: { requests: allocatedEstimates.length, incrementalInput: allocatedInput,
       input: paddedInput, output, total: paddedTotal, difference: paddedDifference, replayTurns: allocatedEstimates,
-      assumption: 'Add every placed allocated request at its synthetic position with the full retained history. Request counts and positions are uncertain, and no generated output is invented.' } },
+      assumption: 'Add every placed allocated request at its synthetic position with retained history and the same active descendant startup deduction as the primary estimate. Request counts and positions are uncertain, and no generated output is invented.' } },
     coverage: { complete: estimates.length > 0 && !gaps.length && estimates.every(item => item.supported && item.output.upper !== null), gaps, gapReasons, unplacedSessions: unplaced,
       cutoff: data.cutoff, measuredUsageComplete: measured.combined.total.value !== null && !data.warnings.length,
       firstUnsupportedTurn: estimates.find(item => !item.supported || item.output.upper === null)?.turnId || null },
@@ -667,11 +705,13 @@ const createSubagentReplay = (data, assumptions = {}) => {
       'Allocated turn usage conserves run totals for attribution only. It does not fabricate transcript text or request measurements.',
       'The primary estimate excludes allocated requests without recorded blocks. Their repeated-history input appears only in the explicit sensitivity scenario.',
       'Measured and inferred requests are removed only when every recorded generated block has an explicit removal disposition. Mixed turns retain their useful output and request.',
-      'No fixed startup/request discount is applied. First child responses are generated work and use the same content rules as other responses.',
+      'Hypothetical estimate assumption, not measured/provider evidence: remove 13,000 input tokens of initial system context once per distinct inserted descendant chat, including nested descendants. Root startup receives no discount. Measured usage and original-session calibration remain raw.',
+      'The cumulative startup deduction carries into every later request retaining that history, including coordinator, sibling and allocated sensitivity requests. Clearing retained history clears its active deduction, without granting the same chat another allowance. Adjusted input is clamped at zero and unknown input stays unknown.',
+      'Initial descendant system sections remain in raw replay history and are excluded from exact deduplication to avoid double-discounting the startup prefix. Later exact duplicates still qualify. Request fingerprints and block IDs describe raw retained history, while per-turn inputAdjustment records raw input, active chats and requested/applied deductions. This scalar assumption does not identify provider prefix bytes.',
       'Delegation-only responses require replaced calls, a fully replaced automatic handoff, or immediately preceding replaced control receipts. Failed, incomplete and missing child runs keep their wrappers.',
       'Coordination-only thinking/prose is estimated overhead using a restricted vocabulary. Relay excerpts may differ in formatting or attribution, but novel paraphrases and substantive synthesis remain. This is not a proof of semantic equivalence.',
       'Turns containing other tools retain their request and useful work. Exact duplicate handoff text may still be removed. The final coordinator answer turn is preserved.',
-      'Repeated captured system sections may share an earlier identical copy within a boundary region. Child tasks, user instructions and distinct system/mode instructions remain.',
+      'Later repeated captured system sections may share an earlier identical copy within a boundary region. Child tasks, user instructions, generated work and distinct system/mode instructions remain as blocks, with initial system context adjusted only by the stated scalar assumption.',
       'Removal dependencies are rebased to retained evidence, preserving earlier substitution positions. Invalid removal chains fall back to retention.',
       'Estimates do not measure quality, time or money and do not imply a categorical delegation verdict.',
       ...(ignoredAssumptions.length ? [`Unapplied legacy assumptions: ${ignoredAssumptions.join(', ')}`] : []),

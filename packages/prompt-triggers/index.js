@@ -20,7 +20,7 @@ export const INPUT_COMMANDS = [
     type: 'analyze-subagent',
     usage: 'analyze subagent [shared=<tokens>] [requests=<count>] [output=<tokens>]',
     label: 'Analyze subagents',
-    description: 'Show whether subagents likely saved tokens, with turns, context, and a short explanation. Turns use measured requests or labeled estimates from provider counts, context, and history, with a rough fallback when data is missing. Transcript context calibration excludes compacted agents and agents above 2M tokens. Optional assumptions: shared context deduction (default 0), combined requests, and combined output.',
+    description: 'Compare measured usage with an estimated sequential coordinator replay. The estimate assumes removal of 13,000 initial system-context tokens once per descendant chat, including nested chats, carrying the deduction through later retained history until a reset. Root startup is unchanged. Initial child system sections are kept before this scalar adjustment to avoid double-discounting exact duplicates. This is an estimate assumption, not provider evidence. Calibration uses raw reconciled response input separately per original session, model and boundary region. Synthetic allocated requests appear only in a sensitivity scenario. Legacy shared, requests and output options are recorded but not applied.',
     pattern: /^analyze\s+subagent(?:\s+(.*))?$/i,
     arguments: (match) => ({ assumptions: (match[1] || '').trim() }),
   },

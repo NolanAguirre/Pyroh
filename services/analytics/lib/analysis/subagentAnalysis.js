@@ -372,6 +372,8 @@ const analyzeSubagents = async (sessionId, rawAssumptions = '') => {
     `Without subagents (estimated): ${fmt(withoutSubagents)}`,
     '',
     conclusion,
+    '',
+    'Estimate assumption: remove 13,000 startup input tokens once per descendant chat, carried through later retained history until it clears. Measured usage is unchanged.',
   ]
   if (withoutSubagents !== null && !replay.coverage.complete) lines.push('', 'The estimate is incomplete because some evidence is missing or uncertain.')
   lines.push('', `[Full details (JSON)](${artifact})`)
