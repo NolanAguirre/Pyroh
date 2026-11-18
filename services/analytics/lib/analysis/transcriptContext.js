@@ -102,6 +102,7 @@ const createTranscriptEvidence = (agents) => {
       }
       let previousThread = null
       let previousModel = row.model
+      let compactionActive = false
       for (const entry of entries) {
         const event = entry.event
         const id = event.itemId || event.toolUseId || `anonymous-${entry.order}`
@@ -139,8 +140,11 @@ const createTranscriptEvidence = (agents) => {
         }
         const thread = event.providerAgentId || event.context?.providerAgentId
         const model = event.settings?.model || (event.type === 'model_request' ? event.model : null)
-        const compacted = ['compacting', 'awaiting_update'].includes(event.context?.status)
+        const compactionEvent = ['compacting', 'awaiting_update'].includes(event.context?.status)
           || /^(?:Context compacted|Compacting context)/i.test(event.status || '')
+        const compacted = compactionEvent && !compactionActive
+        if (compactionEvent) compactionActive = true
+        else if (event.context?.status) compactionActive = false
         const reset = previousThread && thread && previousThread !== thread
         const changed = model && previousModel && model !== previousModel
         if (compacted || reset || changed || /Model changed:/.test(event.status || '')) {
@@ -194,6 +198,7 @@ const createTranscriptEvidence = (agents) => {
         const end = response.ends.length ? Math.max(...response.ends) : completionEntry?.order ?? null
         return { id: `${row.sessionId}:${row.id}:response:${index}`, sessionId: row.sessionId, runId: row.id,
           responseKey: response.key, responseId: response.record.requestId, requestStatus: response.record.status,
+          evidenceScopeId: response.record.evidenceScopeId || null, providerAgentId: response.record.providerAgentId || null,
           toolCallIds: response.toolCallIds,
           model: response.record.model || row.model, provider: row.provider, sources: response.sources,
           confidence: row.requestEvidence?.coverage === 'complete' && response.starts.length > 0 && response.ends.length > 0 ? 'measured' : 'inferred',
