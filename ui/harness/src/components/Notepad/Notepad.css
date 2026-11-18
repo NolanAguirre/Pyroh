@@ -11,6 +11,8 @@
 }
 
 .notepad {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   gap: 0.5rem;
@@ -31,6 +33,6 @@
 
 .notepad__error {
   margin: 0;
-  color: var(--danger, #e5484d);
+  color: var(--danger);
   font-size: 0.8125rem;
 }

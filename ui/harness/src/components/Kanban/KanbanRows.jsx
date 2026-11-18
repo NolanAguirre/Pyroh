@@ -81,10 +81,10 @@ const KanbanRows = ({ board, hierarchy, busy, searching, matchesCard, onOpenCard
         const rowKey = epic?.id || 'standalone'
         return <tr key={rowKey}>
           <th scope="row" className={`kanban__epic-heading${dropTarget === `row:${rowKey}` ? ' kanban__drop-before' : ''}`} onDragOver={(event) => dragOver(event, `row:${rowKey}`, 'epic')} onDrop={(event) => dropEpic(event, epic?.id || null)}>
-            {epic ? <div className={`kanban__task-card kanban__epic-card${dragged?.id === epic.id ? ' kanban__dragging' : ''}`} draggable={!busy} onDragStart={(event) => startDrag(event, epic, 'epic')} onDragEnd={clearDrag}>
-              <button className="kanban__card-content" disabled={busy} onClick={() => openCard(epic.boardId, epic)}><small>Epic{epic.boardId !== board.id ? ` · ${epic.boardTitle}` : ''}{epic.archivedAt ? ' · Archived' : ''}</small><span>{epic.title}</span>{epic.description && <small>{epic.description}</small>}</button>
+            {epic ? <div className={`kanban__task-card kanban__epic-card${dragged?.id === epic.id ? ' kanban__dragging' : ''}`} {...getDragProps({ id: epic.id, kind: 'epic' })}>
+              <button className="kanban__card-content" draggable={!busy} disabled={busy} onClick={() => onOpenCard(epic.boardId, epic)}><small>Epic{epic.boardId !== board.id ? ` · ${epic.boardTitle}` : ''}{epic.archivedAt ? ' · Archived' : ''}</small><span>{epic.title}</span>{epic.description && <small>{epic.description}</small>}</button>
               {epic.boardId === board.id && !epic.archivedAt && <label className="kanban__epic-status">Status<select aria-label={`Status of ${epic.title}`} value={epic.columnId} disabled={busy} onChange={(event) => onMoveCard(epic.id, event.target.value, null)}>{columns.map((column) => <option key={column.id} value={column.id}>{column.title}</option>)}</select></label>}
-              <CardRelationships card={epic} hierarchy={hierarchy} busy={busy} onOpenCard={openCard} />
+              <CardRelationships card={epic} hierarchy={hierarchy} busy={busy} onOpenCard={onOpenCard} />
               <div className="kanban__card-footer"><span className="kanban__card-hint">Drag to order epics</span><span className="kanban__card-actions">{epic.boardId === board.id && <button className="kanban__icon-button" disabled={busy} aria-label={`${epic.archivedAt ? 'Restore' : 'Archive'} ${epic.title}`} onClick={() => onArchive(epic)}>{epic.archivedAt ? 'Restore' : 'Archive'}</button>}<OrderDisplay id={epic.id} order={epics.findIndex((item) => item.id === epic.id) + 1} totalCount={epics.length} updating={busy} move={reorderEpic} /></span></div>
             </div> : <span>Standalone tasks</span>}
           </th>
@@ -95,10 +95,10 @@ const KanbanRows = ({ board, hierarchy, busy, searching, matchesCard, onOpenCard
             return <td key={column.id} className={`kanban__epic-cell${collapsed(column) ? ' kanban__epic-cell--collapsed' : ''}${dropTarget === cellKey ? ' kanban__drop-target' : ''}`} onDragOver={(event) => dragOver(event, cellKey, 'task')} onDrop={(event) => dropTask(event, column.id, epic?.id || null)}>
               {collapsed(column) ? <span className="kanban__cell-count">{visibleCards.length || ''}</span> : <>
                 <div className="kanban__cards">
-                  {visibleCards.map((card) => <TaskCard key={card.id} card={card} hierarchy={hierarchy} busy={busy} dragging={dragged?.id === card.id} dropBefore={dropTarget === card.id} order={cellCards.findIndex((item) => item.id === card.id) + 1} totalCount={cellCards.length} onOpenCard={openCard} onArchive={onArchive} onReorder={(id, direction) => {
+                  {visibleCards.map((card) => <TaskCard key={card.id} card={card} hierarchy={hierarchy} busy={busy} dragging={dragged?.id === card.id} dropBefore={dropTarget === card.id} order={cellCards.findIndex((item) => item.id === card.id) + 1} totalCount={cellCards.length} onOpenCard={onOpenCard} onArchive={onArchive} onReorder={(id, direction) => {
                     const index = cellCards.findIndex((item) => item.id === id)
                     onMoveTask(id, column.id, epic?.id || null, cellCards[index + (direction === 'up' ? -1 : 2)]?.id || null)
-                  }} dragProps={{ draggable: !busy, onDragStart: (event) => startDrag(event, card, 'task'), onDragEnd: clearDrag, onDragOver: (event) => dragOver(event, card.id, 'task'), onDrop: (event) => dropTask(event, column.id, epic?.id || null, card.id) }} />)}
+                  }} dragProps={{ ...getDragProps({ id: card.id, kind: 'task' }), onDragOver: (event) => dragOver(event, card.id, 'task'), onDrop: (event) => dropTask(event, column.id, epic?.id || null, card.id) }} />)}
                   {!visibleCards.length && <div className="kanban__empty-column">{searching ? 'No matching tasks' : 'Drop a task here'}</div>}
                 </div>
                 <Button variant="ghost" size="sm" disabled={busy} onClick={() => onNewCard({ columnId: column.id, parentId: epic?.id || null })}>+ Add task</Button>
@@ -110,7 +110,7 @@ const KanbanRows = ({ board, hierarchy, busy, searching, matchesCard, onOpenCard
       <tfoot><tr><th scope="row" className="kanban__epic-heading">Archived</th>{columns.map((column) => {
         const archived = column.cardsByColumnId.nodes.filter((card) => card.archivedAt && matchesCard(card)).sort((a, b) => b.archivedAt.localeCompare(a.archivedAt))
         return <td key={column.id} className={`kanban__epic-cell${collapsed(column) ? ' kanban__epic-cell--collapsed' : ''}`}>
-          {collapsed(column) ? <span className="kanban__cell-count">{archived.length || ''}</span> : archived.length > 0 && <Fold><FoldTrigger>Archived {archived.length}</FoldTrigger><FoldContent><ul className="kanban__archived-cards">{archived.map((card) => <li key={card.id}><div className="kanban__archived-details"><button className="kanban__archived-title" disabled={busy} onClick={() => openCard(board.id, card)}>{card.title}</button><CardRelationships card={card} hierarchy={hierarchy} busy={busy} onOpenCard={openCard} /></div><Button variant="ghost" size="sm" disabled={busy} onClick={() => onArchive(card)} aria-label={`Restore ${card.title}`}>Restore</Button></li>)}</ul></FoldContent></Fold>}
+          {collapsed(column) ? <span className="kanban__cell-count">{archived.length || ''}</span> : archived.length > 0 && <Fold><FoldTrigger>Archived {archived.length}</FoldTrigger><FoldContent><ul className="kanban__archived-cards">{archived.map((card) => <li key={card.id}><div className="kanban__archived-details"><button className="kanban__archived-title" disabled={busy} onClick={() => onOpenCard(board.id, card)}>{card.title}</button><CardRelationships card={card} hierarchy={hierarchy} busy={busy} onOpenCard={onOpenCard} /></div><Button variant="ghost" size="sm" disabled={busy} onClick={() => onArchive(card)} aria-label={`Restore ${card.title}`}>Restore</Button></li>)}</ul></FoldContent></Fold>}
         </td>
       })}</tr></tfoot>
     </table>

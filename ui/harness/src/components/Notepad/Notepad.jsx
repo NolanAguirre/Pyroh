@@ -55,7 +55,7 @@ const Notepad = ({ devId }) => {
 
   return (
     <DevScope id={devId} state={{ loaded, error: Boolean(error) }}>
-      <div className="notepad column">
+      <div className="notepad">
         <h2 className="notepad__title">Notepad</h2>
         <DevScope id="5dty75y">
           <FormTextarea
