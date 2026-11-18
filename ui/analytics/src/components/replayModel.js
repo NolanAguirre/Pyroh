@@ -1,9 +1,3 @@
-export const assumptionFields = [
-  { key: 'shared', label: 'Shared tokens', min: 0, max: Number.MAX_SAFE_INTEGER },
-  { key: 'requests', label: 'Request count', min: 1, max: Number.MAX_SAFE_INTEGER },
-  { key: 'output', label: 'Output tokens', min: 0, max: Number.MAX_SAFE_INTEGER },
-]
-
 // Index server evidence for navigation only. All estimator decisions and counts
 // come from the replay, including the exact joined order and request histories.
 export const createReplayModel = replay => {

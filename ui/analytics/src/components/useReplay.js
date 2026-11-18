@@ -14,7 +14,7 @@ export const useReplay = () => {
   const [error, setError] = useState('')
   const request = useRef(null)
   useEffect(() => () => request.current?.abort(), [])
-  const load = useCallback(async (sessionId, assumptions) => {
+  const load = useCallback(async sessionId => {
     request.current?.abort()
     const controller = new AbortController()
     request.current = controller
@@ -25,7 +25,7 @@ export const useReplay = () => {
       const data = await fetchJson(`/analytics/api/sessions/${encodeURIComponent(sessionId)}/subagent-replay`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assumptions }),
+        body: JSON.stringify({}),
         signal: controller.signal,
       })
       if (data.replay?.version !== 4 || !Array.isArray(data.replay.blocks) || !Array.isArray(data.replay.replayTurns)) {
