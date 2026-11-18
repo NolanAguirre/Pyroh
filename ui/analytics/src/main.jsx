@@ -4,5 +4,3 @@ import App from './App.jsx'
 import './style.css'
 
 createRoot(document.getElementById('root')).render(<StrictMode><App /></StrictMode>)
-
-import 'component-library/dist/component-library.css'
