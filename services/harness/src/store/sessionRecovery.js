@@ -3,6 +3,7 @@ const path = require('path')
 const paths = require('./paths')
 const runIndexStore = require('./runIndexStore')
 const { writeRun } = require('./runLifecycle')
+const { expirePending } = require('./questionStore')
 const { readJson, writeJson } = require('./jsonFile')
 const { loadSession, updateSession } = require('./sessionRecord')
 const { usageDir, receiptDir, runRecords, rebuildTotals } = require('./usageStore')
@@ -12,6 +13,7 @@ const { usageDir, receiptDir, runRecords, rebuildTotals } = require('./usageStor
 const recoverSession = (sessionId, writeDir, { excludeRunId } = {}) => {
   const session = loadSession(sessionId, writeDir)
   if (!session) throw new Error(`session not found: ${sessionId}`)
+  expirePending(sessionId, writeDir, { excludeRunId })
   const pendingFile = path.join(paths.sessionDir(sessionId, writeDir), 'recovery-pending.json')
   const retryRecovery = fs.existsSync(pendingFile)
   let changed = false

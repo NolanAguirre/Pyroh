@@ -117,9 +117,10 @@ const runPipelineDaemon = async ({ sessionId, mode, resume = false }) => {
     }
     log.end()
     sessionLease.release()
-    runLifecycle.flush(writeDir).catch(err => {
-      logLine(`lifecycle publication failed: ${formatError(err)}`)
-    }).finally(() => process.exit(exitCode))
+    Promise.all([runLifecycle.flush(writeDir), require('../store/questionLifecycle').flush(writeDir)]
+      .map(pending => pending.catch(err => {
+        logLine(`lifecycle publication failed: ${formatError(err)}`)
+      }))).finally(() => process.exit(exitCode))
   }
 
   const fail = (err, extra = {}, exitCode = 2) => {

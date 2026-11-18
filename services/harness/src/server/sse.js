@@ -9,6 +9,7 @@ const queuedMessageStore = require('../store/queuedMessageStore')
 const submissionStore = require('../store/submissionStore')
 const { readForkHistory } = require('../harness/fork')
 const { createRunLifecycleConsumer } = require('../harness/runLifecycleConsumer')
+const { createQuestionLifecycleConsumer } = require('../harness/questionLifecycleConsumer')
 const transport = require('../harness/spawnConfig')
 
 const feeds = new Map()
@@ -26,7 +27,6 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
   const locations = {
     session: paths.sessionFile(sessionId, writeDir),
     runs: paths.runsDir(sessionId, writeDir),
-    questions: paths.questionsDir(sessionId, writeDir),
     children: path.join(dir, 'delegation'),
     queuedMessages: queuedMessageStore.fileFor(sessionId, writeDir),
     submissions: submissionStore.fileFor(sessionId, writeDir),
@@ -36,7 +36,8 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
   const watchers = new Map()
   const stamps = new Map()
   const frames = new Map()
-  const dirty = new Set(Object.keys(locations))
+  const childQuestions = new Map()
+  const dirty = new Set([...Object.keys(locations), 'questions'])
   let session = initialSession
   let runs = []
   let children = []
@@ -47,6 +48,19 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
   let refreshing = null
   let pending = false
   let scheduled = null
+
+  // Child metadata still refreshes elapsed times. Its questions are snapshots
+  // invalidated by the same NATS signals as the session's own questions.
+  const readChildQuestions = id => {
+    if (!childQuestions.has(id)) {
+      const read = questionStore.listQuestionsAsync(id, writeDir).catch(error => {
+        if (childQuestions.get(id) === read) childQuestions.delete(id)
+        throw error
+      })
+      childQuestions.set(id, read)
+    }
+    return childQuestions.get(id)
+  }
 
   const schedule = () => {
     if (disposed || scheduled) return
@@ -65,7 +79,7 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
         else if (name === 'session.json') dirty.add('session')
         else if (name === 'queued-messages.json') dirty.add('queuedMessages')
         else if (name === 'submissions.json') dirty.add('submissions')
-        else if (name && !['events.jsonl', 'runs', 'questions', 'delegation'].includes(name)) return
+        else if (name && !['events.jsonl', 'runs', 'delegation'].includes(name)) return
         schedule()
       })
       watcher.on('error', () => {
@@ -91,8 +105,8 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
       frames.delete('lifecycle')
       const entries = await Promise.all(Object.entries(locations).map(async ([type, file]) =>
         [type, await statOrMissing(file)]))
-      const changed = new Set(entries.filter(([type, stat]) =>
-        requested.has(type) || stamps.get(type) !== fingerprint(stat)).map(([type]) => type))
+      const changed = new Set([...requested, ...entries.filter(([type, stat]) =>
+        stamps.get(type) !== fingerprint(stat)).map(([type]) => type)])
       // Workspace changes can update the resolved session cwd without rewriting it.
       const workspaceStamp = session.workspaceId
         ? fingerprint(await statOrMissing(paths.workspaceFile(session.workspaceId, writeDir))) : 'missing'
@@ -105,7 +119,7 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
         changed.has('submissions') || submissions.some(submission => submission.status === 'received')
           ? submissionStore.listAsync(sessionId, writeDir).then(value => ['submissions', value]) : null,
         changed.has('children') || changed.has('runs') || children.some(child => !child.done)
-          ? require('../harness/delegation').childrenForAsync(sessionId).then(value => ['children', value]) : null,
+          ? require('../harness/delegation').childrenForAsync(sessionId, { readQuestions: readChildQuestions }).then(value => ['children', value]) : null,
       ])
       if (disposed) return
       let updated = !ready
@@ -132,7 +146,7 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
           updated = true
         }
         stamps.set(type, stamp)
-        if (stat && ['runs', 'questions', 'children'].includes(type)) watch(locations[type], type)
+        if (stat && ['runs', 'children'].includes(type)) watch(locations[type], type)
       }
       stamps.set('workspace', workspaceStamp)
       watch(dir)
@@ -154,8 +168,18 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
   const poll = setInterval(() => { refresh().catch(() => {}) }, 1000)
   return {
     refresh,
+    questionLifecycle: async event => {
+      if (event) childQuestions.delete(event.sessionId)
+      else childQuestions.clear()
+      dirty.add('session')
+      if (!event || event.sessionId === sessionId) dirty.add('questions')
+      if (!event || event.parentSessionId === sessionId) dirty.add('children')
+      await refresh()
+      // A notification received during an older read needs a subsequent read.
+      if (dirty.size) await refresh()
+    },
     lifecycle: async (event) => {
-      for (const type of ['session', 'runs', 'children', 'questions']) dirty.add(type)
+      for (const type of ['session', 'runs', 'children']) dirty.add(type)
       await refresh()
       // An already-running read may predate the lifecycle notification.
       if (dirty.size) await refresh()
@@ -175,6 +199,7 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
         clearInterval(poll)
         clearTimeout(scheduled)
         for (const watcher of watchers.values()) watcher.close()
+        childQuestions.clear()
         onDispose()
       }
     },
@@ -312,8 +337,19 @@ const startLifecycle = () => {
       await Promise.all([...feeds.values()].map(feed => feed.refresh()))
     },
   })
+  const questions = createQuestionLifecycleConsumer({
+    transport, name: 'harness-sse-question-lifecycle',
+    onEvent: async event => {
+      const ids = new Set([event.sessionId, event.parentSessionId].filter(Boolean))
+      await Promise.all([...ids].map(id => feeds.get(`${config.writeDir}\0${id}`)?.questionLifecycle(event)))
+    },
+    onReconnect: async () => {
+      await Promise.all([...feeds.values()].map(feed => feed.questionLifecycle()))
+    },
+  })
   consumer.start()
-  return consumer.stop
+  questions.start()
+  return async () => { await Promise.all([consumer.stop(), questions.stop()]) }
 }
 
 module.exports = { streamSession, startLifecycle }

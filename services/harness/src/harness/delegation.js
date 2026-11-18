@@ -185,11 +185,12 @@ const describe = (child) => {
   return describeRecords(child, session, runs.at(-1),
     child.sessionId ? questions.listQuestions(child.sessionId, config.writeDir) : [], runs)
 }
-const describeAsync = async (child) => {
+const loadQuestionsAsync = sessionId => questions.listQuestionsAsync(sessionId, config.writeDir)
+const describeAsync = async (child, readQuestions = loadQuestionsAsync) => {
   const [session, runs, pendingQuestions] = await Promise.all([
     child.sessionId ? store.loadSessionAsync(child.sessionId, config.writeDir) : null,
     child.sessionId && child.runId ? store.listRunsAsync(child.sessionId, config.writeDir) : [],
-    child.sessionId ? questions.listQuestionsAsync(child.sessionId, config.writeDir) : [],
+    child.sessionId ? readQuestions(child.sessionId) : [],
   ])
   const originalRuns = delegatedRuns(session, runs)
   return describeRecords(child, session, originalRuns.at(-1), pendingQuestions, originalRuns)
@@ -496,17 +497,17 @@ const childrenFor = (sessionId) => [
   ...workflowChildren(sessionId).map(session => workflowDescription(session,
     store.listRuns(session.id, config.writeDir).at(-1), questions.listQuestions(session.id, config.writeDir))),
 ]
-const childrenForAsync = async (sessionId) => {
+const childrenForAsync = async (sessionId, { readQuestions = loadQuestionsAsync } = {}) => {
   const names = await listNamesAsync(path.join(paths.sessionDir(sessionId, config.writeDir), 'delegation'))
   const children = await Promise.all(names.filter(name => name.endsWith('.json')).map(async name => {
     const runId = name.slice(0, -5)
     const state = await readJsonAsync(fileFor(sessionId, runId))
-    return Promise.all(Object.values(state?.children || {}).map(async child => ({ ...await describeAsync(child), parentRunId: runId })))
+    return Promise.all(Object.values(state?.children || {}).map(async child => ({ ...await describeAsync(child, readQuestions), parentRunId: runId })))
   }))
   await require('../store/sessionIndex').whenReady()
   const workflows = await Promise.all(workflowChildren(sessionId).map(async session => {
     const [runs, pendingQuestions] = await Promise.all([
-      store.listRunsAsync(session.id, config.writeDir), questions.listQuestionsAsync(session.id, config.writeDir),
+      store.listRunsAsync(session.id, config.writeDir), readQuestions(session.id),
     ])
     return workflowDescription(session, runs.at(-1), pendingQuestions)
   }))

@@ -167,9 +167,10 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
     }
     log.end()
     sessionLease.release()
-    runLifecycle.flush(writeDir).catch(err => {
-      logLine(`lifecycle publication failed: ${formatError(err)}`)
-    }).finally(() => process.exit(exitCode))
+    Promise.all([runLifecycle.flush(writeDir), require('../store/questionLifecycle').flush(writeDir)]
+      .map(pending => pending.catch(err => {
+        logLine(`lifecycle publication failed: ${formatError(err)}`)
+      }))).finally(() => process.exit(exitCode))
   }
 
   const fail = (err, label, exitCode, patch = {}) => {

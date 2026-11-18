@@ -31,7 +31,8 @@ const natsConfig = ({ writeDir, dbPath }) => {
   return { servers, timeout, storageKey,
     subject: `harness.agent-spawn.${storageKey}.v1`,
     promptSubject: `harness.agent-prompt.${storageKey}.v1`,
-    lifecycleSubject: `harness.run-lifecycle.${storageKey}.v1` }
+    lifecycleSubject: `harness.run-lifecycle.${storageKey}.v1`,
+    questionLifecycleSubject: `harness.question-lifecycle.${storageKey}.v1` }
 }
 
 module.exports = { natsConfig }

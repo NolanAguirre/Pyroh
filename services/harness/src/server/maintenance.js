@@ -83,6 +83,7 @@ const runMaintenance = () => {
   lifecycle.start()
   process.once('disconnect', () => { lifecycle.stop().finally(() => process.exit(0)) })
   schedule('run lifecycle publish', 1000, () => require('../store/runLifecycle').flush(config.writeDir))
+  schedule('question lifecycle publish', 1000, () => require('../store/questionLifecycle').flush(config.writeDir))
   schedule('session index reconcile', 60000, async () => {
     await require('../store/sessionIndex').reconcile(config.writeDir)
     markReconciled()
