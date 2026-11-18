@@ -10,11 +10,11 @@ import { HistoryStage } from './HistoryStage.jsx'
 import { CalibrationStage } from './CalibrationStage.jsx'
 
 const stages = [
-  { title: 'Collect sources', description: 'Inspect the coordinator, linked descendants, captured blocks, request boundaries, and evidence gaps.' },
+  { title: 'Collect sources', description: 'Inspect the coordinator, linked descendants, captured messages, assistant response boundaries, and evidence gaps.' },
   { title: 'Calibrate sources', description: 'Compare tokenized original history with reconciled usage before joining sessions.' },
   { title: 'Depth-first joins', description: 'Follow child work into the coordinator timeline at its recorded spawn anchor.' },
   { title: 'Removal decisions', description: 'Compare original actions with retained work and inspect each deletion’s evidence.' },
-  { title: 'History & tokens', description: 'Step through surviving requests, their retained context, and generated output.' },
+  { title: 'History & tokens', description: 'Step through surviving model calls, their retained message context, and assistant output.' },
   { title: 'Measured vs estimate', description: 'Compare actual combined usage with the whole coordinator replay scenario.' },
 ]
 

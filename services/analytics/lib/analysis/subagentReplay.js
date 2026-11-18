@@ -450,13 +450,13 @@ const createSubagentReplay = (data, assumptions = {}) => {
   for (const action of ordered) {
     if (action.kind !== 'block') continue
     const block = blocks.get(action.id)
-    if (block.kind !== 'prompt' || block.role !== 'system' || block.fallback
+    if (block.kind !== 'prompt' || block.sectionKind !== 'system' || block.fallback
       || block.images?.length || dispositions.get(block.id).action === 'remove') continue
     if (block.label === 'Delegation instructions' && linked.size) {
       remove(block, 'Captured delegation policy is unnecessary in the single coordinator scenario.')
       continue
     }
-    const key = serialize([block.role, content(block).trim()])
+    const key = serialize([block.sectionKind, content(block).trim()])
     const previous = systemPrompts.get(key)
     if (previous) remove(block, 'Repeated captured system section is already retained once in the coordinator history.', [previous.id])
     else systemPrompts.set(key, block)
@@ -688,7 +688,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
       'Recursively insert child work at captured spawn calls. Unplaced children remain explicit gaps, not guessed end-of-run insertions.',
       'Each retained prompt, message and tool result enters history once at its transcript position. Each surviving request tokenizes that complete visible history once.',
       'Generated output is charged once and enters context only after the request that generated it. Removing a handoff prompt does not erase earlier history.',
-      'Captured system sections are deduplicated by role and content. Captured delegation policy sections are removed. No scalar startup deduction or proportional run-budget allocation is applied.',
+      'Captured system sections are deduplicated by section kind and content within user messages. Captured delegation policy sections are removed. No scalar startup deduction or proportional run-budget allocation is applied.',
       'Hidden/provider-dependent reasoning is not known visible context and is excluded from the point estimate. Its counterfactual cost and context retention remain unknown.',
       'Retain visible history across recorded resets and compaction as an explicit scenario. Replacement summaries, hidden prefixes and lost context are not invented.',
       'Tokenization uses an approximate message serialization and a proxy encoding where the coordinator tokenizer is unknown. Missing tool schemas, prefixes and context prevent a supported bounded total.',

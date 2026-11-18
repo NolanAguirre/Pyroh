@@ -107,8 +107,11 @@ const createTranscriptEvidence = (agents) => {
         if (event.type === 'provider_prompt') {
           const sections = Array.isArray(event.sections) && event.sections.map(part => part.text).join('') === event.text
             ? event.sections : [{ kind: 'context', label: 'Unclassified prompt', text: event.text || '' }]
-          sections.forEach((section, index) => add(`prompt:${event.captureId || entry.order}:${index}`, {
-            kind: 'prompt', role: section.kind === 'system' ? 'system' : 'user', content: section.text,
+          const messageId = JSON.stringify([row.sessionId, row.id, 'provider_prompt', event.captureId ?? null, entry.order])
+          const promptId = `prompt:${event.captureId || entry.order}`
+          const promptKey = drafts.has(`${promptId}:0`) ? `${promptId}:event:${entry.order}` : promptId
+          sections.forEach((section, index) => add(`${promptKey}:${index}`, {
+            kind: 'prompt', role: 'user', content: section.text, messageId, userItemId: event.userItemId,
             sectionKind: section.kind, label: section.label, captureId: event.captureId, sectionIndex: index,
             visibility: 'request', lifetime: 'session', images: event.images || [],
           }, entry))

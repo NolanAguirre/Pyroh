@@ -2,7 +2,7 @@ const crypto = require('crypto')
 const fs = require('fs')
 const path = require('path')
 
-const SERIALIZATION = 'harness-visible-messages-json-v2'
+const SERIALIZATION = 'harness-visible-messages-json-v3'
 const canonical = value => {
   if (Array.isArray(value)) return value.map(canonical)
   if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]))
@@ -16,6 +16,42 @@ const freeze = value => {
     Object.freeze(value)
   }
   return value
+}
+
+const promptKey = block => {
+  if (block.kind !== 'prompt' || typeof block.content !== 'string') return null
+  if (block.messageId) return serialize([block.sessionId, block.runId, 'message', block.messageId])
+  if (!Number.isSafeInteger(block.sectionIndex) || block.sectionIndex < 0 || !block.sessionId || !block.runId) return null
+  // Older replays have no messageId. A source event identifies a send even
+  // without a capture ID. Never group sections by their text or label.
+  const source = block.sources?.find(item => item.file && Number.isSafeInteger(item.line))
+  const event = source ? [source.file, source.line] : Number.isFinite(block.order) ? ['order', block.order] : null
+  if (!event && !block.captureId) return null
+  return serialize([block.sessionId, block.runId, block.captureId ?? null, event])
+}
+
+const messages = blocks => {
+  const entries = []
+  const prompts = new Map()
+  for (const block of blocks) {
+    const key = promptKey(block)
+    if (key !== null) {
+      if (!prompts.has(key)) {
+        const entry = { sections: [] }
+        prompts.set(key, entry)
+        entries.push(entry)
+      }
+      prompts.get(key).sections.push(block)
+    } else entries.push({ block })
+  }
+  return entries.map(entry => {
+    if (entry.sections) return { role: 'user', type: 'prompt', content: entry.sections
+      .sort((a, b) => (a.sectionIndex ?? 0) - (b.sectionIndex ?? 0)).map(block => block.content).join('') }
+    const block = entry.block
+    return { role: block.kind === 'prompt' ? 'user' : block.role,
+      type: block.kind, ...(block.name ? { name: block.name } : {}),
+      ...(block.toolId ? { tool_call_id: block.toolId } : {}), content: block.content }
+  })
 }
 
 const createReplayTokenizer = () => {
@@ -71,9 +107,7 @@ const createReplayTokenizer = () => {
     return { tokens: cache.get(key), fingerprint: hash, identity }
   }
   const visible = block => block.kind !== 'boundary' && block.visibility !== 'provider-dependent' && block.kind !== 'thinking'
-  const request = (blocks, model) => count(serialize(blocks.filter(visible).map(block => ({ role: block.role,
-    type: block.kind, ...(block.name ? { name: block.name } : {}),
-    ...(block.toolId ? { tool_call_id: block.toolId } : {}), content: block.content }))), model)
+  const request = (blocks, model) => count(serialize(messages(blocks.filter(visible))), model)
   const output = (blocks, model) => count(blocks.filter(block => block.generated && visible(block)).map(block =>
     block.kind === 'tool_call' ? serialize({ name: block.name, arguments: block.content })
       : typeof block.content === 'string' ? block.content : serialize(block.content)).join('\n'), model, 'visible-generated-text-v2')

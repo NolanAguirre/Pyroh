@@ -485,6 +485,7 @@ code, pre, .monospace, .code-block { font-family: ui-monospace, SFMono-Regular, 
 .comparison > * { min-width: 0; }
 .comparison__arrow { color: var(--teal); font-size: 1.25rem; text-align: center; }
 .request-history { display: flex; flex-direction: column; gap: 0.625rem; }
+.timeline__sections { margin-block-start: 0.5rem; }
 .request-history__block {
   display: flex;
   flex-direction: column;

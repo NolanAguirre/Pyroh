@@ -1,5 +1,40 @@
 // Index server evidence for navigation only. All estimator decisions and counts
 // come from the replay, including the exact joined order and request histories.
+const promptKey = block => {
+  if (block.messageId) return JSON.stringify([block.sessionId, block.runId, 'message', block.messageId])
+  if (!Number.isSafeInteger(block.sectionIndex) || block.sectionIndex < 0 || !block.sessionId || !block.runId) return block.id
+  const source = block.sources?.find(item => item.file && Number.isSafeInteger(item.line))
+  const event = source ? [source.file, source.line] : Number.isFinite(block.order) ? ['order', block.order] : null
+  return event || block.captureId ? JSON.stringify([block.sessionId, block.runId, block.captureId ?? null, event]) : block.id
+}
+
+export const groupContextActions = (actions, model) => {
+  const groups = []
+  const seen = new Set()
+  for (const action of actions) {
+    const block = model.blocks.get(action.id)
+    const turnId = action.kind === 'request' ? action.id : block?.generated ? block.turnId : null
+    const turn = turnId ? model.turns.get(turnId) : null
+    const kind = block?.kind === 'prompt' ? 'prompt' : turn ? 'response' : block?.kind || action.kind
+    const key = kind === 'prompt' ? `prompt:${promptKey(block)}`
+      : turn ? JSON.stringify(['response', action.sessionId, action.runId, turnId]) : action.id
+    const previous = groups.at(-1)
+    // Do not move response content across a tool result or child insertion.
+    const anchored = previous && model.insertions.get(previous.actions.at(-1).id)?.length
+    if (previous?.key === key && !anchored) previous.actions.push(action)
+    else {
+      groups.push({ key, id: action.id, kind, turn, actions: [action], continued: seen.has(key), step: groups.length + 1 })
+      seen.add(key)
+    }
+  }
+  return groups.map(group => {
+    const members = group.actions.map(action => model.blocks.get(action.id)).filter(Boolean)
+    if (group.kind === 'prompt') members.sort((a, b) => (a.sectionIndex ?? 0) - (b.sectionIndex ?? 0))
+    return { ...group, blocks: members, content: members.map(block => typeof block.content === 'string'
+      ? block.content : JSON.stringify(block.content)).join(group.kind === 'prompt' ? '' : '\n') }
+  })
+}
+
 export const createReplayModel = replay => {
   const blocks = new Map(replay.blocks.map(block => [block.id, block]))
   const turns = new Map(replay.turns.map(turn => [turn.id, turn]))
@@ -42,6 +77,7 @@ export const createReplayModel = replay => {
     ].sort((left, right) => runOrder.get(left.runId) - runOrder.get(right.runId)
       || left.order - right.order || (left.sectionIndex ?? 0) - (right.sectionIndex ?? 0) || left.id.localeCompare(right.id))
     return { id, root: id === replay.sourceSessionId, unplaced, actions: localActions,
+      contextCount: groupContextActions(localActions, { blocks, turns, insertions }).length,
       blockCount: sessionBlocks.length, turnCount: sessionTurns.length,
       inferredCount: sessionTurns.filter(turn => turn.confidence === 'inferred').length,
       eventCount: replay.sourceEvents.find(item => item.sessionId === id)?.events.length || 0 }
