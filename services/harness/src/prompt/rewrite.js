@@ -8,8 +8,8 @@ const provenance = require('./provenance')
 const overlays = require('../prompts/overlays')
 const prependFirstMessage = (prompt, context, triggered) => {
   const parts = triggered
-    .filter(entry => (entry.target === 'prepend' || (entry.target === 'first' && context.first === true)) && entry.effect === 'applied')
-    .map(entry => provenance.section('system', entry.label, prompts.text(entry.id, context.provider, context)))
+    .filter(entry => (entry.target === 'prepend' || entry.target === 'first') && entry.effect === 'applied')
+    .map(entry => ({ ...provenance.section('system', entry.label, prompts.text(entry.id, context.provider, context)), promptId: entry.id }))
     .filter(part => part.text)
   if (context.first === true && context.firstMessageInstructions) {
     parts.push(provenance.section('system', 'Delegation instructions', context.firstMessageInstructions))

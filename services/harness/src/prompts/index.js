@@ -64,7 +64,8 @@ const validMessageTypes = (value) => Array.isArray(value)
 const validEdits = (entries) => Object.fromEntries(Object.entries(isRecord(entries) ? entries : {})
   .filter(([id, edit]) => byId.has(id) && (typeof edit === 'string'
     || (isRecord(edit) && (edit.template == null || typeof edit.template === 'string')
-      && validMessageTypes(edit.messageTypes)))))
+      && (edit.messageTypes === undefined || validMessageTypes(edit.messageTypes))
+      && (edit.includeOnce === undefined || typeof edit.includeOnce === 'boolean')))))
 const editText = (edit) => typeof edit === 'string' ? edit : edit?.template
 
 // Keep existing flat shared edits and $providers. Model edits are keyed by
@@ -127,6 +128,17 @@ const defaultMessageTypes = (id, provider, { model, mode } = {}) => {
   if (model != null && mode != null) types = modelEdits(model)?.prompts?.[id]?.messageTypes ?? types
   return types
 }
+const supportsIncludeOnce = id => !['devIds', 'devIdPaths', 'sessionIdPaths'].includes(id)
+  && (get(id).firstMessage === true || TRIGGERS.some(trigger => trigger.id === id))
+const defaultIncludeOnce = (id, provider, { model, mode } = {}) => {
+  let once = get(id).includeOnce ?? false
+  if (provider != null || model != null) once = loadOverrides()[id]?.includeOnce ?? once
+  if (model != null && provider != null) once = loadOverrides().$providers[provider]?.[id]?.includeOnce ?? once
+  if (model != null && mode != null) once = modelEdits(model)?.prompts?.[id]?.includeOnce ?? once
+  return once
+}
+const includeOnce = (id, provider, context = {}) => byId.has(id) && supportsIncludeOnce(id)
+  && (selectedEdit(id, provider, context)?.includeOnce ?? defaultIncludeOnce(id, provider, context))
 const messageTypes = (id, provider, context = {}) =>
   overlays.resolve(context, provider).edits.get(id)?.messageTypes
     ?? (byId.has(id) ? selectedEdit(id, provider, context)?.messageTypes ?? defaultMessageTypes(id, provider, context) : ['user', 'agent'])
@@ -194,6 +206,9 @@ const describe = ({ id, name, group, description, usedBy, vars, activation, appl
     })),
     template: resolvedText(id, provider, context), defaultTemplate: byId.has(id) ? defaultText(id, provider, context) : overlay.entries.get(id).template,
     messageTypes: messageTypes(id, provider, context), defaultMessageTypes: byId.has(id) ? defaultMessageTypes(id, provider, context) : ['user', 'agent'],
+    supportsIncludeOnce: byId.has(id) && supportsIncludeOnce(id),
+    includeOnce: includeOnce(id, provider, context),
+    defaultIncludeOnce: byId.has(id) && supportsIncludeOnce(id) ? defaultIncludeOnce(id, provider, context) : false,
     enabled: overlay.enabled(id), pluginSource: overlay.sources.get(id),
     pluginOverride: !byId.has(id) || overlay.edits.get(id)?.template !== undefined || overlay.edits.get(id)?.messageTypes !== undefined,
     edited, builtIn: model == null && version != null,
@@ -208,11 +223,13 @@ const list = (provider, context = {}) => {
 
 // Null resets only the selected scope. A model edit replaces inherited text;
 // saving the inherited text still pins it across providers and later edits.
-const setOverride = (id, template, provider, context = {}, types) => {
+const setOverride = (id, template, provider, context = {}, types, once) => {
   if (!byId.has(id)) throw Object.assign(new Error(`prompts: unknown prompt ${id}`), { status: 404 })
   providerEntries(provider)
   validateScope(context)
   if (types !== undefined && !validMessageTypes(types)) throw badRequest('messageTypes must contain only user or agent')
+  if (once !== undefined && typeof once !== 'boolean') throw badRequest('includeOnce must be a boolean')
+  if (once === true && !supportsIncludeOnce(id)) throw badRequest('includeOnce is only supported for instruction inserts')
   const { model, mode } = context
   const stored = loadOverrides()
   const next = { ...stored, $providers: { ...stored.$providers }, $models: { ...stored.$models } }
@@ -229,14 +246,19 @@ const setOverride = (id, template, provider, context = {}, types) => {
     delete target[id]
   } else {
     if (template !== undefined && typeof template !== 'string') throw badRequest('template must be a string')
-    if (template === undefined && types === undefined) throw badRequest('template or messageTypes is required')
+    if (template === undefined && types === undefined && once === undefined) throw badRequest('template, messageTypes or includeOnce is required')
     const declared = new Set(get(id).vars.map((item) => item.name))
     const undeclared = placeholders(template ?? '').filter((name) => !declared.has(name))
     if (undeclared.length) throw badRequest(`unknown vars ${undeclared.map((name) => `{{${name}}}`).join(', ')}`)
     const nextTemplate = template === undefined ? editText(target[id])
       : model == null && template === defaultText(id, provider) ? undefined : template
     const nextTypes = types === undefined ? target[id]?.messageTypes : ['user', 'agent'].filter(type => types.includes(type))
-    if (nextTypes !== undefined) target[id] = { ...(nextTemplate === undefined ? {} : { template: nextTemplate }), messageTypes: nextTypes }
+    const nextOnce = once === undefined ? target[id]?.includeOnce : once
+    if (nextTypes !== undefined || nextOnce !== undefined) target[id] = {
+      ...(nextTemplate === undefined ? {} : { template: nextTemplate }),
+      ...(nextTypes === undefined ? {} : { messageTypes: nextTypes }),
+      ...(nextOnce === undefined ? {} : { includeOnce: nextOnce }),
+    }
     else if (nextTemplate !== undefined) target[id] = nextTemplate
     else delete target[id]
   }
@@ -267,4 +289,4 @@ const modelScopes = (catalog = {}) => {
 }
 const savedModes = () => [...new Set(Object.values(loadOverrides().$models).flatMap((entry) => Object.keys(entry.modes)))]
 
-module.exports = { get, selectVersion, text, render, renderWithProvenance, focusWithProvenance, focusBlock, directoryLines, list, setOverride, registerProvider, modelScopes, savedModes, appliesTo }
+module.exports = { get, selectVersion, text, render, renderWithProvenance, focusWithProvenance, focusBlock, directoryLines, list, setOverride, registerProvider, modelScopes, savedModes, appliesTo, includeOnce }

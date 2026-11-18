@@ -6,6 +6,7 @@ export interface PromptSection {
   kind: 'system' | 'user' | 'rewritten' | 'context'
   label: string
   text: string
+  promptId?: string
 }
 export interface PromptProvenance {
   sections: PromptSection[]

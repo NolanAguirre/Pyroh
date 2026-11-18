@@ -51,7 +51,7 @@ const PromptsView = ({ providers = [] }) => {
       <div className="registry__prompts-intro">
         <div>
           <strong>Prompt templates</strong>
-          <p className="hint">Edit template text and message targets for a shared, provider, model, or model + mode scope. Targets describe the source of the incoming message: user or agent, not the model role or mode. Select both, either, or neither. Neither disables the prompt for both sources. Changes apply across workspaces.</p>
+          <p className="hint">Edit template text, message targets, and include-once settings for a shared, provider, model, or model + mode scope. Targets describe the source of the incoming message: user or agent, not the model role or mode. Select both, either, or neither. Neither disables the prompt for both sources. Changes apply across workspaces.</p>
         </div>
         <div className="registry__prompts-actions">
           <div className="registry__prompt-search">

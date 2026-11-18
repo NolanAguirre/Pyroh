@@ -67,6 +67,7 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange,
   const messageTypes = selected.messageTypes ?? selected.defaultMessageTypes ?? []
   const dirty = draft != null && (
     draft.template !== selected.template ||
+    draft.includeOnce !== Boolean(selected.includeOnce) ||
     ['user', 'agent'].some((type) => draft.messageTypes.includes(type) !== messageTypes.includes(type))
   )
 
@@ -84,7 +85,7 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange,
 
   const edit = () => {
     onBusyChange(prompt.id, true)
-    setDraft({ template: selected.template, messageTypes: [...messageTypes] })
+    setDraft({ template: selected.template, messageTypes: [...messageTypes], includeOnce: Boolean(selected.includeOnce) })
   }
   const cancel = () => {
     setDraft(null)
@@ -92,13 +93,13 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange,
     onBusyChange(prompt.id, false)
   }
 
-  const save = (template, targets) => {
+  const save = (template, targets, includeOnce) => {
     if (saving || disabled || selected.pluginOverride) return
     onBusyChange(prompt.id, true)
     setSaving(true)
     setError(null)
     api
-      .updatePrompt(prompt.id, template, { provider, model, mode }, targets)
+      .updatePrompt(prompt.id, template, { provider, model, mode }, targets, includeOnce)
       .then((data) => {
         if (!mounted.current) return
         onSaved(data.prompt)
@@ -132,11 +133,14 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange,
             {messageTypes.map((type) => <Badge key={type} size="small">{type === 'user' ? 'User' : 'Agent'}</Badge>)}
             {messageTypes.length === 0 && <Badge size="small">Neither (disabled)</Badge>}
           </div>
+          {prompt.supportsIncludeOnce && <p className="hint">{selected.includeOnce
+            ? 'Include once per conversation, on the first matching message.'
+            : 'Include whenever the activation conditions match.'}</p>}
           <div className="registry__prompt-activation">
             <div className="registry__chips">
               <strong>Activation</strong>
               <Badge size="small" variant="info">{activation?.kind || 'Condition'}</Badge>
-              {activation?.scope && <Badge size="small">{activation.scope === 'first' ? 'First message only' : 'Every message'}</Badge>}
+              {activation?.scope && <Badge size="small">{selected.includeOnce ? 'First matching message' : activation.scope === 'first' ? 'First message only' : 'Every matching message'}</Badge>}
               {!activation?.patterns && <span className="hint">No text trigger</span>}
             </div>
             <p>{activation?.condition || prompt.description}</p>
@@ -172,7 +176,7 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange,
                           : `This version inherits the shared default. Saving text or targets creates a ${provider} override.`}
                     {provider && !applicableProviders.includes(provider) && ' This provider does not currently use this prompt.'}
                   </p>
-                  {!selected.pluginOverride && <p className="hint">Reset restores both text and targets for this scope.</p>}
+                  {!selected.pluginOverride && <p className="hint">Reset restores text, targets, and inclusion settings for this scope.</p>}
                   {prompt.vars?.length > 0 && <ul className="registry__list registry__vars">
                     {prompt.vars.map((item) => <li key={item.name}><code>{`{{${item.name}}}`}</code> {item.description}</li>)}
                   </ul>}
@@ -196,6 +200,15 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange,
                         ))}
                         {draft.messageTypes.length === 0 && <span className="hint">Neither: disabled for both sources.</span>}
                       </div>
+                      {prompt.supportsIncludeOnce && <div className="registry__prompt-applicability">
+                        <CheckboxDisplay
+                          label="Include once per conversation"
+                          checked={draft.includeOnce}
+                          toggle={() => setDraft(current => ({ ...current, includeOnce: !current.includeOnce }))}
+                          disabled={saving || disabled}
+                        />
+                        <span className="hint">Applies on the first matching message, even after earlier messages.</span>
+                      </div>}
                       <FormTextarea
                         className="form__textarea registry__prompt-edit"
                         rows={Math.min(24, Math.max(4, draft.template.split('\n').length + 1))}
@@ -221,7 +234,7 @@ const PromptCard = ({ prompt, scope, scopeName, disabled, onSaved, onBusyChange,
                         {saving ? 'Resetting…' : model ? 'Reset to inherited text and targets' : provider ? selected.builtIn ? 'Reset to built-in variant' : 'Reset to shared default' : 'Reset to built-in default'}
                       </Button>}
                     </> : <>
-                      <Button devId="r5c1v8y" size="sm" onClick={() => save(draft.template, draft.messageTypes)} disabled={saving || disabled || (selected.edited && !dirty)}>
+                      <Button devId="r5c1v8y" size="sm" onClick={() => save(draft.template, draft.messageTypes, draft.includeOnce)} disabled={saving || disabled || (selected.edited && !dirty)}>
                         {saving ? 'Saving…' : model ? 'Save model replacement' : provider ? 'Save provider version' : 'Save shared default'}
                       </Button>
                       <Button devId="r2n9b4x" variant="secondary" size="sm" onClick={cancel} disabled={saving}>Cancel</Button>

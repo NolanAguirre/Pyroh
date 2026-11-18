@@ -65,11 +65,16 @@ const actionsForPrompt = (text, context = {}) => evaluateConditions(text, contex
   .map(entry => actions[entry.id])
   .filter(Boolean)
 
+for (const [id, action] of Object.entries(actions)) action.id = id
+
 const triggerMcpServers = (fired, session) => fired.flatMap((action) => action.mcpServers?.(session) || [])
 
 const prependNotesWithProvenance = async (fired, session, prompt, { preview = false, context = sessionContext(session) } = {}) => {
-  const notes = (await Promise.all(fired.map(action => preview ? action.preview?.(session, context) : action.prepend?.(session, context)))).filter(Boolean)
-  return provenance.prepend(notes.map(note => provenance.section('system', 'Harness trigger instructions', note)), prompt)
+  const notes = await Promise.all(fired.map(async action => {
+    const note = await (preview ? action.preview?.(session, context) : action.prepend?.(session, context))
+    return note ? { ...provenance.section('system', 'Harness trigger instructions', note), promptId: action.id } : null
+  }))
+  return provenance.prepend(notes.filter(Boolean), prompt)
 }
 
 const prependNotes = async (fired, session, text) =>

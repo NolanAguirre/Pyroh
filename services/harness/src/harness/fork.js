@@ -34,7 +34,9 @@ const createFork = (source, options, writeDir = config.writeDir) => {
     .map(event => ({ ...event, inherited: true }))
   const created = store.createSession(options, writeDir)
   try {
-    const fork = { sourceSessionId: source.id, sourceRunId: ownRuns.at(-1)?.id || null, createdAt: Date.now(), ...options.fork }
+    const fork = { sourceSessionId: source.id, sourceRunId: ownRuns.at(-1)?.id || null, createdAt: Date.now(), ...options.fork,
+      ...(options.fork?.kind === 'native' ? { appliedPromptIds: require('../prompt/inclusions').appliedPromptIds(source, writeDir) } : {}),
+    }
     writeJson(historyFile(created.id, writeDir), { ...fork, runs, questions: inheritedQuestions, events })
     fs.writeFileSync(paths.eventsFile(created.id, writeDir), events.map(event => `${JSON.stringify(event)}\n`).join(''), { mode: 0o600 })
     return store.updateSession(created.id, {

@@ -246,8 +246,8 @@ router.get('/prompts', async (req, res) => {
 router.put('/prompts/:id', (req, res) => {
   try {
     const { provider, model, mode } = promptQuery(req)
-    const { template, messageTypes } = req.body || {}
-    res.json({ prompt: prompts.setOverride(req.params.id, template, provider, { model, mode }, messageTypes) })
+    const { template, messageTypes, includeOnce } = req.body || {}
+    res.json({ prompt: prompts.setOverride(req.params.id, template, provider, { model, mode }, messageTypes, includeOnce) })
   } catch (err) {
     sendError(res, err)
   }
@@ -517,6 +517,7 @@ const correctAnswer = async (sessionId, qid, answer) => {
   const session = sessionStore.loadSession(sessionId, config.writeDir)
   const run = question.runId ? sessionStore.loadRun(sessionId, question.runId, config.writeDir) : null
   return rewritePrompt(corrected, {
+    tokenOnly: true,
     cwd: workspaceStore.resolveSessionCwd(session, config.writeDir),
     first: false,
     provider: session?.provider,

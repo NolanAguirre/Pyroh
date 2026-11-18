@@ -14,10 +14,12 @@ const matchesFor = (text, patterns = []) => patterns.flatMap(pattern => {
 const condition = ({ id, label, description, target, defaultOn, eligible, patterns }) => ({
   id,
   evaluate: (text, context) => {
-    if (!eligible(context)) return null
+    if (context.tokenOnly && target !== 'rewrite') return null
+    const matchContext = prompts.includeOnce(id, context.provider, context) ? { ...context, first: true } : context
+    if (!eligible(matchContext)) return null
     const overlay = overlays.resolve(context)
     const trigger = overlay.triggers.get(id)
-    if (trigger?.scope && !inScope(trigger, context)) return null
+    if (trigger?.scope && !inScope(trigger, matchContext)) return null
     const selectedPatterns = trigger?.patterns ?? patterns
     const matches = matchesFor(text, selectedPatterns)
     if (selectedPatterns && !matches.length) return null
@@ -25,8 +27,8 @@ const condition = ({ id, label, description, target, defaultOn, eligible, patter
       id, label, target, defaultOn, effect: 'excluded', description: 'Excluded by a prompt overlay', matches,
     }
     if (!prompts.text(id, context.provider, context)) return null
-    const exclusions = NEGATIVE_TRIGGERS.filter(trigger => trigger.id === id && inScope(trigger, context))
-    const excluded = trigger?.excludePatterns === undefined ? hasNegativeTrigger(text, id, context)
+    const exclusions = NEGATIVE_TRIGGERS.filter(trigger => trigger.id === id && inScope(trigger, matchContext))
+    const excluded = trigger?.excludePatterns === undefined ? hasNegativeTrigger(text, id, matchContext)
       : matchesFor(text, trigger.excludePatterns).length > 0
     if (excluded) {
       return {
@@ -34,6 +36,10 @@ const condition = ({ id, label, description, target, defaultOn, eligible, patter
         description: trigger?.excludePatterns ? 'Excluded by a plugin trigger' : exclusions.map(trigger => trigger.description).join(' '),
         matches: trigger?.excludePatterns ? matchesFor(text, trigger.excludePatterns) : exclusions.flatMap(trigger => matchesFor(text, trigger.patterns)),
       }
+    }
+    if (target !== 'rewrite' && prompts.includeOnce(id, context.provider, context)
+      && context.appliedPromptIds?.includes(id)) return {
+      id, label, target, defaultOn, effect: 'excluded', description: 'Already included in this conversation', matches,
     }
     return { id, label, description, target, defaultOn, effect: 'applied', matches }
   },
@@ -44,7 +50,8 @@ const condition = ({ id, label, description, target, defaultOn, eligible, patter
 const buildConditions = (entries = TEMPLATES, triggers = TRIGGERS) => [
   ...entries.filter(entry => entry.firstMessage).map(entry => condition({
     id: entry.id, label: entry.name, description: entry.description, target: 'first', defaultOn: true,
-    eligible: context => context.first === true && (entry.id !== 'terse' || context.terse),
+    eligible: context => (context.first === true || prompts.includeOnce(entry.id, context.provider, context))
+      && (entry.id !== 'terse' || context.terse),
   })),
   ...triggers.filter(trigger => !entries.some(entry => entry.id === trigger.id && entry.firstMessage)).map(trigger => {
     const target = ['devIdPaths', 'sessionIdPaths'].includes(trigger.id) ? 'rewrite' : 'action'

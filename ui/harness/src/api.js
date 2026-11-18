@@ -261,7 +261,7 @@ const api = {
     return fetch(at(null, `/api/prompts${query}`), { signal }).then(json)
   },
   // Saves or resets the selected scope's template and incoming-message targets.
-  updatePrompt: (id, template, { provider, model, mode } = {}, messageTypes) => {
+  updatePrompt: (id, template, { provider, model, mode } = {}, messageTypes, includeOnce) => {
     const params = new URLSearchParams()
     if (provider) params.set('provider', provider)
     if (model) params.set('model', model)
@@ -269,6 +269,7 @@ const api = {
     const query = params.size ? `?${params}` : ''
     const payload = { template }
     if (template !== null && messageTypes !== undefined) payload.messageTypes = messageTypes
+    if (template !== null && includeOnce !== undefined) payload.includeOnce = includeOnce
     return send('PUT', at(null, `/api/prompts/${encodeURIComponent(id)}${query}`), payload).then(json)
   },
 

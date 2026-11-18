@@ -82,7 +82,8 @@ Continue useful coordination while children run. Never poll, sleep, or wait for 
   ...FIRST_MESSAGE_TEMPLATES,
   {
     id: 'bootstrapServices',
-    activation: { kind: 'Text trigger', condition: 'A prompt indicating service creation, such as “new service”, “add a service”, or “bootstrap service add”. Applies to matching first messages and follow-ups.' },
+    includeOnce: true,
+    activation: { kind: 'Text trigger', condition: 'A prompt indicating service creation, such as “new service”, “add a service”, or “bootstrap service add”. Applies to the first matching message in each conversation by default.' },
     name: 'Bootstrap services',
     group: 'flags',
     description: 'Prepended to matching service-creation requests with bootstrap scaffolding instructions.',

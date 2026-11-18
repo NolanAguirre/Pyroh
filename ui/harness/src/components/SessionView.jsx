@@ -568,7 +568,7 @@ const SessionView = ({ devId, sessionId, initialSession, providers = [], workspa
                     ...(picksSpawnTarget ? { provider: spawnProvider || session.provider, ...(spawnModel ? { model: spawnModel } : {}) } : {}),
                     ...(isNewChat ? { targetMode: spawnMode } : {}),
                   }}
-                  evaluationRevision={`${session?.providerAgentId || ''}:${session?.model || ''}:${session?.status || ''}`}
+                  evaluationRevision={JSON.stringify([session?.providerAgentId, session?.model, session?.status, session?.promptInclusions])}
                   placeholder={
                     steering
                       ? 'Send to interrupt, or Queue for after this turn (⌘↵ to send)…'

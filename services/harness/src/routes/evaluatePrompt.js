@@ -7,6 +7,7 @@ const { sessionModel } = require('../prompt/context')
 const { evaluatePrompt } = require('../prompt/rewrite')
 const { highlightsFor } = require('../prompt/conditions')
 const { userPrompt } = require('../prompt/provenance')
+const { appliedPromptIds } = require('../prompt/inclusions')
 const { actions, prependNotesWithProvenance } = require('../prompt/actions')
 const { INPUT_COMMANDS, parseInputCommand } = require('../prompt/triggers')
 
@@ -46,7 +47,8 @@ const evaluatePromptRoute = async (req, res) => {
       model: spawning ? body.model || (provider === session.provider ? sessionModel(session) : undefined) : sessionModel(session),
       mode: entry.id,
       first,
-      terse: first && Boolean(entry.terse),
+      terse: Boolean(entry.terse),
+      appliedPromptIds: spawning ? [] : appliedPromptIds(session, config.writeDir),
       textOnly: Array.isArray(entry.turnOverrides?.tools) && entry.turnOverrides.tools.length === 0,
       workspaceId: session.workspaceId,
       cwd: workspaceStore.resolveSessionCwd(session, config.writeDir),

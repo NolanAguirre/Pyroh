@@ -9,6 +9,8 @@ const paths = require('../store/paths')
 const sessionStore = require('../store/sessionStore')
 const { rewritePromptWithProvenance } = require('../prompt/rewrite')
 const provenance = require('../prompt/provenance')
+const prompts = require('../prompts')
+const { promptIds, appliedPromptIds } = require('../prompt/inclusions')
 const { sessionModel } = require('../prompt/context')
 const { actionsForPrompt, triggerMcpServers, prependNotesWithProvenance } = require('../prompt/actions')
 
@@ -93,7 +95,7 @@ const runOneTurn = async ({
     throw new Error('Native forks require their saved child provider thread; fresh creation and transcript replay are unavailable')
   }
   const first = !session.fork && (!session.providerAgentId || fresh)
-  terse = terse === undefined ? first && Boolean(entry?.terse) : terse
+  terse = terse === undefined ? Boolean(entry?.terse) : terse
   if (instructions === undefined) instructions = nativeFork && session.fork.sourceConfiguration?.settings.mode === mode
     ? session.fork.sourceConfiguration.instructions ?? entry?.instructions : entry?.instructions
   if (outputSchema === undefined && nativeFork && session.fork.sourceConfiguration?.settings.mode === mode) {
@@ -121,7 +123,16 @@ const runOneTurn = async ({
     : undefined
   const textOnly = Array.isArray(tools) && tools.length === 0
   // Each trigger declares whether it applies only to the first prompt or every message.
-  const fired = actionsForPrompt(prompt, { first, textOnly, provider: session.provider,
+  const includedPromptIds = new Set(appliedPromptIds(session, writeDir, { fresh }))
+  // Retries may carry an already assembled prompt. Keep unsent instructions,
+  // but remove once-only inserts that the conversation already received.
+  const sourcePrompt = provenance.supplied(prompt, { ...promptProvenance, messageType })
+  promptProvenance = provenance.assemble(sourcePrompt.sections.filter(part => !(part.promptId
+    && includedPromptIds.has(part.promptId) && prompts.includeOnce(part.promptId, session.provider,
+      { model: settings.model, mode: logicalMode }))), sourcePrompt)
+  prompt = promptProvenance.text
+  const initialPromptIds = [...new Set([...includedPromptIds, ...promptIds(promptProvenance)])]
+  const fired = actionsForPrompt(prompt, { first, textOnly, provider: session.provider, appliedPromptIds: initialPromptIds,
     cwd: settings.cwd, workspaceId: session.workspaceId, model: settings.model, mode: logicalMode, messageType })
   const previousTools = session.providerConfiguration?.tools
   const extraMcpServers = [...(previousTools?.mcpServers || []).filter(server => !['harness_agents', MEMORY_SERVER_NAME].includes(server.name))]
@@ -189,9 +200,13 @@ const runOneTurn = async ({
     if (nativeFork && providerAgentId !== session.providerAgentId) throw new Error('Native fork resume returned a different provider thread')
     configuration.settings = { ...configuration.settings, ...driver.resolvedSettings?.() }
     const promptContext = () => ({ cwd: settings.cwd, workspaceId: session.workspaceId,
-      model: driver.resolvedSettings?.().model || configuration.settings.model || settings.model, mode: logicalMode, messageType })
+      model: driver.resolvedSettings?.().model || configuration.settings.model || settings.model, mode: logicalMode, messageType, appliedPromptIds: [...includedPromptIds] })
     sessionStore.updateSession(session.id, { providerConfiguration: configuration }, writeDir)
     if (typeof onCreated === 'function') onCreated(providerAgentId)
+    const saveInclusions = () => sessionStore.updateSession(session.id, {
+      promptInclusions: { provider: session.provider, providerAgentId, ids: [...includedPromptIds] },
+    }, writeDir)
+    saveInclusions()
 
     if (signal?.aborted) return { result: { status: 'cancelled' }, providerAgentId }
     const seed = session.fork ? sessionStore.loadSession(session.id, writeDir)?.forkHistorySeed : null
@@ -209,7 +224,19 @@ const runOneTurn = async ({
     }
     // Persist snapshots separately from totals so reconnects retain the latest
     // context size, including decreases after compaction, in every run mode.
+    let pendingInclusions = []
+    const commitInclusions = () => {
+      if (!pendingInclusions.length) return
+      for (const id of pendingInclusions) includedPromptIds.add(id)
+      pendingInclusions = []
+      saveInclusions()
+    }
     const handleEvent = (event, collector = requestMetrics) => {
+      if (event.type === 'provider_prompt') {
+        pendingInclusions = promptIds(event)
+        providerAgentId = event.providerAgentId || driver.providerAgentId() || providerAgentId
+      }
+      if (['text', 'thinking', 'tool_call', 'question'].includes(event.type)) commitInclusions()
       if (['model_request', 'model_request_evidence'].includes(event.type) && collector) {
         if (!collector.observe(event)) return
         onEvent?.({ ...event, segmentId: collector.segmentId, providerRunId: event.providerRunId ?? event.runId })
@@ -284,16 +311,17 @@ const runOneTurn = async ({
 
     let assembled = await rewritePromptWithProvenance(provenance.supplied(prompt, { ...promptProvenance, messageType }),
       { cwd: settings.cwd, first, terse, firstMessageInstructions, provider: session.provider,
-        workspaceId: session.workspaceId, textOnly, ...promptContext() })
+        workspaceId: session.workspaceId, textOnly, ...promptContext(), appliedPromptIds: initialPromptIds })
     if (runId) assembled.userItemId = `user:${runId}`
-    if (assembled.text !== prompt) onPromptRewrite?.(assembled.text, assembled)
     assembled = await prependNotesWithProvenance(fired, { ...session, ...promptContext() }, assembled,
       { context: { ...promptContext(), provider: session.provider, first, terse, textOnly } })
+    if (assembled.text !== prompt) onPromptRewrite?.(assembled.text, assembled)
     let firstSend = true
     let segmentImages = require('../store/imageStore').resolveImages(session.id, images, writeDir)
     const pendingSteers = []
     let result
     while (true) {
+      pendingInclusions = []
       const segmentStart = Date.now()
       let sendPrompt = assembled
       if (needsHistory) {
@@ -336,7 +364,10 @@ const runOneTurn = async ({
       } finally {
         stopWatch?.()
       }
-      if (segment.status === 'completed') markHistorySeeded()
+      if (segment.status === 'completed') {
+        commitInclusions()
+        markHistorySeeded()
+      }
 
       usage = addUsage(usage, segment.usage)
       durationMs = (durationMs || 0) + (segment.durationMs ?? Date.now() - segmentStart)
@@ -361,17 +392,21 @@ const runOneTurn = async ({
           'The user has taken over this conversation. Follow their requests as an independent agent. Your replies are not returned to the original parent.',
         ].filter(Boolean).join('\n\n')
       }
-      const sources = await Promise.all(steers.map(async steer => {
+      const sources = []
+      const pendingPromptIds = new Set(includedPromptIds)
+      for (const steer of steers) {
         const source = provenance.supplied(steer.text, { ...steer.promptProvenance,
           messageType: steer.promptProvenance?.messageType ?? 'user' })
-        const context = { ...promptContext(), messageType: source.messageType }
+        const context = { ...promptContext(), terse, messageType: source.messageType, appliedPromptIds: [...pendingPromptIds] }
         const rewritten = await rewritePromptWithProvenance(source,
           { cwd: settings.cwd, first: false, provider: session.provider, workspaceId: session.workspaceId, textOnly, ...context })
         const actions = actionsForPrompt(steer.text, { ...context, first: false, textOnly,
           provider: session.provider, workspaceId: session.workspaceId })
-        return prependNotesWithProvenance(actions, { ...session, ...context }, rewritten,
+        const prepared = await prependNotesWithProvenance(actions, { ...session, ...context }, rewritten,
           { context: { ...context, first: false, textOnly, provider: session.provider } })
-      }))
+        sources.push(prepared)
+        for (const id of promptIds(prepared)) pendingPromptIds.add(id)
+      }
       messageType = sources.some(source => source.messageType === 'user') ? 'user' : 'agent'
       const sections = sources.flatMap((source, index) => source.sections.map((part, partIndex) => ({
         ...part, text: part.text + (index < sources.length - 1 && partIndex === source.sections.length - 1 ? '\n\n' : ''),
