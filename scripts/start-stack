@@ -158,7 +158,7 @@ launch services/memory start
 launch services/notepad start
 launch services/mcpdevid start
 launch ui/harness dev
-launch ui/analytics dev
+launch ui/analytics start
 
 # Polling avoids a signal arriving just before an otherwise blocking wait.
 while [ "$signal_status" -eq 0 ]; do

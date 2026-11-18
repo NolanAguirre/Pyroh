@@ -15,7 +15,7 @@
 help: ## Show this help
 	@printf '%s\n' '  help                             Show this help'
 	@printf '%s\n' '  ui.analytics.install             Install analytics UI dependencies'
-	@printf '%s\n' '  ui.analytics.dev                 Start the analytics UI dev server'
+	@printf '%s\n' '  ui.analytics.start               Start the analytics UI in the foreground'
 	@printf '%s\n' '  ui.analytics.build               Build the analytics UI'
 	@printf '%s\n' '  services.nats.start              Start NATS with JetStream'
 	@printf '%s\n' '  services.nats.help               Show NATS service commands'
@@ -283,13 +283,13 @@ ui.harness.lint: ## Lint the harness UI
 ui.harness.preview: ## Preview the harness UI build
 	$(MAKE) -C ui/harness preview
 
-.PHONY: ui.analytics.install ui.analytics.dev ui.analytics.build
+.PHONY: ui.analytics.install ui.analytics.start ui.analytics.build
 
 ui.analytics.install: ## Install analytics UI dependencies
 	$(MAKE) -C ui/analytics install
 
-ui.analytics.dev: ## Start the analytics UI dev server
-	$(MAKE) -C ui/analytics dev
+ui.analytics.start: ## Start the analytics UI in the foreground
+	$(MAKE) -C ui/analytics start
 
 ui.analytics.build: ## Build the analytics UI
 	$(MAKE) -C ui/analytics build
