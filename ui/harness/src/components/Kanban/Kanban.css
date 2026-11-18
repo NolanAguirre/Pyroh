@@ -63,7 +63,7 @@
 .kanban__card-footer { display: flex; align-items: center; justify-content: space-between; padding: 0 0.625rem 0.625rem 0.875rem; gap: 0.5rem; }
 .kanban__card-actions { display: flex; align-items: center; gap: 0.25rem; }
 .kanban__archived-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.25rem; }
-.kanban__archived-cards li { display: flex; align-items: center; gap: 0.5rem; }
+.kanban__archived-cards > li { display: flex; align-items: center; gap: 0.5rem; }
 .kanban__archived-title { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 0.25rem 0.125rem; color: #c5ccd6; font: inherit; font-size: .8125rem; cursor: pointer; overflow-wrap: anywhere; }
 .kanban__archived-title:hover:not(:disabled) { color: inherit; text-decoration: underline; }
 .kanban__card-hint { font-size: .75rem; color: #c5ccd6; }
@@ -200,3 +200,14 @@
 .kanban__epic-status { display: grid; gap: .375rem; padding: 0 .875rem .75rem; font-size: .8125rem; color: #c5ccd6; }
 .kanban__epic-status select { width: 100%; padding: .375rem; border: .0625rem solid #5a6374; border-radius: .25rem; background: #252830; color: inherit; font: inherit; }
 .kanban__cell-count { display: block; text-align: center; font-size: .8125rem; color: #c5ccd6; padding-top: .5rem; }
+
+.kanban__file-card { position: relative; }
+.kanban__file-card--hover { outline: .1875rem solid #8ec0ff; outline-offset: -.1875rem; }
+.kanban__file-card--unavailable { outline-color: #c5ccd6; }
+.kanban__file-drop-hint { position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; padding: .875rem; border-radius: .375rem; background: #252830ed; color: #c5ddff; text-align: center; font-size: .875rem; pointer-events: none; }
+.kanban__card-uploads { min-width: 0; padding: .75rem; border-top: .0625rem solid #5a6374; }
+.kanban__card-uploads > .kanban__attachments-hint { margin: 0 0 .75rem; }
+.kanban__card-uploads .kanban__attachment { padding: .625rem; }
+.kanban__card-uploads .kanban__attachments-hint { margin: .375rem 0; }
+.kanban__archived-card { flex-wrap: wrap; }
+.kanban__archived-card > .kanban__card-uploads { flex-basis: 100%; }

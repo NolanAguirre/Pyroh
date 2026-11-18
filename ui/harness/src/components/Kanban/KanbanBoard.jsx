@@ -9,6 +9,7 @@ import { Button, PopupDisplay, Matrix, FormInput, DevScope, Fold, FoldTrigger, F
 import KanbanQuery from './KanbanQuery'
 import KanbanRows from './KanbanRows'
 import useCardDrag from './useCardDrag'
+import AttachmentDropCard, { rejectFileDrop } from './AttachmentDropCard'
 
 
 
@@ -121,6 +122,7 @@ const ProjectMatrix = ({ devId, boards, hierarchy, busy, matchesCard, searching,
   }
   const rows = searching ? boards.filter((project) => project.boardColumnsByBoardId.nodes.some((column) => activeCards(column).some(matchesCard))) : boards
   const dragOver = (event, target, boardId) => {
+    if (rejectFileDrop(event)) return
     const dragged = dragRef.current
     if (!dragged || busy || dragged.boardId !== boardId) return
     event.preventDefault()
@@ -129,6 +131,7 @@ const ProjectMatrix = ({ devId, boards, hierarchy, busy, matchesCard, searching,
     if (dropTarget !== target) setDropTarget(target)
   }
   const dropCard = (event, project, stage, beforeCardId = null) => {
+    if (rejectFileDrop(event)) return
     event.preventDefault()
     event.stopPropagation()
     const dragged = dragRef.current
@@ -156,12 +159,12 @@ const ProjectMatrix = ({ devId, boards, hierarchy, busy, matchesCard, searching,
       return <div className={`kanban__cards kanban__matrix-cell ${dropTarget === cellKey ? 'kanban__drop-target' : ''}`} onDragOver={(event) => dragOver(event, cellKey, project.id)} onDrop={(event) => dropCard(event, project, column)}>
         <span className="kanban__matrix-card-count">{cards.length} cards</span>
         {!countOnly && cards.map((card) => <DevScope key={card.id} id="b9bhybr" state={{ card: card.id }}>
-          <article className={`kanban__task-card ${dragged?.id === card.id ? 'kanban__dragging' : ''} ${dropTarget === card.id ? 'kanban__drop-before' : ''}`} {...getDragProps({ id: card.id, boardId: project.id, columnId: card.columnId, card })} onDragOver={(event) => dragOver(event, card.id, project.id)} onDrop={(event) => dropCard(event, project, column, card.id)}>
+          <AttachmentDropCard cardId={card.id} busy={busy} className={`kanban__task-card ${dragged?.id === card.id ? 'kanban__dragging' : ''} ${dropTarget === card.id ? 'kanban__drop-before' : ''}`} {...getDragProps({ id: card.id, boardId: project.id, columnId: card.columnId, card })} onDragOver={(event) => dragOver(event, card.id, project.id)} onDrop={(event) => dropCard(event, project, column, card.id)}>
             <DevScope id="20wmwyd">
               <button className="kanban__card-content" draggable={!busy} disabled={busy} onClick={() => onOpenCard(project.id, card)}><span>{card.title}</span>{card.description && <small>{card.description}</small>}<small>By {card.userByAuthorId?.name || 'Unknown author'}</small></button>
             </DevScope>
             <CardRelationships card={card} hierarchy={hierarchy} busy={busy} onOpenCard={onOpenCard} />
-          </article>
+          </AttachmentDropCard>
         </DevScope>)}
       </div>
     }} />
@@ -337,7 +340,7 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = 
             <div className="kanban__sidebar-footer"><span>Signed in as <strong>{user.name}</strong></span><Button variant="secondary" size="sm" disabled={busy} onClick={onSwitchUser} devId="yen2yfb">Switch user</Button></div>
           </aside>
           </DevScope>
-          <main className="kanban__main" inert={Boolean(editor)}>
+          <main className="kanban__main" inert={Boolean(editor)} onDragOver={rejectFileDrop} onDrop={rejectFileDrop}>
             <header className="kanban__board-header">
               <div className="kanban__eyebrow">{scopedBoardId ? board?.title || 'Workspace board' : `MY WORKSPACE / ${view === 'matrix' ? 'MATRIX' : 'BOARD'}`}</div>
               <DevScope id="86i9hrw"><FormInput type="search" className="kanban__search" field={{ value: search, onChange: (event) => setSearch(event.target.value) }} aria-label={view === 'matrix' ? 'Search cards across all projects' : 'Search cards on this board'} placeholder={view === 'matrix' ? 'Search all projects’ cards…' : 'Search this board’s cards…'} /></DevScope>

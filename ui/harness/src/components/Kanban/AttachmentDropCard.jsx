@@ -7,6 +7,14 @@ export const isFileDrag = (event) => {
   return Array.from(transfer?.types || []).includes('Files') || Array.from(transfer?.items || []).some((item) => item.kind === 'file')
 }
 
+export const rejectFileDrop = (event) => {
+  if (!isFileDrag(event)) return false
+  event.preventDefault()
+  event.stopPropagation()
+  event.dataTransfer.dropEffect = 'none'
+  return true
+}
+
 const AttachmentDropCard = ({ as: Tag = 'article', cardId, busy, className = '', children, ...props }) => {
   const { uploads, working, addFiles, retry } = useAttachmentUploads(cardId, busy)
   const [hovering, setHovering] = useState(false)

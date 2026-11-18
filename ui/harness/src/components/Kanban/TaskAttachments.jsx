@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from 'component-library'
-import { attachmentUrl, completeAttachment, listAttachments, prepareAttachment, removeAttachment, uploadAttachment } from './attachmentApi'
+import { attachmentUrl, listAttachments, removeAttachment } from './attachmentApi'
+import AttachmentUploads from './AttachmentUploads'
+import useAttachmentUploads, { ATTACHMENT_ADDED } from './useAttachmentUploads'
 
 const formatSize = (size) => {
   if (size < 1024) return `${size} B`
@@ -12,11 +14,11 @@ const SavedAttachments = ({ cardId, busy }) => {
   const [attachments, setAttachments] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [uploads, setUploads] = useState([])
-  const [working, setWorking] = useState(false)
+  const [removing, setRemoving] = useState(false)
+  const { uploads, working: uploading, addFiles, retry } = useAttachmentUploads(cardId, busy || removing || loading)
+  const working = removing || uploading
   const controller = useRef(null)
   const locked = useRef(false)
-  const sequence = useRef(0)
 
   const load = async (signal) => {
     setLoading(true)
@@ -34,65 +36,29 @@ const SavedAttachments = ({ cardId, busy }) => {
   useEffect(() => {
     const current = new AbortController()
     controller.current = current
-    load(current.signal)
-    return () => current.abort()
-  }, [cardId])
-
-  const updateUpload = (item, changes) => {
-    Object.assign(item, changes)
-    setUploads((current) => current.map((entry) => entry.id === item.id ? { ...item } : entry))
-  }
-
-  const runUploads = async (items) => {
-    if (locked.current || busy) return
-    locked.current = true
-    setWorking(true)
-    const signal = controller.current.signal
-    try {
-      for (const entry of items) {
-        const item = { ...entry }
-        if (signal.aborted) break
-        try {
-          if (!item.uploaded) {
-            updateUpload(item, { status: 'Preparing', error: '', progress: 0 })
-            const prepared = await prepareAttachment(cardId, item.file, signal)
-            if (signal.aborted) break
-            updateUpload(item, { uploadId: prepared.uploadId, status: 'Uploading' })
-            await uploadAttachment(prepared.uploadUrl, item.file, (progress) => {
-              if (!signal.aborted) updateUpload(item, { progress })
-            }, signal)
-            if (signal.aborted) break
-            updateUpload(item, { uploaded: true, progress: 100 })
-          }
-          updateUpload(item, { status: 'Finishing', error: '' })
-          const result = await completeAttachment(item.uploadId, signal)
-          if (signal.aborted) break
-          setAttachments((current) => [...current.filter((entry) => entry.id !== result.attachment.id), result.attachment])
-          updateUpload(item, { status: 'Complete', file: null })
-        } catch (failure) {
-          if (signal.aborted) break
-          updateUpload(item, { status: 'Failed', error: failure.message })
-        }
-      }
-    } finally {
-      locked.current = false
-      if (!signal.aborted) setWorking(false)
+    const added = (event) => {
+      if (event.detail.cardId !== cardId) return
+      const { attachment } = event.detail
+      setAttachments((items) => [...items.filter((item) => item.id !== attachment.id), attachment])
     }
-  }
+    window.addEventListener(ATTACHMENT_ADDED, added)
+    load(current.signal)
+    return () => {
+      current.abort()
+      window.removeEventListener(ATTACHMENT_ADDED, added)
+    }
+  }, [cardId])
 
   const selectFiles = (event) => {
     const files = Array.from(event.target.files || [])
     event.target.value = ''
-    if (locked.current || busy || !files.length) return
-    const items = files.map((file) => ({ id: ++sequence.current, file, filename: file.name, status: 'Queued', progress: 0 }))
-    setUploads((current) => [...current.filter((item) => item.status !== 'Complete'), ...items])
-    runUploads(items)
+    addFiles(files)
   }
 
   const remove = async (attachment) => {
-    if (locked.current || busy) return
+    if (locked.current || busy || uploading) return
     locked.current = true
-    setWorking(true)
+    setRemoving(true)
     setError('')
     const signal = controller.current.signal
     try {
@@ -102,7 +68,7 @@ const SavedAttachments = ({ cardId, busy }) => {
       if (!signal.aborted) setError(`Could not remove ${attachment.filename}: ${failure.message}`)
     } finally {
       locked.current = false
-      if (!signal.aborted) setWorking(false)
+      if (!signal.aborted) setRemoving(false)
     }
   }
 
@@ -130,15 +96,7 @@ const SavedAttachments = ({ cardId, busy }) => {
       <input type="file" multiple disabled={busy || working || loading} onChange={selectFiles} />
     </label>
     <p className="kanban__attachments-hint">Files upload one at a time. Keep this editor open until uploads finish.</p>
-    {uploads.length > 0 && <ul className="kanban__attachment-list column" aria-label="File uploads">
-      {uploads.map((item) => <li className="kanban__attachment card-section" key={item.id}>
-        <strong className="kanban__attachment-name">{item.filename}</strong>
-        <p className="kanban__attachments-hint" role="status">{item.status}{item.status === 'Uploading' ? ` ${item.progress}%` : ''}</p>
-        {item.status === 'Uploading' && <progress className="kanban__attachment-progress" max={100} value={item.progress} aria-label={`Uploading ${item.filename}`} />}
-        {item.error && <p className="kanban__attachments-error" role="alert">{item.error}{item.uploaded ? ' The file was uploaded. Retry finishing without uploading it again.' : ''}</p>}
-        {item.status === 'Failed' && <Button type="button" variant="secondary" size="sm" disabled={busy || working || loading} onClick={() => runUploads([item])} devId="attachment-retry">{item.uploaded ? 'Retry finishing' : 'Retry upload'}</Button>}
-      </li>)}
-    </ul>}
+    <AttachmentUploads uploads={uploads} disabled={busy || working || loading} onRetry={retry} />
   </>
 }
 
