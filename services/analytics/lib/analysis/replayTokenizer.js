@@ -2,7 +2,7 @@ const crypto = require('crypto')
 const fs = require('fs')
 const path = require('path')
 
-const SERIALIZATION = 'harness-messages-json-v1'
+const SERIALIZATION = 'harness-visible-messages-json-v2'
 const canonical = value => {
   if (Array.isArray(value)) return value.map(canonical)
   if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]))
@@ -70,12 +70,13 @@ const createReplayTokenizer = () => {
     }
     return { tokens: cache.get(key), fingerprint: hash, identity }
   }
-  const request = (blocks, model) => count(serialize(blocks.map(block => ({ role: block.role,
+  const visible = block => block.kind !== 'boundary' && block.visibility !== 'provider-dependent' && block.kind !== 'thinking'
+  const request = (blocks, model) => count(serialize(blocks.filter(visible).map(block => ({ role: block.role,
     type: block.kind, ...(block.name ? { name: block.name } : {}),
     ...(block.toolId ? { tool_call_id: block.toolId } : {}), content: block.content }))), model)
-  const output = (blocks, model) => count(blocks.filter(block => block.generated).map(block =>
+  const output = (blocks, model) => count(blocks.filter(block => block.generated && visible(block)).map(block =>
     block.kind === 'tool_call' ? serialize({ name: block.name, arguments: block.content })
-      : typeof block.content === 'string' ? block.content : serialize(block.content)).join('\n'), model, 'generated-text-v1')
+      : typeof block.content === 'string' ? block.content : serialize(block.content)).join('\n'), model, 'visible-generated-text-v2')
   return { request, output, identities: () => [...identities.values()], cacheSize: () => cache.size }
 }
 

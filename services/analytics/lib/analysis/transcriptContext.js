@@ -7,11 +7,6 @@ const known = value => Number.isSafeInteger(value) && value >= 0
 const text = value => value == null ? '' : typeof value === 'string' ? value : JSON.stringify(value)
 const contentText = value => typeof value === 'string' ? value : text(value)
 const total = values => values.every(known) ? values.reduce((sum, value) => sum + value, 0) : null
-const median = values => {
-  const sorted = values.filter(value => value > 0).sort((a, b) => a - b)
-  return sorted.length ? sorted[Math.floor(sorted.length / 2)] : null
-}
-
 const readTranscript = (dir, cutoff, warnings) => {
   if (!dir) return []
   let phases = []
@@ -85,7 +80,6 @@ const createTranscriptEvidence = (agents) => {
   const turns = []
   const gaps = []
   const runAccounting = []
-  const history = agents.flatMap(agent => agent.rows).filter(row => row.requests > 0 && known(row.input))
   const addGap = (row, reason, sources = []) => gaps.push({ sessionId: row.sessionId, runId: row.id, reason, sources })
   for (const agent of agents) {
     for (const row of agent.rows) {
@@ -115,7 +109,7 @@ const createTranscriptEvidence = (agents) => {
             ? event.sections : [{ kind: 'context', label: 'Unclassified prompt', text: event.text || '' }]
           sections.forEach((section, index) => add(`prompt:${event.captureId || entry.order}:${index}`, {
             kind: 'prompt', role: section.kind === 'system' ? 'system' : 'user', content: section.text,
-            sectionKind: section.kind, label: section.label, captureId: event.captureId,
+            sectionKind: section.kind, label: section.label, captureId: event.captureId, sectionIndex: index,
             visibility: 'request', lifetime: 'session', images: event.images || [],
           }, entry))
           if (event.images?.length) addGap(row, 'Image payload tokenization is unsupported.', entry.sources)
@@ -176,7 +170,8 @@ const createTranscriptEvidence = (agents) => {
         })
         addGap(row, 'Final run text was recovered outside streamed response blocks, its boundary is inferred.')
       }
-      runBlocks.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+      runBlocks.sort((a, b) => (a.kind === 'tool_result' ? a.lastOrder : a.order)
+        - (b.kind === 'tool_result' ? b.lastOrder : b.order) || (a.sectionIndex ?? 0) - (b.sectionIndex ?? 0) || a.id.localeCompare(b.id))
       for (const block of runBlocks) {
         if (block.kind !== 'tool_call' || block.resultId) continue
         const capturedFileChange = block.name === 'fileChange' && block.status === 'completed'
@@ -210,7 +205,8 @@ const createTranscriptEvidence = (agents) => {
           turn = runTurns.find(item => item.start !== null && item.start <= block.order && (item.end === null || item.end >= block.order))
           if (!turn) turn = runTurns.find(item => item.start === null && item.end !== null && item.end >= block.order)
           // Tool snapshots can arrive just after message_stop, before a new request starts.
-          if (!turn && block.kind === 'tool_call') turn = [...runTurns].reverse().find(item => item.end !== null && item.end <= block.order)
+          if (!turn && block.kind === 'tool_call') turn = [...runTurns].reverse().find(item => item.end !== null && item.end <= block.order
+            && !runBlocks.some(result => result.kind === 'tool_result' && result.lastOrder > item.end && result.lastOrder < block.order))
         }
         if (!turn && block.generated) {
           if (!inferred || afterResult) {
@@ -234,26 +230,17 @@ const createTranscriptEvidence = (agents) => {
         }
         if (['tool_result', 'prompt', 'boundary'].includes(block.kind)) afterResult = true
       }
-      const peers = history.filter(item => item.provider === row.provider && item.model === row.model)
-      const inputPerTurn = median(peers.map(item => item.input / item.requests)) || 8000
       const segments = row.requestEvidence?.segments || []
       const reported = segments.length && segments.every(segment => known(segment.reportedModelRequests))
         ? total(segments.map(segment => segment.reportedModelRequests)) : null
-      const target = Math.max(runTurns.length, row.requestEvidence?.observed || 0, row.requests ?? reported
-        ?? (known(row.input) ? Math.max(row.input > 0 ? 1 : 0, Math.round(row.input / inputPerTurn)) : 3))
-      while (runTurns.length < target) {
-        const index = runTurns.length
-        runTurns.push({ id: `${row.sessionId}:${row.id}:allocated:${index}`, sessionId: row.sessionId, runId: row.id,
-          model: row.model, provider: row.provider, confidence: 'allocated',
-          reason: row.requests !== null ? 'Reconciled count lacks a recoverable transcript boundary.'
-            : reported !== null ? 'Provider-reported count lacks a recoverable transcript boundary.'
-              : `Run input allocation using ${inputPerTurn} input tokens/turn (${peers.length ? 'same-model measured history' : 'fallback assumption'}).`,
-          order: (runBlocks.at(-1)?.lastOrder ?? entries.at(-1)?.order ?? 0) + 1 + index / (target + 1),
-          start: null, end: null, blocks: [], sources: [{ file: row.file }], measuredUsage: null, usageReconciled: false })
-      }
+      const expectedRequests = known(row.requests) ? row.requests : reported
+      const missingRequests = Math.max(0, (expectedRequests ?? row.requestEvidence?.observed ?? 0) - runTurns.length)
+      if (missingRequests) addGap(row, `${missingRequests} recorded requests have no recoverable identity or transcript boundary. No empty requests are invented.`)
+      if (!runTurns.length && (row.input > 0 || row.output > 0)) addGap(row, 'Usage exists without recoverable request boundaries or generated content.')
       for (const turn of runTurns) {
         const generated = runBlocks.filter(block => block.turnId === turn.id)
         // The request must precede the earliest generated block, even for completion-only evidence.
+        if (!generated.length && turn.order == null) addGap(row, 'Recorded response identity has no recoverable timing, its position is uncertain.', turn.sources)
         turn.order = generated.length ? Math.min(turn.order ?? Infinity, generated[0].order - 0.01)
           : turn.order ?? (runBlocks.at(-1)?.order ?? 0) + 0.9
         turn.contextLimit = entries.filter(entry => entry.event.context?.maxTokens > 0)
@@ -261,36 +248,22 @@ const createTranscriptEvidence = (agents) => {
           ?? entries.filter(entry => entry.event.context?.maxTokens > 0).at(-1)?.event.context.maxTokens ?? null
       }
       runTurns.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
-      if (runTurns.some(turn => turn.confidence !== 'measured')) addGap(row, 'Some response boundaries are inferred or allocated, so replay timing is a scenario.')
+      if (runTurns.some(turn => turn.confidence !== 'measured')) addGap(row, 'Some response boundaries are inferred from captured content, so replay timing remains uncertain.')
       if (!row.endedAt || row.record?.transcriptStatus === 'incomplete') addGap(row, 'Run or transcript is incomplete at cutoff.')
       if (agent.session.fork) addGap(row, 'Inherited provider history is not fully represented in this session.')
-      // Attribution conserves authoritative run totals without changing observed response usage.
-      const accounting = { sessionId: row.sessionId, runId: row.id, measured: { input: row.input, output: row.output }, residual: {} }
+      // Run totals are evidence, never new text or equal shares of reconstructed requests.
+      const accounting = { sessionId: row.sessionId, runId: row.id, measured: { input: row.input, output: row.output },
+        expectedRequests, recoveredRequests: runTurns.length, missingRequests, residual: {} }
       for (const field of ['input', 'output']) {
         const key = `${field}Tokens`
         const observed = runTurns.map(turn => known(turn.measuredUsage?.[key]) ? turn.measuredUsage[key] : null)
         const subtotal = observed.reduce((sum, value) => sum + (value ?? 0), 0)
-        const missing = observed.filter(value => value === null).length
-        const budget = row[field]
-        const preserve = known(budget) && subtotal <= budget && (missing > 0 || subtotal === budget)
-        let remainder = known(budget) ? budget - (preserve ? subtotal : 0) : null
-        const recipients = preserve ? missing : runTurns.length
         runTurns.forEach((turn, index) => {
           turn.attributedUsage = turn.attributedUsage || {}
-          const share = known(budget) && (!preserve || observed[index] === null)
-            ? Math.floor((budget - (preserve ? subtotal : 0)) / Math.max(1, recipients)) : null
-          const value = known(budget) ? preserve && observed[index] !== null ? observed[index] : share : null
-          turn.attributedUsage[field] = value
-          if (share !== null) remainder -= share
-          turn.attribution = preserve ? 'Observed usage retained, missing usage allocated from run remainder.'
-            : 'Run total allocated equally, conflicting or incomplete response usage remains separate evidence.'
+          turn.attributedUsage[field] = observed[index]
+          turn.attribution = 'Observed response usage only. Unassigned run usage stays in the residual and does not enter replay context.'
         })
-        const recipient = [...runTurns].reverse().find((turn, reverseIndex) => !preserve || observed[runTurns.length - reverseIndex - 1] === null)
-        if (recipient && remainder > 0) {
-          recipient.attributedUsage[field] += remainder
-          remainder = 0
-        }
-        accounting.residual[field] = known(budget) ? remainder : null
+        accounting.residual[field] = known(row[field]) ? row[field] - subtotal : null
       }
       runAccounting.push(accounting)
       turns.push(...runTurns.map(turn => freeze(turn)))

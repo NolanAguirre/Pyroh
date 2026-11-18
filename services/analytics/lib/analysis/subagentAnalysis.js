@@ -365,17 +365,18 @@ const analyzeSubagents = async (sessionId, rawAssumptions = '') => {
   const difference = withSubagents !== null && withoutSubagents !== null
     ? withoutSubagents - withSubagents : null
   const conclusion = difference === null ? 'Cannot compare: a token total is unavailable.'
-    : difference === 0 ? 'Estimated comparison: tie (0 tokens difference).'
-      : `Estimated comparison: ${difference > 0 ? 'with subagents' : 'without subagents'} uses ${fmt(Math.abs(difference))} fewer.`
+    : `Replay difference (without minus with): ${difference > 0 ? '+' : difference < 0 ? '-' : ''}${fmt(Math.abs(difference))}.`
   const lines = [
-    `With subagents: ${fmt(withSubagents)}`,
-    `Without subagents (estimated): ${fmt(withoutSubagents)}`,
+    `With subagents (measured): ${fmt(withSubagents)}`,
+    `Without subagents (rebuilt transcript estimate): ${fmt(withoutSubagents)}`,
     '',
     conclusion,
+    `Replayed requests: ${replay.replayTurns.length.toLocaleString('en-US')}`,
+    ...(number(replay.removed?.turns) ? [`Removed requests: ${replay.removed.turns.toLocaleString('en-US')}`] : []),
     '',
-    'Estimate: use original attributed turn inputs as new entries, subtract up to 13,000 from the first entry of each descendant chat, then sum cumulative request contexts. Retained output enters later context once. Allocated turns use uncertain synthetic positions. Removed turns are omitted and partial block removals use proportional estimates. Measured usage is unchanged.',
+    'Estimate: rebuild one coordinator conversation from recorded messages and tool calls, removing delegation overhead. Count the retained context at each remaining request and generated output once. Earlier content costs input tokens again whenever a later request includes it. Measured usage includes cached input; this compares tokens, not money.',
   ]
-  if (withoutSubagents !== null && !replay.coverage.complete) lines.push('', 'The estimate is incomplete because some evidence is missing or uncertain.')
+  if (withoutSubagents !== null && !replay.coverage.complete) lines.push('', 'Missing or uncertain evidence limits this replay. The difference does not establish that delegation saved tokens.')
   lines.push('', `[Full details (JSON)](${artifact})`)
   return { report: lines.join('\n'), artifact }
 }

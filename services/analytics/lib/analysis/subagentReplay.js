@@ -1,8 +1,6 @@
 const { createTranscriptEvidence } = require('./transcriptContext')
 const { createReplayTokenizer, serialize, fingerprint, freeze } = require('./replayTokenizer')
 
-const DESCENDANT_STARTUP_TOKENS = 13000
-
 const known = value => Number.isFinite(value) && value >= 0
 const sum = values => values.every(known) ? values.reduce((total, value) => total + value, 0) : null
 const content = block => typeof block?.content === 'string' ? block.content : serialize(block?.content)
@@ -12,10 +10,24 @@ const parsed = value => {
 }
 const unpack = value => {
   const object = parsed(value)
-  if (object?.content?.length === 1 && object.content[0].type === 'text') return parsed(object.content[0].text)
+  if (!object || typeof object !== 'object' || object.isError || object.status === 'error') return object
+  if (object.status === 'success' && object.value !== undefined) return unpack(object.value)
+  if (object.content?.length === 1) {
+    const entry = object.content[0]
+    const payload = typeof entry.text === 'object' ? entry.text?.text : entry.text
+    if (payload !== undefined) return unpack(payload)
+  }
   return object
 }
-const delegation = block => /^(?:mcp__harness_agents__|harness_agents\/)(spawn|status|wait|stop)$/.exec(block.name || '')?.[1] || null
+const delegationCall = block => {
+  const input = parsed(block.content)
+  const direct = /^(?:mcp__harness_agents__|harness_agents[/.])(spawn|status|wait|stop)$/.exec(block.name || '')
+  if (direct) return { method: direct[1], input }
+  if (block.name === 'mcp' && input?.providerIdentifier === 'harness_agents'
+    && /^(?:spawn|status|wait|stop)$/.test(input.toolName)) return { method: input.toolName, input: parsed(input.args) }
+  return null
+}
+const delegation = block => delegationCall(block)?.method || null
 const pureRead = block => /^(?:Read|read_file|read_file_text|mcp__filesystem__read_file)$/.test(block.name || '')
 const relayText = value => value.replace(/^\s*(?:[-*#>]\s+|\d+[.)]\s+)/gm, '').replace(/[*`]/g, '').replace(/\s+/g, ' ').trim()
 // Deliberately limited vocabulary: task reasoning and novel findings do not qualify
@@ -31,12 +43,27 @@ const coordinationWords = new Set(('i we ill well im ive will shall am are is be
   + 'receive received collect collected return returning returned relay relaying relayed '
   + 'send sending sent pass passing forward forwarding report reported reporting hand handoff deliver delivered '
   + 'summarize summarizing combine combined consolidated acknowledge acknowledged '
-  + 'task tasks work status check checking stop stopping stopped ready').split(' '))
+  + 'task tasks work status check checking stop stopping stopped ready succeeded finishes resume resumes automatically me user wants wanted asked instructions forbid polling sleeping completion end turn using original was simply continue' ).split(' '))
 const coordinationText = value => {
+  if (/^(?:the )?(?:user (?:wants|asked) me to |original task was (?:simply )?to )?(?:spawn (?:a )?subagent|continue the parent task using (?:the )?child results)(?: and return its result)?[.!]?$/i.test(value)) return true
+  if (/^(?:the )?(?:instructions forbid polling, sleeping, or waiting for subagent completion|subagent will resume me automatically when it finishes)[.!]?$/i.test(value)) return true
+  if (/^The user asked me to spawn a subagent and this is a ["']get["']\s*-\s*meaning I should get the result back[.!]?$/i.test(value)) return true
   if (/[^a-z\s.,!?:'’\-]/i.test(value)) return false
   const words = value.toLowerCase().replace(/['’]/g, '').match(/[a-z]+/g) || []
   return words.length > 0 && words.every(word => coordinationWords.has(word))
-    && words.some(word => /^(?:agents?|subagents?|child|children|grandchildren|parent|delegat\w*|spawn\w*|wait\w*|await\w*|relay\w*|handoff|results?|findings)$/.test(word))
+
+}
+const factText = value => relayText(value).toLowerCase()
+  .replace(/^(?:the |it is |i am |i'm )/, '').replace(/[.!?]+$/, '').trim()
+const relaySource = (clause, findings) => {
+  const excerpt = clause.replace(/^(?:(?:child|grandchild|agent|subagent)(?:\s+[\w-]+)?\s*(?::|reported:|returned:|found:))\s*/i, '')
+  const normalized = factText(excerpt)
+  if (!normalized) return null
+  return findings.find(item => {
+    const sentences = content(item).split(/\n+|(?<=[.!?])\s+/).map(factText)
+    return sentences.some(sentence => sentence === normalized
+      || (normalized.length >= 24 && normalized.split(/\s+/).length >= 4 && ` ${sentence} `.includes(` ${normalized} `)))
+  })
 }
 const range = (point, uncertainty, supported) => ({ estimate: point,
   lower: point === null ? null : supported ? Math.max(0, point - uncertainty) : 0,
@@ -70,9 +97,10 @@ const createSubagentReplay = (data, assumptions = {}) => {
         ...evidence.turns.filter(turn => turn.sessionId === agent.id && turn.runId === row.id)
           .map(turn => ({ kind: 'request', id: turn.id, runId: row.id, order: turn.order })),
         ...evidence.blocks.filter(block => block.sessionId === agent.id && block.runId === row.id)
-          .map(block => ({ kind: 'block', id: block.id, runId: row.id, order: block.kind === 'tool_result' ? block.lastOrder : block.order })),
+          .map(block => ({ kind: 'block', id: block.id, runId: row.id, sectionIndex: block.sectionIndex,
+            order: block.kind === 'tool_result' ? block.lastOrder : block.order })),
       ]
-      return local.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+      return local.sort((a, b) => a.order - b.order || (a.sectionIndex ?? 0) - (b.sectionIndex ?? 0) || a.id.localeCompare(b.id))
     })
     sessionActions.set(agent.id, actions)
   }
@@ -145,12 +173,14 @@ const createSubagentReplay = (data, assumptions = {}) => {
     .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0) || a.sessionId.localeCompare(b.sessionId))
   for (const child of data.agents.filter(agent => agent.depth > 0)) {
     const candidates = links.filter(link => link.sessionId === child.id)
+    if (!candidates.length && child.session.parentSessionId) candidates.push({ sessionId: child.id,
+      parentSessionId: child.session.parentSessionId, parentRunId: child.session.parentRunId })
     let selected = null
     for (const link of candidates) {
       const calls = evidence.blocks.filter(block => block.sessionId === link.parentSessionId
         && (!link.parentRunId || block.runId === link.parentRunId) && delegation(block) === 'spawn')
       const direct = calls.filter(call => unpack(blocks.get(call.resultId)?.content)?.sessionId === child.id)
-      const taskMatches = calls.filter(call => link.task && parsed(call.content)?.task === link.task
+      const taskMatches = calls.filter(call => link.task && delegationCall(call)?.input?.task === link.task
         && (!link.createdAt || call.ts <= link.createdAt))
         .sort((a, b) => b.order - a.order || a.id.localeCompare(b.id))
       const matches = direct.length ? direct : taskMatches
@@ -163,8 +193,8 @@ const createSubagentReplay = (data, assumptions = {}) => {
     if (!selected) {
       const link = candidates[0] || { parentSessionId: child.session.parentSessionId, parentRunId: child.session.parentRunId }
       const parentActions = sessionActions.get(link.parentSessionId) || []
-      const anchor = [...parentActions].reverse().find(action => action.runId === link.parentRunId)
-      if (anchor) selected = { link, anchor, inferred: !link.workflow }
+      const anchor = link.workflow && parentActions.find(action => action.kind === 'container' && action.runId === link.parentRunId)
+      if (anchor) selected = { link, anchor, inferred: false, proven: true }
     }
     if (!selected) {
       gap('Child has no recoverable parent spawn anchor, its work remains an unplaced region.', { sessionId: child.id })
@@ -250,6 +280,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
       const task = taskBlocks.get(childId)?.find(block => position.get(block.id) < at)
       if (!task) return null
       dependencies.push(task.id)
+      dependencies.push(...(finalBlocks.get(childId) || []).filter(block => position.get(block.id) < at).map(block => block.id))
     }
     return dependencies
   }
@@ -259,7 +290,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
     if (block.kind !== 'tool_call' || !delegation(block)) continue
     const method = delegation(block)
     const result = blocks.get(block.resultId)
-    const input = parsed(block.content)
+    const input = delegationCall(block)?.input
     const children = insertions.get(block.id) || []
     if (method === 'spawn') {
       const child = children.length === 1 ? children[0] : null
@@ -299,7 +330,6 @@ const createSubagentReplay = (data, assumptions = {}) => {
   }
 
   // Exact duplicates can be removed even in mixed turns, without losing their tools.
-  const lastRootText = finalBlocks.get(root?.id)?.at(-1)?.id
   for (const turn of evidence.turns) {
     const generated = turn.blocks.map(id => blocks.get(id)).filter(block => block.generated)
     const calls = generated.filter(block => delegation(block) && dispositions.get(block.id).action === 'remove')
@@ -311,7 +341,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
     ]))]
     if (!calls.length && !prompts.length) continue
     for (const block of generated) {
-      if (block.kind !== 'text' || block.id === lastRootText || block.fallback) continue
+      if (block.kind !== 'text' || block.fallback) continue
       const duplicate = dependencies.find(id => {
         const original = blocks.get(id)
         return original && position.get(id) < position.get(block.id)
@@ -322,7 +352,6 @@ const createSubagentReplay = (data, assumptions = {}) => {
   }
 
   const overheadTurns = []
-  const rootAnswerTurn = blocks.get(lastRootText)?.turnId
   const firstRunTurns = new Map()
   for (const action of ordered) {
     if (action.kind !== 'request') continue
@@ -340,7 +369,7 @@ const createSubagentReplay = (data, assumptions = {}) => {
     previousTurns.set(turn.sessionId, turn)
     const row = rows.get(`${turn.sessionId}:${turn.runId}`)
     const generated = turn.blocks.map(id => blocks.get(id)).filter(block => block.generated)
-    if (!generated.length || turn.id === rootAnswerTurn || turn.confidence === 'allocated'
+    if (!generated.length
       || !row?.endedAt || row.status !== 'completed' || row.record?.error
       || row.record?.transcriptStatus === 'incomplete' || generated.some(block => block.fallback)) continue
     const calls = generated.filter(block => block.kind === 'tool_call')
@@ -377,9 +406,9 @@ const createSubagentReplay = (data, assumptions = {}) => {
         if (coordinationText(clause)) continue
         // Allow formatting/attribution changes and excerpts, but no novel summary
         // claims. In particular, token overlap alone cannot prove synthesis redundant.
-        const excerpt = clause.replace(/^(?:(?:child|grandchild|agent|subagent)(?:\s+[\w-]+)?\s*(?::|reported:|returned:|found:))\s*/i, '')
-        const original = findings.find(item => excerpt.length >= 24 && excerpt.split(/\s+/).length >= 4
-          && ` ${relayText(content(item))} `.includes(` ${excerpt} `))
+        const receiptSummary = /^(?:the )?child confirmed it is running and reported the workspace (?:root )?path[.!]?$/i.test(clause)
+          ? findings.find(item => /(?:^|\s)running[.!]/i.test(content(item)) && /workspace (?:root )?(?:path )?is\s+`?\//i.test(content(item))) : null
+        const original = relaySource(clause, findings) || receiptSummary
         if (!original) {
           removable = false
           break
@@ -397,36 +426,33 @@ const createSubagentReplay = (data, assumptions = {}) => {
       assumption: 'Coordination-only thinking/prose and excerpt-only relay output are unnecessary in sequential replay. Unmatched synthesis is retained.' })
   }
 
-  // Keep first-entry child system sections out of proportional removal accounting
-  // because their startup allowance is already deducted from that attributed entry.
-  const startupSystemBlocks = new Set()
-  for (const agent of data.agents.filter(agent => agent.depth > 0)) {
-    for (const action of sessionActions.get(agent.id) || []) {
-      if (action.kind === 'request') break
-      if (action.kind !== 'block') continue
-      const block = blocks.get(action.id)
-      if (block.generated) break
-      if (block.kind === 'prompt' && block.sectionKind === 'system') startupSystemBlocks.add(block.id)
+  for (const turn of evidence.turns) {
+    const generated = turn.blocks.map(id => blocks.get(id)).filter(block => block.generated)
+    const anchors = generated.filter(block => delegation(block) && dispositions.get(block.id).action === 'remove')
+    const dependencies = [...new Set(anchors.flatMap(block => dispositions.get(block.id).dependencies))]
+    if (!dependencies.length) continue
+    for (const block of generated) {
+      if (!['text', 'thinking'].includes(block.kind) || block.fallback || dispositions.get(block.id).action === 'remove') continue
+      const clauses = content(block).split(/\n+|(?<=[.!?])\s+/).map(relayText).filter(Boolean)
+      if (clauses.length && clauses.every(coordinationText)) remove(block,
+        'Coordination-only block attached to a replaced delegation call. Other work in this response is retained.', dependencies)
     }
   }
-  // Keep tasks and user instructions. Deduplicate later system sections only
-  // within a boundary region.
+
+  // Captured source roles identify instruction sections. User tasks remain intact.
   const systemPrompts = new Map()
   for (const action of ordered) {
     if (action.kind !== 'block') continue
     const block = blocks.get(action.id)
-    if (block.kind === 'boundary') systemPrompts.clear()
-    if (block.kind !== 'prompt' || block.sectionKind !== 'system' || block.fallback
+    if (block.kind !== 'prompt' || block.role !== 'system' || block.fallback
       || block.images?.length || dispositions.get(block.id).action === 'remove') continue
-    const key = serialize([block.role, block.sectionKind, block.label, content(block)])
+    if (block.label === 'Delegation instructions' && linked.size) {
+      remove(block, 'Captured delegation policy is unnecessary in the single coordinator scenario.')
+      continue
+    }
+    const key = serialize([block.role, content(block).trim()])
     const previous = systemPrompts.get(key)
-    const delegated = agents.get(block.sessionId)?.session.childKind === 'delegation'
-      && linked.has(block.sessionId) && completeChild(block.sessionId)
-    const continuation = rows.get(`${block.sessionId}:${block.runId}`)?.record?.delegationDelivery
-      && (taskBlocks.get(block.sessionId) || []).some(item => item.runId === block.runId
-        && item.label === 'Delegated child results' && dispositions.get(item.id).action === 'remove')
-    if (previous && !startupSystemBlocks.has(block.id) && (delegated || continuation)) remove(block,
-      'Repeated captured system section is already present in the flattened delegation history.', [previous.id])
+    if (previous) remove(block, 'Repeated captured system section is already retained once in the coordinator history.', [previous.id])
     else systemPrompts.set(key, block)
   }
 
@@ -496,12 +522,6 @@ const createSubagentReplay = (data, assumptions = {}) => {
   }
   const estimatedOverhead = new Set(overheadTurns.map(turn => turn.turnId))
   for (const turn of evidence.turns) {
-    if (turn.confidence === 'allocated' && !turn.blocks.length) {
-      turnDispositions.set(turn.id, { turnId: turn.id, action: 'retain',
-        reason: 'Allocated usage participates at its synthetic position. The position and output placement are uncertain.',
-        sources: turn.sources })
-      continue
-    }
     const generated = turn.blocks.map(id => blocks.get(id)).filter(block => block.generated)
     if (!generated.length) continue
     const retained = generated.filter(block => dispositions.get(block.id).action !== 'remove')
@@ -514,191 +534,96 @@ const createSubagentReplay = (data, assumptions = {}) => {
     }
   }
 
-  // Incoming prompt/result blocks weight removals from the next local input entry.
-  // Generated blocks are accounted for separately as output, never as input weights.
-  const incomingBlocks = new Map()
-  const firstRequests = new Map()
-  for (const [sessionId, actions] of sessionActions) {
-    let incoming = []
-    for (const action of actions) {
-      if (action.kind === 'block') {
-        const block = blocks.get(action.id)
-        if (!block.generated && block.kind !== 'boundary') incoming.push(block)
-      } else if (action.kind === 'request') {
-        if (!firstRequests.has(sessionId)) firstRequests.set(sessionId, action.id)
-        incomingBlocks.set(action.id, incoming)
-        incoming = []
-      }
-    }
-  }
-  const blockAccounting = (items, model, generated = false) => {
-    const weights = items.map(block => ({ blockId: block.id,
-      retained: dispositions.get(block.id).action !== 'remove',
-      weight: (generated ? tokenizer.output([block], model) : tokenizer.request([block], model)).tokens }))
-    const retained = weights.filter(item => item.retained)
-    const totalWeight = sum(weights.map(item => item.weight))
-    const retainedWeight = sum(retained.map(item => item.weight))
-    const fraction = retained.length === weights.length ? 1 : !retained.length ? 0
-      : totalWeight > 0 && retainedWeight !== null ? retainedWeight / totalWeight : null
-    return { fraction, weights,
-      basis: 'Tokenized block sizes supply relative removal weights only, never absolute replay counts.' }
-  }
-  const entryAccounting = evidence.turns.map(turn => {
-    const originalInput = known(turn.attributedUsage.input) ? turn.attributedUsage.input : null
-    const originalOutput = known(turn.attributedUsage.output) ? turn.attributedUsage.output : null
-    const firstDescendantEntry = agents.get(turn.sessionId)?.depth > 0 && firstRequests.get(turn.sessionId) === turn.id
-    const requestedDeduction = firstDescendantEntry ? DESCENDANT_STARTUP_TOKENS : 0
-    const adjustedInput = originalInput === null ? null : Math.max(0, originalInput - requestedDeduction)
-    const inputBlocks = blockAccounting(incomingBlocks.get(turn.id) || [], turn.model)
-    const generated = turn.blocks.map(id => blocks.get(id)).filter(block => block.generated)
-    const outputBlocks = blockAccounting(generated, turn.model, true)
-    const retainedGenerated = outputBlocks.weights.filter(item => item.retained)
-    const input = adjustedInput !== null && inputBlocks.fraction !== null
-      ? Math.round(adjustedInput * inputBlocks.fraction) : null
-    const output = originalOutput !== null && outputBlocks.fraction !== null
-      ? Math.round(originalOutput * outputBlocks.fraction) : null
-    const retainedWeight = sum(retainedGenerated.map(item => item.weight))
-    let remainingOutput = output
-    const outputContributions = retainedGenerated.map((item, index) => {
-      const tokens = output === null ? null : output === 0 ? 0 : retainedGenerated.length === 1 ? output
-        : retainedWeight > 0 ? index === retainedGenerated.length - 1 ? remainingOutput
-          : Math.floor(output * item.weight / retainedWeight) : null
-      remainingOutput = remainingOutput === null || tokens === null ? null : remainingOutput - tokens
-      return { turnId: turn.id, blockId: item.blockId, tokens, synthetic: false }
-    })
-    if (!generated.length) outputContributions.push({ turnId: turn.id, blockId: null, tokens: output, synthetic: true })
-    return { turnId: turn.id, sessionId: turn.sessionId, runId: turn.runId, confidence: turn.confidence,
-      disposition: turnDispositions.get(turn.id).action, sources: turn.sources,
-      attributedOriginalInput: originalInput, attributedOriginalOutput: originalOutput,
-      firstDescendantEntry, requestedStartupDeduction: requestedDeduction,
-      appliedStartupDeduction: originalInput === null ? firstDescendantEntry ? null : 0 : originalInput - adjustedInput,
-      inputAfterStartupDeduction: adjustedInput, inputBlocks, outputBlocks,
-      retainedEntryInput: input, retainedOutput: output, outputContributions }
-  })
-  const entries = new Map(entryAccounting.map(entry => [entry.turnId, entry]))
-  const generatedContributions = new Map(entryAccounting.flatMap(entry => entry.outputContributions
-    .filter(item => item.blockId).map(item => [item.blockId, item])))
   const removedOverheadTurns = overheadTurns.filter(turn => turnDispositions.get(turn.turnId).action === 'remove')
   if (overheadTurns.length) gap('Delegation-only language and relay excerpts are classified heuristically, not proven semantically equivalent.',
     { turnIds: overheadTurns.map(turn => turn.turnId) })
-
-  const replay = (includeAllocated, reportGaps) => {
-    const retainedHistory = []
-    const retainedEntryIds = []
-    const retainedOutputs = []
-    const visible = new Set()
-    const estimates = []
-    let retainedInput = 0
-    let retainedOutput = 0
-    let currentRootThread = null
-    const clearHistory = () => {
-      retainedHistory.length = 0
-      retainedEntryIds.length = 0
-      retainedOutputs.length = 0
-      retainedInput = 0
-      retainedOutput = 0
-      visible.clear()
-    }
-    const addOutput = contribution => {
-      retainedOutputs.push(contribution)
-      retainedOutput = sum([retainedOutput, contribution.tokens])
-    }
-    const included = turnId => turnDispositions.get(turnId)?.action !== 'remove'
-      && (includeAllocated || turns.get(turnId)?.confidence !== 'allocated')
-    for (const action of ordered) {
-      if (action.kind === 'container') continue
-      if (action.kind === 'block') {
-        const block = blocks.get(action.id)
-        if (dispositions.get(block.id).action === 'remove') continue
-        if (block.kind === 'boundary') {
-          if (block.boundary === 'reset' && action.sessionId === root?.id) clearHistory()
-          continue
-        }
-        if (block.kind === 'prompt' && action.sessionId === root?.id) {
-          const source = root.events.find(item => item.event.captureId && item.event.captureId === block.captureId)
-          const thread = source?.event.providerAgentId
-          if (currentRootThread && thread && currentRootThread !== thread) {
-            clearHistory()
-            if (reportGaps) gap('Coordinator thread changed, retained replay history resets with an unknown provider prefix.', { blockId: block.id })
-          }
-          if (thread) currentRootThread = thread
-        }
-        const missing = block.dependencies.filter(id => !visible.has(id) && dispositions.get(id)?.action !== 'remove')
-        if (missing.length && reportGaps) gap('A block dependency is not yet available at its insertion point.',
-          { blockId: block.id, dependencies: missing })
-        retainedHistory.push(block)
-        visible.add(block.id)
-        if (block.generated && included(block.turnId)) {
-          const contribution = generatedContributions.get(block.id)
-          if (contribution) addOutput(contribution)
-          else {
-            addOutput({ turnId: block.turnId || null, blockId: block.id, tokens: null, synthetic: false })
-            if (reportGaps) gap('Generated block has no attributable output entry.', { blockId: block.id })
-          }
-        }
+  gap('Captured prompts do not establish complete provider prefixes, tool schemas or provider message framing. Tokenized visible context is a point estimate with an unknown upper bound.')
+  if (evidence.blocks.some(block => block.visibility === 'provider-dependent')) {
+    gap('Provider-dependent reasoning is excluded from visible replay input and output. Its cost and retention in a hypothetical coordinator execution are unknown.')
+  }
+  const entryAccounting = []
+  const estimates = []
+  const retainedHistory = []
+  const visible = new Set()
+  const charged = new Set()
+  const requested = new Set()
+  const retainedOutputs = []
+  for (const action of ordered) {
+    if (action.kind === 'container') continue
+    if (action.kind === 'block') {
+      const block = blocks.get(action.id)
+      if (dispositions.get(block.id).action === 'remove' || visible.has(block.id)) continue
+      if (block.kind === 'boundary') {
+        gap('Original context boundaries do not specify the single coordinator context. Retained visible history is carried forward without inventing compaction or replacement text.',
+          { blockId: block.id, boundary: block.boundary })
         continue
       }
-      const turn = turns.get(action.id)
-      if (!included(turn.id)) continue
-      const entry = entries.get(turn.id)
-      const addedRetainedContext = sum([retainedInput, retainedOutput])
-      const priorInput = retainedInput
-      retainedInput = sum([retainedInput, entry.retainedEntryInput])
-      retainedEntryIds.push(turn.id)
-      const requestInput = sum([retainedInput, retainedOutput])
-      const rootRow = action.sessionId === root?.id ? rows.get(`${root.id}:${turn.runId}`) : null
-      const limits = evidence.turns.filter(item => item.sessionId === root?.id && item.model === action.targetModel
-        && (rootRow ? item.runId === rootRow.id : position.get(item.id) <= position.get(turn.id)))
-        .map(item => item.contextLimit).filter(known)
-      const contextLimit = limits.at(-1) ?? null
-      const contextLimitExceeded = contextLimit === null || requestInput === null ? null
-        : requestInput > contextLimit ? true : entry.retainedOutput === null ? null
-          : requestInput + entry.retainedOutput > contextLimit
-      if (reportGaps && contextLimit === null) gap('Coordinator context limit is unavailable for this replay turn.', { turnId: turn.id })
-      if (reportGaps && contextLimitExceeded) gap('Cumulative attributed request and generated output exceed the recorded coordinator context limit. No synthetic compaction is invented.',
-        { turnId: turn.id, limit: contextLimit })
-      const inputAdjustment = { attributedOriginalInput: entry.attributedOriginalInput,
-        firstDescendantEntry: entry.firstDescendantEntry,
-        requestedStartupDeduction: entry.requestedStartupDeduction,
-        appliedStartupDeduction: entry.appliedStartupDeduction,
-        inputAfterStartupDeduction: entry.inputAfterStartupDeduction,
-        retainedInputFraction: entry.inputBlocks.fraction, retainedEntryInput: entry.retainedEntryInput,
-        priorRetainedInput: priorInput, priorRetainedOutput: retainedOutput,
-        addedRetainedContext, cumulativeRequestInput: requestInput }
-      estimates.push({ turnId: turn.id, sessionId: turn.sessionId, runId: turn.runId, model: action.targetModel,
-        originalModel: turn.model, confidence: turn.confidence, sources: turn.sources,
-        requestFingerprint: fingerprint({ model: action.targetModel, entryIds: retainedEntryIds,
-          outputContributions: retainedOutputs, input: requestInput }),
-        requestEntryIds: [...retainedEntryIds], requestOutputContributions: [...retainedOutputs],
-        requestBlockIds: retainedHistory.map(block => block.id),
-        generatedBlockIds: entry.outputContributions.filter(item => item.blockId).map(item => item.blockId),
-        inputAdjustment, outputAdjustment: { attributedOriginalOutput: entry.attributedOriginalOutput,
-          retainedOutputFraction: entry.outputBlocks.fraction, generatedOutput: entry.retainedOutput,
-          outputContributions: entry.outputContributions },
-        input: range(requestInput, 0, false), output: range(entry.retainedOutput, 0, false),
-        contextLimit, contextLimitExceeded, supported: false,
-        uncertainty: 'Attributed input entries are compounded as a hypothetical scenario. Original tokenizer residuals do not bound this estimate. Allocated positions, output visibility and proportional removals are uncertain.' })
-      // A response without recorded blocks has only a synthetic completion position.
-      for (const contribution of entry.outputContributions.filter(item => item.synthetic)) addOutput(contribution)
-    }
-    const input = { estimate: sum(estimates.map(item => item.input.estimate)),
-      lower: sum(estimates.map(item => item.input.lower)), upper: sum(estimates.map(item => item.input.upper)) }
-    const output = { estimate: sum(estimates.map(item => item.output.estimate)),
-      lower: sum(estimates.map(item => item.output.lower)), upper: sum(estimates.map(item => item.output.upper)) }
-    const total = { estimate: sum([input.estimate, output.estimate]),
-      lower: sum([input.lower, output.lower]), upper: sum([input.upper, output.upper]) }
-    if (gaps.length || unplaced.length || !estimates.length) {
-      for (const value of [input, output, total]) {
-        value.lower = value.estimate === null ? null : 0
-        value.upper = null
+      if (block.visibility === 'provider-dependent' || block.kind === 'thinking') continue
+      if (block.generated && !requested.has(block.turnId)) {
+        gap('Generated content has no surviving preceding request at its insertion point.', { blockId: block.id })
+        continue
       }
+      const missing = block.dependencies.filter(id => !visible.has(id) && dispositions.get(id)?.action !== 'remove')
+      if (missing.length) gap('A block dependency is not yet available at its insertion point.', { blockId: block.id, dependencies: missing })
+      retainedHistory.push(block)
+      visible.add(block.id)
+      if (block.generated) retainedOutputs.push({ turnId: block.turnId, blockId: block.id,
+        tokens: tokenizer.output([block], action.targetModel).tokens, synthetic: false })
+      continue
     }
-    return { turns: estimates, input, output, total }
+    const turn = turns.get(action.id)
+    if (turnDispositions.get(turn.id).action === 'remove') continue
+    requested.add(turn.id)
+    const generated = turn.blocks.map(id => blocks.get(id)).filter(block => block.generated
+      && block.visibility !== 'provider-dependent' && block.kind !== 'thinking'
+      && dispositions.get(block.id).action !== 'remove' && !charged.has(block.id))
+    generated.forEach(block => charged.add(block.id))
+    const request = tokenizer.request(retainedHistory, action.targetModel)
+    const response = tokenizer.output(generated, action.targetModel)
+    if (!turn.blocks.length) gap('Recorded request has no captured generated content. No output or response text is fabricated.', { turnId: turn.id })
+    if (request.identity.approximation) gap('Coordinator model uses a proxy tokenizer, so token counts are approximate.', { turnId: turn.id, model: action.targetModel })
+    if (request.identity.unavailable) gap(request.identity.unavailable, { turnId: turn.id })
+    const limits = evidence.turns.filter(item => item.sessionId === root?.id && item.model === action.targetModel
+      && position.get(item.id) <= position.get(turn.id)).map(item => item.contextLimit).filter(known)
+    const contextLimit = limits.at(-1) ?? null
+    const contextLimitExceeded = contextLimit === null || request.tokens === null || response.tokens === null
+      ? null : request.tokens + response.tokens > contextLimit
+    if (contextLimit === null) gap('Coordinator context limit is unavailable for this replay turn.', { turnId: turn.id })
+    if (contextLimitExceeded) gap('Rebuilt visible context and output exceed the recorded coordinator context limit. No synthetic compaction is invented.',
+      { turnId: turn.id, limit: contextLimit })
+    const outputContributions = generated.map(block => ({ turnId: turn.id, blockId: block.id,
+      tokens: tokenizer.output([block], action.targetModel).tokens, synthetic: false }))
+    const entry = { turnId: turn.id, sessionId: turn.sessionId, runId: turn.runId, confidence: turn.confidence,
+      disposition: 'retain', sources: turn.sources,
+      attributedOriginalInput: turn.measuredUsage?.inputTokens ?? null,
+      attributedOriginalOutput: turn.measuredUsage?.outputTokens ?? null,
+      retainedEntryInput: request.tokens, retainedOutput: response.tokens, outputContributions,
+      basis: 'Tokenized retained visible context and generated output. Original usage is audit evidence only.' }
+    entryAccounting.push(entry)
+    estimates.push({ turnId: turn.id, sessionId: turn.sessionId, runId: turn.runId, model: action.targetModel,
+      originalModel: turn.model, confidence: turn.confidence, sources: turn.sources,
+      requestFingerprint: request.fingerprint, requestEntryIds: [...requested],
+      requestOutputContributions: [...retainedOutputs], requestBlockIds: retainedHistory.map(block => block.id),
+      generatedBlockIds: generated.map(block => block.id),
+      inputAdjustment: { attributedOriginalInput: entry.attributedOriginalInput, cumulativeRequestInput: request.tokens,
+        basis: 'Each unique retained message/tool enters history at its recorded position. The whole history is tokenized once for this request.' },
+      outputAdjustment: { attributedOriginalOutput: entry.attributedOriginalOutput, generatedOutput: response.tokens,
+        outputContributions, basis: 'Retained visible generated output is charged once, then enters later requests at its transcript position.' },
+      input: range(request.tokens, 0, false), output: range(response.tokens, 0, false),
+      contextLimit, contextLimitExceeded, supported: false,
+      uncertainty: 'Visible-context scenario only. Provider framing, hidden reasoning, missing context and alternative single-agent behavior are not measured.' })
   }
-  const primary = replay(true, true)
-  const withoutAllocated = replay(false, false)
-  const { input, output, total } = primary
-  const estimates = primary.turns
+  for (const turn of evidence.turns.filter(item => turnDispositions.get(item.id).action === 'remove')) {
+    entryAccounting.push({ turnId: turn.id, sessionId: turn.sessionId, runId: turn.runId,
+      confidence: turn.confidence, disposition: 'remove', sources: turn.sources,
+      attributedOriginalInput: turn.measuredUsage?.inputTokens ?? null,
+      attributedOriginalOutput: turn.measuredUsage?.outputTokens ?? null,
+      retainedEntryInput: 0, retainedOutput: 0, outputContributions: [],
+      basis: 'Removed response has no request or generated output charge. Retained history is unchanged.' })
+  }
+  const input = range(sum(estimates.map(item => item.input.estimate)), 0, false)
+  const output = range(sum(estimates.map(item => item.output.estimate)), 0, false)
+  const total = range(sum([input.estimate, output.estimate]), 0, false)
   const baseline = group => Object.fromEntries(['input', 'output', 'cacheRead', 'cacheWrite', 'fresh', 'reasoning', 'total', 'requests'].map(field => {
     const values = group.map(row => row[field])
     return [field, { value: sum(values), knownSubtotal: values.reduce((sum, value) => sum + (value || 0), 0),
@@ -725,17 +650,15 @@ const createSubagentReplay = (data, assumptions = {}) => {
   if (ignoredAssumptions.length) gap(`Legacy scalar overrides are recorded but not applied to ordered replay: ${ignoredAssumptions.join(', ')}.`)
   const gapReasons = [...new Set(gaps.map(item => item.reason))].map(reason => ({ reason,
     count: gaps.filter(item => item.reason === reason).length }))
-  return freeze({ version: 3, cutoff: data.cutoff, sourceSessionId: root?.id || null,
+  return freeze({ version: 4, cutoff: data.cutoff, sourceSessionId: root?.id || null,
     measured, measuredRuns: data.agents.flatMap(agent => agent.rows.map(row => ({ sessionId: row.sessionId, runId: row.id,
       provider: row.provider, model: row.model, source: row.usageSource, status: row.status,
       usage: Object.fromEntries(['input', 'output', 'cacheRead', 'cacheWrite', 'fresh', 'reasoning', 'total', 'requests'].map(field => [field, row[field]])) }))),
     estimate: { input, output, total, difference,
-      scope: 'Placed coordinator and recursive descendant attributed entries through cutoff, including allocated turns at synthetic positions.' },
+      scope: 'One coordinator conversation containing placed recorded work, tokenized at surviving observed or transcript-inferred requests through cutoff.' },
     sensitivity: { withoutAllocatedRequests: {
-      excludedRequests: estimates.filter(item => item.confidence === 'allocated').length,
-      input: withoutAllocated.input, output: withoutAllocated.output, total: withoutAllocated.total,
-      difference: compare(withoutAllocated.total), replayTurns: withoutAllocated.turns,
-      assumption: 'Omit allocated requests and their input/output contributions, then rebuild all later contexts. This is an alternative scenario, not a bound on synthetic timing. Original attribution and first-entry startup allowances stay fixed.' } },
+      excludedRequests: 0, input, output, total, difference, replayTurns: estimates,
+      assumption: 'No requests are allocated from token totals or missing counts. This compatibility view equals the primary replay.' } },
     coverage: { complete: estimates.length > 0 && !gaps.length && estimates.every(item => item.supported && item.output.upper !== null), gaps, gapReasons, unplacedSessions: unplaced,
       cutoff: data.cutoff, measuredUsageComplete: measured.combined.total.value !== null && !data.warnings.length,
       firstUnsupportedTurn: estimates.find(item => !item.supported || item.output.upper === null)?.turnId || null },
@@ -749,27 +672,22 @@ const createSubagentReplay = (data, assumptions = {}) => {
     tokenizer: { identities: tokenizer.identities(), cachedRequestsAndOutputs: tokenizer.cacheSize(),
       cacheKey: 'Content SHA-256 + encoding + tokenizer version + serialization version.' },
     calibration, entryAccounting, assumptions: [
-      'Retain the same recorded substantive work and final answer, performed sequentially by the coordinator model at each spawn.',
-      'Each original attributed turn input is a new estimated entry, including equal run-budget shares where used by attribution. These are compounded directly, not converted into deltas or replaced with tokenized retained history.',
-      'Deduct min(13,000, original attributed input) from the first input entry of each distinct descendant chat, including nested chats. Root entries receive no deduction. Unknown input stays unknown. Followups and resets never grant another allowance.',
-      'Startup adjustment precedes proportional block removal. If the first turn is removed, its entry is omitted and its allowance is not transferred to a later turn. entryAccounting preserves the removed entry audit.',
-      'At each retained request, input equals its adjusted retained entry plus all earlier retained input entries and output contributions since the last root history reset. Sum those cumulative request inputs for input spend. Equal entries of 110 yield 110, 220, 330, 440 and spend 1,100 before output.',
-      'A root reset or root provider-thread change clears accumulated input and output. Child resets do not clear the flattened coordinator history. Unknown compaction summaries are not invented.',
-      'Whole removed turns contribute no request, input entry or generated output. For partial removals, input is weighted by captured non-generated prompt/result blocks since the preceding request in that original session. With no such blocks, the full input entry remains. Removed input blocks are not independently subtracted again.',
-      'Retained output is the original attributed output weighted by retained generated blocks. Output spend charges it once per retained turn. Its history contribution is apportioned once across retained generated blocks at their transcript positions, excluding it from the request that generated it. Input weights never include generated blocks.',
-      'Attributing the output budget across captured blocks assumes that budget becomes retained context, including provider-dependent thinking and any uncaptured output share. Visibility and hidden-output placement are uncertain, not measured history. Output without captured blocks enters history at a synthetic completion immediately after its request, without inventing text.',
-      'CPU tokenization is used only for original-session calibration and relative block weights. It never supplies absolute rebuilt request or output totals. Missing weights for a required partial allocation propagate unknown counts.',
-      'Original measured usage, attributed usage and calibration remain unchanged. Calibration uses reconciled per-response input separately per original session/model/region. Its tokenizer residuals do not bound this cumulative-attribution scenario, so replay ranges have unknown upper bounds.',
-      'Allocated turns participate in the primary estimate at their existing synthetic positions with attributed input and output. Counts and positions remain uncertain. The sensitivity scenario omits them and rebuilds every subsequent request, without reallocating the original budgets.',
-      'Measured and inferred requests are removed only when every recorded generated block has an explicit removal disposition. Mixed turns retain their useful output and request.',
-      'Initial descendant system sections are excluded from duplicate removal to avoid discounting the first-entry startup allowance twice. Later exact system duplicates can receive proportional removal. This allowance does not identify provider prefix bytes.',
-      'Exact read removal requires identical call and result in the same run without intervening tools, prompts, refresh requests or instruction-file reads.',
-      'Delegation-only responses require replaced calls, a fully replaced automatic handoff, or immediately preceding replaced control receipts. Failed, incomplete and missing child runs keep their wrappers.',
-      'Coordination-only thinking/prose is estimated overhead using a restricted vocabulary. Relay excerpts may differ in formatting or attribution, but novel paraphrases and substantive synthesis remain. This is not a proof of semantic equivalence.',
-      'Turns containing other tools retain their request and useful work. Exact duplicate handoff text may still be removed. The final coordinator answer turn is preserved.',
-      'Removal dependencies are rebased to retained evidence, preserving earlier substitution positions. Invalid removal chains fall back to retention.',
-      'Request fingerprints describe estimated entry IDs, output contributions and cumulative input. Block IDs describe captured retained evidence, not a tokenized provider request.',
-      'Estimates do not measure quality, time or money and do not imply a categorical delegation verdict.',
+      'Rebuild the same recorded work as one sequential coordinator conversation. This does not claim an exact alternate execution.',
+      'Measured combined usage remains the actual coordinator plus descendant usage. It is never added as text to replay history.',
+      'Retain observed request identities and infer requests only from generated content and prompt/tool-result boundaries. Missing counts or boundaries are reported, never synthesized from token volume.',
+      'Recursively insert child work at captured spawn calls. Unplaced children remain explicit gaps, not guessed end-of-run insertions.',
+      'Each retained prompt, message and tool result enters history once at its transcript position. Each surviving request tokenizes that complete visible history once.',
+      'Generated output is charged once and enters context only after the request that generated it. Removing a handoff prompt does not erase earlier history.',
+      'Captured system sections are deduplicated by role and content. Captured delegation policy sections are removed. No scalar startup deduction or proportional run-budget allocation is applied.',
+      'Hidden/provider-dependent reasoning is not known visible context and is excluded from the point estimate. Its counterfactual cost and context retention remain unknown.',
+      'Retain visible history across recorded resets and compaction as an explicit scenario. Replacement summaries, hidden prefixes and lost context are not invented.',
+      'Tokenization uses an approximate message serialization and a proxy encoding where the coordinator tokenizer is unknown. Missing tool schemas, prefixes and context prevent a supported bounded total.',
+      'Calibration remains per original session/model/region using reconciled response usage. Signed residuals are diagnostic only, never new context or overhead deductions.',
+      'Remove delegation wrappers only with retained task/findings evidence. Remove relay-only requests when every generated block is supported coordination or repeated findings, including a redundant final root relay.',
+      'Useful mixed responses and novel synthesis remain. Retained child findings can supply the final answer instead of charging a duplicate coordinator relay.',
+      'Coordination and relay classification is heuristic and explicitly recorded. Unmatched substantive text is retained.',
+      'Removal proofs resolve to retained evidence. Invalid dependency chains restore the original content.',
+      'Request fingerprints represent serialized retained visible content, not original provider requests. Point estimates have unknown upper bounds where evidence is incomplete.',
       ...(ignoredAssumptions.length ? [`Unapplied legacy assumptions: ${ignoredAssumptions.join(', ')}`] : []),
     ],
     turns: evidence.turns, blocks: evidence.blocks, blockDispositions: [...dispositions.values()],

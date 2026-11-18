@@ -18,9 +18,9 @@ export const INPUT_COMMANDS = [
   },
   {
     type: 'analyze-subagent',
-    usage: 'analyze subagent [shared=<tokens>] [requests=<count>] [output=<tokens>]',
+    usage: 'analyze subagent',
     label: 'Analyze subagents',
-    description: 'Compare measured usage with an estimated sequential coordinator replay. Original attributed turn inputs, including allocated averages, become new entries. Subtract up to 13,000 from the first entry of each descendant chat, including nested chats, once only. Root entries are unchanged. Sum cumulative request contexts in flattened transcript order until a root history reset. Retained output enters later context once and is charged once as output. Removed turns are omitted and partial block removals use proportional estimates. Allocated turns are included at uncertain synthetic positions, with an alternative scenario that omits them and rebuilds later contexts. Tokenization supplies relative block weights and original-session calibration only. Measured evidence stays unchanged. Legacy shared, requests and output options are recorded but not applied.',
+    description: 'Compare measured coordinator and descendant token usage with a rebuilt single-agent transcript. Insert child work at its spawn, remove delegation overhead, and count the retained messages and tool results at every remaining request. Count generated output once and include it in later context when retained. Do not add original request totals as new content or invent requests from token averages. Missing request boundaries, provider context and tokenizer support remain explicit uncertainties. The report includes request counts and a JSON audit. Cached input is included in measured tokens; this is not a money comparison. Legacy shared, requests and output options are recorded but do not change the replay.',
     pattern: /^analyze\s+subagent(?:\s+(.*))?$/i,
     arguments: (match) => ({ assumptions: (match[1] || '').trim() }),
   },
