@@ -240,7 +240,8 @@ const runOneTurn = async ({
       if (['text', 'thinking', 'tool_call', 'question'].includes(event.type)) commitInclusions()
       if (['model_request', 'model_request_evidence'].includes(event.type) && collector) {
         if (!collector.observe(event)) return
-        onEvent?.({ ...event, segmentId: collector.segmentId, providerRunId: event.providerRunId ?? event.runId })
+        // The OTLP receiver also persists delayed batches after this daemon exits.
+        if (!event.sessionPersisted) onEvent?.({ ...event, segmentId: collector.segmentId, providerRunId: event.providerRunId ?? event.runId })
         publishRequestMetrics(undefined, collector)
         return
       }

@@ -134,10 +134,15 @@ const receive = (req, res, next) => {
       fs.mkdirSync(recordDir, { recursive: true, mode: 0o700 })
       const fresh = []
       for (const record of records) {
+        const recordFile = path.join(recordDir, `${record.evidenceId}.json`)
         try {
-          fs.writeFileSync(path.join(recordDir, `${record.evidenceId}.json`), JSON.stringify(record), { flag: 'wx', mode: 0o600 })
+          fs.writeFileSync(recordFile, JSON.stringify(record), { flag: 'wx', mode: 0o600 })
           fresh.push(record)
-        } catch (err) { if (err.code !== 'EEXIST') throw err }
+        } catch (err) {
+          if (err.code !== 'EEXIST') throw err
+          const saved = readJson(recordFile)
+          if (saved && !saved.published && !fresh.some(value => value.evidenceId === saved.evidenceId)) fresh.push(saved)
+        }
       }
       const fd = fs.openSync(path.join(dir, 'events.jsonl'), 'a', 0o600)
       try {
@@ -154,6 +159,7 @@ const receive = (req, res, next) => {
         eventLog.append(manifest.sessionId, { ...evidenceEvent(record, manifest.id),
           runId: manifest.runId, segmentId: matches.length === 1 ? matches[0].segmentId : null,
           attribution: matches.length === 1 ? 'thread_and_turn' : 'unattributed' }, config.writeDir)
+        writeJson(path.join(recordDir, `${record.evidenceId}.json`), { ...record, published: true })
       }
     }
     res.json({})

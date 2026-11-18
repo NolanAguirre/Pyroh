@@ -71,6 +71,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
   const diagnostics = []
   const turns = new Map()
   let rollout = null
+  let pendingRollout = []
   let evidenceTimer = null
 
   const emit = (event, turn = active) => turn?.emit({ provider: 'codex', providerAgentId: threadId,
@@ -124,12 +125,17 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
       if (batch.issue) captureIssue('codex rollout', batch.issue)
       if (batch.remaining) captureIssue('codex rollout', 'Unread bytes remain after bounded drain')
       if (batch.skipped) captureIssue('codex rollout', 'Malformed or oversized records skipped')
-      for (const record of batch.records) {
+      const records = [...pendingRollout, ...batch.records]
+      pendingRollout = []
+      for (const record of records) {
         if (record?.type !== 'token_usage_record') continue
         const value = record.payload
         if (value?.thread_id !== threadId || !value.turn_id || !value.response_id) continue
         const turn = turns.get(value.turn_id)
-        if (!turn) continue
+        if (!turn) {
+          if (active && !active.id && pendingRollout.length < 1024) pendingRollout.push(record)
+          continue
+        }
         const usage = requestUsage(value.usage)
         const turnUsage = requestUsage(value.turn_token_usage)
         const threadUsage = requestUsage(value.thread_token_usage)
@@ -176,13 +182,22 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
       exitCode: Number.isInteger(item.exitCode) ? item.exitCode : null,
       processId: typeof item.processId === 'string' || Number.isInteger(item.processId) ? item.processId : null,
       server: item.server || null, hasError: Boolean(item.error),
+      cwd: typeof item.cwd === 'string' ? item.cwd : null,
+      commandActionTypes: Array.isArray(item.commandActions) ? item.commandActions
+        .map(action => action?.type).filter(value => typeof value === 'string') : null,
+      changedFiles: Array.isArray(item.changes) ? item.changes.length : null,
+      relatedAgentIds: Array.isArray(item.receiverThreadIds) ? item.receiverThreadIds
+        .filter(value => typeof value === 'string') : null,
       provenance: source, timingSemantics: 'provider duration when supplied; observed duration uses item notifications' }, turn)
   }
   const clearRequests = () => {
-    for (const controller of serverRequests.values()) controller.abort()
+    for (const controller of serverRequests.values()) {
+      controller.closeTelemetry?.('cancelled')
+      controller.abort()
+    }
     serverRequests.clear()
   }
-  const finish = (status, error = null) => {
+  const finish = (status, error = null, source = 'harness turn result') => {
     if (!active || active.done) return
     active.done = true
     drainSafely()
@@ -193,7 +208,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
       if (!execution.completed) toolEvent({ id, type: execution.name,
         status: status === 'completed' ? 'unknown' : status }, true, 'harness turn ended without item completion')
     }
-    turnEvent(status, 'harness turn result')
+    turnEvent(status, source)
     const messages = [...active.messages.values()]
     const finals = messages.filter((item) => item.phase === 'final_answer')
     const result = {
@@ -210,8 +225,14 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
 
   const onNotification = (method, params) => {
     if (method === 'serverRequest/resolved') {
-      serverRequests.get(params.requestId)?.abort()
+      const controller = serverRequests.get(params.requestId)
+      controller?.closeTelemetry?.('resolved')
+      controller?.abort()
       serverRequests.delete(params.requestId)
+      return
+    }
+    if (method === 'rawResponse/completed' && params.threadId === threadId && turns.has(params.turnId)) {
+      recordResponse(params.responseId, params.usage, 'codex app-server:rawResponse/completed', Date.now(), turns.get(params.turnId))
       return
     }
     if (method === 'thread/tokenUsage/updated' && (!threadId || params.threadId === threadId)) {
@@ -236,7 +257,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
     else if (method === 'turn/completed') {
       const status = params.turn.status
       finish(status === 'completed' ? 'completed' : status === 'interrupted' ? 'cancelled' : 'error',
-        status === 'failed' ? params.turn.error?.message || 'Codex turn failed' : null)
+        status === 'failed' ? params.turn.error?.message || 'Codex turn failed' : null, 'codex app-server:turn/completed')
     } else if (method === 'error') {
       emit({ type: 'error', message: params.error?.message || 'Codex error' })
     } else if (method === 'warning' || method === 'configWarning') {
@@ -398,17 +419,48 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
 
   const onRequest = (message) => {
     const controller = new AbortController()
+    const turn = active
+    const p = message.params || {}
+    const matches = turn && !turn.done && (!p.threadId || p.threadId === threadId)
+      && (!p.turnId || !turn.id || p.turnId === turn.id)
+    if (matches && p.threadId === threadId && p.turnId) bindTurn(p.turnId)
+    const receivedAt = Date.now()
+    let startedAt = null
+    let settled = false
+    const report = (status, result) => {
+      if (!matches || settled) return
+      const ended = !['queued', 'started'].includes(status)
+      if (ended) settled = true
+      const observedAt = Date.now()
+      emit({ type: 'tool_execution', kind: 'server_request',
+        eventId: `${turn.evidenceSegmentId}:server:${message.id}:${status}`,
+        itemId: `server-request:${message.id}`, relatedItemId: p.itemId || null,
+        requestId: message.id, method: message.method, name: p.tool || message.method,
+        providerAgentId: p.threadId || null, providerRunId: p.turnId || null,
+        attribution: p.threadId === threadId && p.turnId === turn.id ? 'thread_and_turn' : 'unattributed',
+        status, receivedAt, startedAt, observedAt, endedAt: ended ? observedAt : null,
+        queueDurationMs: startedAt === null ? null : startedAt - receivedAt,
+        durationMs: null, observedDurationMs: ended && startedAt !== null ? observedAt - startedAt : null,
+        decision: typeof result?.decision === 'string' && ['accept', 'acceptForSession', 'decline', 'cancel'].includes(result.decision)
+          ? result.decision : null,
+        success: typeof result?.success === 'boolean' ? result.success : null,
+        provenance: 'codex app-server server request',
+        timingSemantics: 'harness observed request queue and handler execution' }, turn)
+    }
+    controller.closeTelemetry = status => report(status)
+    report('queued')
     serverRequests.set(message.id, controller)
     const task = requestQueue.catch(() => {}).then(async () => {
-      if (controller.signal.aborted) return undefined
-      const p = message.params || {}
-      if (!active || active.done || (p.threadId && p.threadId !== threadId) || (p.turnId && active.id && p.turnId !== active.id)) {
-        throw new Error('No matching active Codex turn')
-      }
       try {
+        if (controller.signal.aborted) return undefined
+        if (!matches || active !== turn || turn.done) throw new Error('No matching active Codex turn')
+        startedAt = Date.now()
+        report('started')
         const result = await handleRequest(message, controller.signal)
+        report(controller.signal.aborted ? 'cancelled' : 'completed', result)
         return controller.signal.aborted ? undefined : result
       } catch (err) {
+        report(controller.signal.aborted ? 'cancelled' : 'error')
         if (controller.signal.aborted) return undefined
         throw err
       } finally {
@@ -481,8 +533,7 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
     selectedEffort = options.reasoningEffort || settings.reasoningEffort || entry?.defaultReasoningEffort || null
     threadOptions = settings
     cumulativeUsage = null
-    const params = { model, cwd: settings.cwd,
-      ...(method === 'thread/start' ? { experimentalRawEvents: true } : {}),
+    const params = { model, cwd: settings.cwd, experimentalRawEvents: true,
       sandbox: tools.restrictedChild ? 'read-only' : providerMode('codex', settings.mode).sandbox || options.sandbox,
       approvalPolicy: approvalFor(settings.mode, options.approvalPolicy),
       approvalsReviewer: 'user',
@@ -506,6 +557,8 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
           throw new Error('Codex did not return an independent child thread id')
         }
         threadId = childId
+        rollout = typeof response.thread.path === 'string' && path.isAbsolute(response.thread.path)
+          ? createReader(response.thread.path, { fromEnd: true }) : null
         selectedModel = response.model || model
         selectedEffort = options.reasoningEffort || settings.reasoningEffort || response.reasoningEffort || null
         // Do not carry source totals into the child's first turn. The first
@@ -519,6 +572,8 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
     } else {
       const response = await transport.request(method, id ? { ...params, threadId: id } : params)
       threadId = response.thread.id
+      rollout = typeof response.thread.path === 'string' && path.isAbsolute(response.thread.path)
+        ? createReader(response.thread.path, { fromEnd: true }) : null
       selectedModel = response.model || model
       selectedEffort = options.reasoningEffort || settings.reasoningEffort || response.reasoningEffort || selectedEffort
     }
@@ -547,7 +602,9 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
     if (active && !active.done) throw new Error('Codex turn already running')
     const wait = new Promise((resolve) => {
       active = { id: null, emit: onEvent || (() => {}), resolve, mode, evidenceSegmentId, startedAt: Date.now(), done: false,
-        messages: new Map(), items: new Map(), plan: '', usage: null, baseline: cumulativeUsage }
+        messages: new Map(), items: new Map(), executions: new Map(), responses: new Map(),
+        evidence: new Set(), lifecycle: new Set(), model: selectedModel, effort: selectedEffort,
+        plan: '', usage: null, baseline: cumulativeUsage }
     })
     telemetry?.startSegment({ segmentId: evidenceSegmentId, threadId, startedAt: active.startedAt })
     emit({ type: 'model_request_evidence', version: 2, provider: 'codex', kind: 'telemetry_capture',
@@ -556,6 +613,15 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
       captureStatus: telemetry ? 'configured' : 'disabled',
       provenance: 'codex OTLP JSON logs; existing harness API receiver',
       limitation: 'Exporter configuration is not proof of delivery or complete request coverage.' })
+    emitEvidence({ type: 'model_request_evidence', version: 2, kind: 'rollout_capture',
+      evidenceId: `${evidenceSegmentId}:rollout`, observedAt: Date.now(),
+      captureStatus: rollout ? 'configured' : 'unavailable', provenance: 'codex thread.path',
+      limitation: 'Only the provider-supplied local rollout is read, with bounded incremental reads. Missing or late records leave partial coverage.' })
+    turnEvent('requested', 'harness turn/start')
+    if (!evidenceTimer) {
+      evidenceTimer = setInterval(drainSafely, 500)
+      evidenceTimer.unref()
+    }
     const policy = providerMode('codex', mode)
     const sandbox = tools.restrictedChild ? 'read-only' : policy.sandbox || options.sandbox
     // Ask keeps shell reads available and injects the provider's no-change prompt.
@@ -580,11 +646,13 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
         } },
         ...(outputSchema ? { outputSchema } : {}),
       })
-      active.id = response.turn.id
-      telemetry?.bindTurn(evidenceSegmentId, active.id)
+      if (active.id && active.id !== response.turn.id) throw new Error('Codex returned a different turn id')
+      bindTurn(response.turn.id)
+      if (!active.done) turnEvent('started', 'codex app-server:turn/start response')
     } catch (err) { finish('error', err.message) }
     const cancel = async () => {
       if (active.done) return
+      turnEvent('cancel_requested', 'harness turn/interrupt')
       clearRequests()
       active.cancelTimer = setTimeout(() => {
         finish('cancelled')
@@ -599,8 +667,13 @@ const createDriver = ({ tools = {}, codex = {}, writeDir = config.writeDir, requ
   const close = async () => {
     finish('cancelled')
     clearRequests()
-    await transport?.close()
-    transport = null
+    try { await transport?.close() }
+    finally {
+      clearInterval(evidenceTimer)
+      evidenceTimer = null
+      drainSafely()
+      transport = null
+    }
   }
   return { create: (settings) => openThread(null, settings), resume: openThread, fork,
     resolvedSettings: () => ({ model: selectedModel, reasoningEffort: selectedEffort }),
