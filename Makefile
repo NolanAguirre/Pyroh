@@ -14,6 +14,9 @@
 
 help: ## Show this help
 	@printf '%s\n' '  help                             Show this help'
+	@printf '%s\n' '  ui.analytics.install             Install analytics UI dependencies'
+	@printf '%s\n' '  ui.analytics.dev                 Start the analytics UI dev server'
+	@printf '%s\n' '  ui.analytics.build               Build the analytics UI'
 	@printf '%s\n' '  services.nats.start              Start NATS with JetStream'
 	@printf '%s\n' '  services.nats.help               Show NATS service commands'
 	@printf '%s\n' '  services.agent-spawn.install     Install agent spawn worker dependencies'

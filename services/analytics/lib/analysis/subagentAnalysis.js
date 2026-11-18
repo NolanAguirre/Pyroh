@@ -1,7 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 const config = require('../config')
-const { locateSession } = require('../source/harness')
+const { locateSession, describeAll } = require('../source/harness')
 const { readRecordPrompt } = require('../source/recordPrompt')
 const usageStore = require('../source/usageStore')
 const runIndex = require('../source/runIndexStore')
@@ -340,9 +340,11 @@ const collect = async (current, writeDir, cutoff) => {
   return { source, agents, links: allLinks, warnings: [...warnings], excluded, cutoff }
 }
 
-const analyzeSubagents = async (sessionId, rawAssumptions = '') => {
-  if (typeof sessionId !== 'string' || !sessionId.trim() || sessionId === '.' || sessionId === '..'
-    || /[\\/\0]/.test(sessionId)) {
+const validSessionId = (sessionId) => typeof sessionId === 'string' && Boolean(sessionId.trim())
+  && sessionId !== '.' && sessionId !== '..' && !/[\\/\0]/.test(sessionId)
+
+const loadSubagentReplay = async (sessionId, rawAssumptions = '') => {
+  if (!validSessionId(sessionId)) {
     throw Object.assign(new Error('Invalid session ID.'), { status: 400 })
   }
   const assumptions = parseAssumptions(rawAssumptions)
@@ -354,6 +356,28 @@ const analyzeSubagents = async (sessionId, rawAssumptions = '') => {
   }
   const data = await collect(session, writeDir, Date.now())
   const replay = createSubagentReplay(data, assumptions)
+  return { replay, data, location }
+}
+
+const replaySubagents = async (sessionId, rawAssumptions = '') => {
+  const { replay } = await loadSubagentReplay(sessionId, rawAssumptions)
+  return replay
+}
+
+const listSubagentSessions = async () => {
+  const sessions = await describeAll(config.harnessWriteDir)
+  return sessions
+    .filter((session) => validSessionId(session.id) && session.meta.id === session.id)
+    .map((session) => ({
+      id: session.id,
+      title: session.meta.title || session.name || session.id,
+      updatedAt: session.updatedAt,
+    }))
+    .sort((a, b) => (b.updatedAt ?? -Infinity) - (a.updatedAt ?? -Infinity) || a.id.localeCompare(b.id))
+}
+
+const analyzeSubagents = async (sessionId, rawAssumptions = '') => {
+  const { replay, data, location } = await loadSubagentReplay(sessionId, rawAssumptions)
   const destination = path.join(location.dir, 'analysis')
   fs.mkdirSync(destination, { recursive: true })
   const artifact = path.join(destination, `subagent-replay-${data.cutoff}.json`)
@@ -381,4 +405,4 @@ const analyzeSubagents = async (sessionId, rawAssumptions = '') => {
   return { report: lines.join('\n'), artifact }
 }
 
-module.exports = { analyzeSubagents, parseAssumptions, requestEvidence }
+module.exports = { analyzeSubagents, replaySubagents, listSubagentSessions, parseAssumptions, requestEvidence }
