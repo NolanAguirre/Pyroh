@@ -35,8 +35,13 @@ router.get('/branches', route(async (req, res) => {
 
 router.get('/diff', route(async (req, res) => {
   noStore(res)
-  const { workspace, path, origPath, staged } = req.query
-  res.json(await gitRepo.diff({ workspace, path, origPath, staged }))
+  const { workspace, path, origPath, staged, commit } = req.query
+  res.json(await gitRepo.diff({ workspace, path, origPath, staged, commit }))
+}))
+
+router.get('/commit', route(async (req, res) => {
+  noStore(res)
+  res.json(await gitRepo.commitFiles({ workspace: req.query.workspace, commit: req.query.commit }))
 }))
 
 router.get('/log', route(async (req, res) => {

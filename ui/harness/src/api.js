@@ -487,9 +487,13 @@ const api = {
     const target = fsTarget(workspace)
     return fetch(at(target.machine, `/api/git/log?${target.query({ limit })}`)).then(json)
   },
-  gitDiff: (workspace, { path, origPath, staged }, { signal } = {}) => {
+  gitCommitFiles: (workspace, commit, { signal } = {}) => {
     const target = fsTarget(workspace)
-    const query = target.query({ path, origPath: origPath || '', staged: staged ? '1' : '' })
+    return fetch(at(target.machine, `/api/git/commit?${target.query({ commit })}`), { signal }).then(json)
+  },
+  gitDiff: (workspace, { path, origPath, staged, commit }, { signal } = {}) => {
+    const target = fsTarget(workspace)
+    const query = target.query({ path, origPath: origPath || '', staged: staged ? '1' : '', commit: commit || '' })
     return fetch(at(target.machine, `/api/git/diff?${query}`), { signal }).then(json)
   },
   gitCheckout: (workspace, branch, { create = false, startPoint } = {}) => {

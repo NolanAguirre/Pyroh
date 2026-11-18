@@ -18,7 +18,7 @@ export const letterFor = (file, staged) => {
   return file.untracked ? 'U' : file.worktree
 }
 
-export const sameSelection = (a, b) => Boolean(a) && Boolean(b) && a.path === b.path && a.staged === b.staged
+export const sameSelection = (a, b) => Boolean(a) && Boolean(b) && a.path === b.path && a.staged === b.staged && (a.commit || null) === (b.commit || null)
 
 export const formatAgo = (ms) => {
   const seconds = Math.max(0, Math.round((Date.now() - ms) / 1000))

@@ -41,7 +41,7 @@ const GitView = ({ devId, workspaces = [], workspace, workspaceId, file = null, 
   }, [status, file])
 
   useEffect(() => {
-    if (!selection || !status) return
+    if (!selection || selection.commit || !status) return
     const list = selection.staged ? stagedFiles : changedFiles
     if (list.some((item) => item.path === selection.path)) return
     const other = selection.staged ? changedFiles : stagedFiles
@@ -51,11 +51,11 @@ const GitView = ({ devId, workspaces = [], workspace, workspaceId, file = null, 
 
   useEffect(() => {
     if (!restored.current) return
-    const next = selection ? selection.path : null
+    const next = selection && !selection.commit ? selection.path : null
     if ((file || null) !== next) onFileChange(next)
   }, [selection])
 
-  const selectedFile = selection
+  const selectedFile = selection && !selection.commit
     ? (selection.staged ? stagedFiles : changedFiles).find((item) => item.path === selection.path) || null
     : null
   const statusKey = selectedFile ? repo.version : 0
@@ -86,6 +86,7 @@ const GitView = ({ devId, workspaces = [], workspace, workspaceId, file = null, 
 
   const sidebar = (
     <GitSidebar
+      workspaceId={workspaceId}
       repo={repo}
       status={status}
       busy={busy}
@@ -101,6 +102,7 @@ const GitView = ({ devId, workspaces = [], workspace, workspaceId, file = null, 
       conflicted={conflicted}
       commits={commits}
       select={select}
+      setSelection={setSelection}
       confirmDiscard={confirmDiscard}
       submitCommit={submitCommit}
     />

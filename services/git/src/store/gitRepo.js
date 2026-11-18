@@ -264,18 +264,24 @@ const readWorktree = async (top, rel) => {
 
 const isBinary = (buf) => Boolean(buf) && buf.subarray(0, 8000).includes(0)
 
-const diff = async ({ workspace, path: rel, origPath, staged }) => {
+const readSides = async (top, rel, before, isStaged, rev) => {
+  // Merge commits compare against the first parent; a root commit has no parent blob.
+  if (rev) return [await showBlob(top, `${rev}^:${before}`), await showBlob(top, `${rev}:${rel}`)]
+  if (isStaged) return [await showBlob(top, `HEAD:${before}`), await showBlob(top, `:${rel}`)]
+  const original = (await showBlob(top, `:${rel}`)) ?? (await showBlob(top, `HEAD:${rel}`))
+  return [original, await readWorktree(top, rel)]
+}
+
+const diff = async ({ workspace, path: rel, origPath, staged, commit: rev }) => {
   if (typeof rel !== 'string' || !rel) throw httpError(400, 'path is required')
   const top = await repoTop(workspace)
   insideRepo(top, rel)
   const before = isAbsent(origPath) ? rel : origPath
   const isStaged = staged === true || staged === 'true' || staged === '1'
-  const original = isStaged
-    ? await showBlob(top, `HEAD:${before}`)
-    : (await showBlob(top, `:${rel}`)) ?? (await showBlob(top, `HEAD:${rel}`))
-  const modified = isStaged ? await showBlob(top, `:${rel}`) : await readWorktree(top, rel)
+  const commitRef = isAbsent(rev) ? null : checkRef(rev, 'commit')
+  const [original, modified] = await readSides(top, rel, before, isStaged, commitRef)
   const size = Math.max(original ? original.length : 0, modified ? modified.length : 0)
-  const base = { path: rel, origPath: before, staged: isStaged, added: original === null, deleted: modified === null }
+  const base = { path: rel, origPath: before, staged: isStaged, commit: commitRef, added: original === null, deleted: modified === null }
   if (isBinary(original) || isBinary(modified)) return { ...base, binary: true, original: '', modified: '' }
   if (size > MAX_DIFF_BYTES) return { ...base, tooLarge: true, size, original: '', modified: '' }
   return {
@@ -300,4 +306,43 @@ const log = async ({ workspace, limit }) => {
   return { commits }
 }
 
-module.exports = { status, branches, checkout, stage, unstage, discard, commit, push, pull, rebase, fetch, diff, log }
+const COMMIT_FORMAT = ['%H', '%h', '%an', '%at', '%P', '%s', '%b'].join('%x00')
+
+// diff-tree -z --name-status emits: status, path, and a second path for renames/copies.
+const parseNameStatus = (raw) => {
+  const entries = raw.split('\0').filter(Boolean)
+  const files = []
+  for (let i = 0; i < entries.length; i++) {
+    const letter = entries[i][0]
+    if (letter === 'R' || letter === 'C') {
+      files.push({ status: letter, origPath: entries[i + 1], path: entries[i + 2] })
+      i += 2
+    } else {
+      files.push({ status: letter, origPath: null, path: entries[i + 1] })
+      i += 1
+    }
+  }
+  return files
+}
+
+const commitFiles = async ({ workspace, commit: rev }) => {
+  const top = await repoTop(workspace)
+  const ref = checkRef(rev, 'commit')
+  const { stdout: info } = await run(top, ['show', '-s', `--format=${COMMIT_FORMAT}`, ref])
+  const [hash, short, author, date, parents, subject, body] = info.split('\0')
+  const parentList = parents.split(' ').filter(Boolean)
+  const range = parentList.length ? [parentList[0], hash] : ['--root', hash]
+  const { stdout } = await run(top, ['diff-tree', '-r', '-z', '-M', '--no-commit-id', '--name-status', ...range])
+  return {
+    hash,
+    short,
+    author,
+    date: Number(date) * 1000,
+    parents: parentList,
+    subject,
+    body: (body || '').trim(),
+    files: parseNameStatus(stdout),
+  }
+}
+
+module.exports = { status, branches, checkout, stage, unstage, discard, commit, push, pull, rebase, fetch, diff, log, commitFiles }

@@ -1,9 +1,11 @@
 import { Button, DevScope, Fold, FoldContent, FoldTrigger, FormToggle } from 'component-library'
+import CommitItem from './CommitItem'
 import FileGroup from './FileGroup'
 import Icon, { ICONS } from './GitIcon'
-import { IS_MAC, MOD, formatAgo } from './gitFormat'
+import { IS_MAC, MOD } from './gitFormat'
 
 const GitSidebar = ({
+  workspaceId,
   repo,
   status,
   busy,
@@ -19,6 +21,7 @@ const GitSidebar = ({
   conflicted,
   commits,
   select,
+  setSelection,
   confirmDiscard,
   submitCommit,
 }) => (
@@ -134,14 +137,7 @@ const GitSidebar = ({
               <FoldContent>
                 <ul className="git-history__list">
                   {commits.map((item) => (
-                    <DevScope key={item.hash} id="xjk64u5" state={{ hash: item.hash }}>
-                      <li className="git-history__item" title={`${item.hash}\n${item.author}`}>
-                        <span className="git-history__subject">{item.subject}</span>
-                        <span className="git-history__meta">
-                          <code>{item.short}</code> · {item.author} · {formatAgo(item.date)}
-                        </span>
-                      </li>
-                    </DevScope>
+                    <CommitItem key={item.hash} workspaceId={workspaceId} commit={item} selection={selection} onSelect={setSelection} />
                   ))}
                 </ul>
               </FoldContent>

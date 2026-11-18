@@ -8,8 +8,9 @@ const DiffPane = ({ workspaceId, selection, file, statusKey, busy, onStage, onUn
   const [diff, setDiff] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
-  const selectionKey = selection ? `${selection.staged ? 's' : 'w'}:${selection.path}` : ''
-  const origPath = file?.origPath || ''
+  const commit = selection?.commit || ''
+  const selectionKey = selection ? `${commit || (selection.staged ? 's' : 'w')}:${selection.path}` : ''
+  const origPath = (commit ? selection.origPath : file?.origPath) || ''
 
   useEffect(() => {
     setDiff(null)
@@ -20,7 +21,7 @@ const DiffPane = ({ workspaceId, selection, file, statusKey, busy, onStage, onUn
     if (!selection) return undefined
     const controller = new AbortController()
     setLoading(true)
-    api.gitDiff(workspaceId, { path: selection.path, origPath: selection.staged ? origPath : '', staged: selection.staged }, { signal: controller.signal })
+    api.gitDiff(workspaceId, { path: selection.path, origPath: selection.staged || commit ? origPath : '', staged: selection.staged, commit }, { signal: controller.signal })
       .then((next) => {
         setDiff((prev) => (prev && prev.original === next.original && prev.modified === next.modified && prev.binary === next.binary ? prev : next))
         setError(null)
@@ -46,17 +47,17 @@ const DiffPane = ({ workspaceId, selection, file, statusKey, busy, onStage, onUn
   }
 
   return (
-    <DevScope id="w5292nc" state={{ path: selection.path, staged: selection.staged, loading, binary: Boolean(diff?.binary) }}>
+    <DevScope id="w5292nc" state={{ path: selection.path, staged: selection.staged, commit: commit || null, loading, binary: Boolean(diff?.binary) }}>
       <section className="git-diff">
         <header className="git-diff__header">
           <FileIcon name={baseName(selection.path)} size={14} />
           <span className="git-diff__path" title={selection.path}>
             {diff?.origPath && diff.origPath !== selection.path ? `${diff.origPath} → ` : ''}{selection.path}
           </span>
-          <span className="git-diff__side">{selection.staged ? 'HEAD ↔ Index' : 'Index ↔ Working Tree'}</span>
+          <span className="git-diff__side">{commit ? `${selection.short}^ ↔ ${selection.short}` : selection.staged ? 'HEAD ↔ Index' : 'Index ↔ Working Tree'}</span>
           {loading && !diff && <span className="git-diff__loading">Loading…</span>}
           <div className="git-diff__actions">
-            <Button devId="8jocmb6" variant="ghost" size="sm" title="Open in editor" onClick={() => onOpenFile(selection.path)} disabled={!onOpenFile || Boolean(diff?.deleted)}>
+            <Button devId="8jocmb6" variant="ghost" size="sm" title="Open in editor" onClick={() => onOpenFile(selection.path)} disabled={!onOpenFile || Boolean(diff?.deleted) || Boolean(commit)}>
               <Icon d={ICONS.open} />
             </Button>
             {file && (selection.staged ? (
