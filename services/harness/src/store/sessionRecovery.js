@@ -71,7 +71,12 @@ const recoverSession = (sessionId, writeDir, { excludeRunId } = {}) => {
       beforeChange()
       interrupted = true
       const endedAt = Date.now()
-      const message = record.pid
+      const spawn = !record.pid && readJson(path.join(paths.sessionDir(sessionId, writeDir), 'spawn-request.json'))
+      const spawnError = spawn?.sessionId === sessionId && spawn.args?.[2] === '--run-id' &&
+        spawn.args[3] === record.id && ['failed', 'cancelled'].includes(spawn.state) &&
+        spawn.reply?.ok === false && spawn.reply.requestId === spawn.requestId &&
+        spawn.reply.sessionId === sessionId && spawn.reply.error?.message
+      const message = spawnError ? `Agent spawn failed: ${spawnError}` : record.pid
         ? 'Daemon stopped before this run completed. Check the daemon log for details.'
         : 'Worker exited before the agent started. Check the daemon log for startup errors.'
       const next = { ...record, status: 'interrupted', endedAt,

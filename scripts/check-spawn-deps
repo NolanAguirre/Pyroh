@@ -1,0 +1,16 @@
+#!/bin/sh
+# Fail before starting the stack when the spawn service cannot run.
+set -eu
+cd -- "$(dirname "$0")/.."
+missing=0
+if ! command -v nats-server >/dev/null 2>&1; then
+    echo 'start: nats-server is missing. Run make install.system.' >&2
+    missing=1
+fi
+for service in harness agent-spawn; do
+    if ! node -e 'require(require.resolve("nats", { paths: [process.argv[1]] }))' "$PWD/services/$service" >/dev/null 2>&1; then
+        echo "start: $service NATS dependencies are missing or broken. Run make services.$service.install." >&2
+        missing=1
+    fi
+done
+exit "$missing"

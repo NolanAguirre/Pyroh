@@ -7,13 +7,14 @@ Usage: sh scripts/install-system-deps [--start-postgres]
 
 Install system dependencies on Ubuntu, Fedora, or Amazon Linux 2023
 using sudo when needed. Amazon Linux 2 is not supported.
-Includes PostgreSQL, SQLite, Sqitch and its drivers, nginx, Python,
+Includes PostgreSQL, SQLite, Sqitch and its drivers, nginx, NATS Server, Python,
 native build tools, Git, ripgrep, envdir, s6-setsid, and s6-setlock.
 Installs distro Node/npm only when they are missing; requires Node >=22.13.
 Fedora/Amazon Linux install Sqitch from CPAN and build missing s6 helpers
 from source. Amazon Linux preserves an installed PostgreSQL major (defaults
 to 15), uses Node 22 packages, and
 enables AWS's SPAL repository for ripgrep (requires a recent AL2023 release).
+Amazon Linux installs a pinned official NATS Server RPM if it is missing.
 
   --start-postgres  Initialize the default RPM-based cluster if absent, then
                     enable and start PostgreSQL (requires systemd).
@@ -86,7 +87,7 @@ case "$ID" in
         as_root apt-get update
         as_root apt-get install -y \
             ca-certificates curl build-essential python3 python3-venv python3-pip \
-            git ripgrep nginx daemontools s6 \
+            git ripgrep nginx nats-server daemontools s6 \
             postgresql postgresql-client postgresql-contrib sqlite3 \
             sqitch libdbd-pg-perl libdbd-sqlite3-perl "$@"
         ;;
@@ -116,12 +117,32 @@ case "$ID" in
                 as_root dnf --enablerepo=amazonlinux-spal install -y ripgrep
             fi
         else
-            set -- "$@" curl ripgrep postgresql-server postgresql postgresql-contrib perl-App-cpanminus
+            set -- "$@" curl ripgrep nats-server postgresql-server postgresql postgresql-contrib perl-App-cpanminus
         fi
         as_root dnf install -y \
             ca-certificates gcc gcc-c++ make python3 python3-pip \
             git nginx tar gzip sqlite \
             perl-devel perl-DBD-Pg perl-DBD-SQLite "$@"
+        if [ "$ID" = amzn ] && ! command -v nats-server >/dev/null 2>&1; then
+            # Use the upstream RPM on AL2023, independently of optional repos.
+            nats_version=2.15.3
+            case "$(uname -m)" in
+                x86_64)
+                    nats_arch=amd64
+                    nats_sha256=df2239cff0a1dcbb5d2a778ee0abd6d99936cf751ee258b366adebb2904989f7
+                    ;;
+                aarch64)
+                    nats_arch=arm64
+                    nats_sha256=333520c92f682f0cc4936b6225f3fe3a620bbef9233a78bea346ea38c3b1fa20
+                    ;;
+                *) die "Unsupported NATS Server architecture: $(uname -m)" ;;
+            esac
+            nats_rpm="$build_dir/nats-server.rpm"
+            curl -fL --retry 3 -o "$nats_rpm" \
+                "https://github.com/nats-io/nats-server/releases/download/v$nats_version/nats-server-v$nats_version-$nats_arch.rpm"
+            printf '%s  %s\n' "$nats_sha256" "$nats_rpm" | sha256sum -c -
+            as_root dnf install -y "$nats_rpm"
+        fi
         if ! command -v sqitch >/dev/null 2>&1; then
             if command -v cpanm >/dev/null 2>&1; then
                 as_root "$(command -v cpanm)" --notest --mirror https://cpan.metacpan.org --mirror-only App::Sqitch

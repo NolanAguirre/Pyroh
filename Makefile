@@ -377,6 +377,7 @@ install.py: ## Install python venvs for the GPU services
 	$(MAKE) services.categorizer.install.python
 
 start: ## Start the harness stack; Ctrl+C closes the terminal host and shells
+	@sh scripts/check-spawn-deps
 	@$(MAKE) services.kanban.prepare
 	@$(MAKE) db.harness.deploy
 	@$(MAKE) db.mcpdevid.deploy
