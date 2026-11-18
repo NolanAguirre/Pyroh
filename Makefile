@@ -280,6 +280,17 @@ ui.harness.lint: ## Lint the harness UI
 ui.harness.preview: ## Preview the harness UI build
 	$(MAKE) -C ui/harness preview
 
+.PHONY: ui.analytics.install ui.analytics.dev ui.analytics.build
+
+ui.analytics.install: ## Install analytics UI dependencies
+	$(MAKE) -C ui/analytics install
+
+ui.analytics.dev: ## Start the analytics UI dev server
+	$(MAKE) -C ui/analytics dev
+
+ui.analytics.build: ## Build the analytics UI
+	$(MAKE) -C ui/analytics build
+
 services.nginx.start: ## Start nginx in front of the harness stack
 	$(MAKE) -C services/nginx start
 
@@ -357,6 +368,7 @@ install: ## Install all services and UIs, including python venvs
 	$(MAKE) services.notepad.install
 	$(MAKE) services.mcpdevid.install
 	$(MAKE) ui.harness.install
+	$(MAKE) ui.analytics.install
 
 install.js: ## Install only JS packages across all services and UIs
 	$(MAKE) services.harness.install
@@ -372,6 +384,7 @@ install.js: ## Install only JS packages across all services and UIs
 	$(MAKE) services.notepad.install
 	$(MAKE) services.mcpdevid.install
 	$(MAKE) ui.harness.install
+	$(MAKE) ui.analytics.install
 
 install.py: ## Install python venvs for the GPU services
 	$(MAKE) services.categorizer.install.python
