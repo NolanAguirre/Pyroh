@@ -117,7 +117,7 @@ const recoverParent = (sessionId, { withLock, statesFor, describe, retryableDeli
       if (!cancelled) {
         store.updateRun(sessionId, unstarted.id, { status: 'running', endedAt: null, error: null }, config.writeDir)
         store.updateSession(sessionId, { status: 'running' }, config.writeDir)
-        require('./process').spawnHarness([unstarted.mode === 'plan' ? 'plan' : 'run', sessionId, '--run-id', unstarted.id], lock.spawnOptions())
+        require('./spawnRequest').requestSpawn([unstarted.mode === 'plan' ? 'plan' : 'run', sessionId, '--run-id', unstarted.id], lock)
         return
       }
     }

@@ -1,4 +1,5 @@
 .PHONY: services.terminal.install services.terminal.build services.terminal.start services.terminal.stop-host services.terminal.host services.terminal.help services.editor.install services.editor.build services.editor.start services.editor.help services.git.install services.git.build services.git.start services.git.help
+.PHONY: services.nats.start services.nats.help services.agent-spawn.install services.agent-spawn.build services.agent-spawn.start services.agent-spawn.help
 
 .PHONY: help install install.system install.js install.py start \
 	services.harness.install services.harness.start services.harness.cli services.harness.models services.harness.models.refresh services.harness.tool-stats services.harness.index.rebuild \
@@ -13,6 +14,12 @@
 
 help: ## Show this help
 	@printf '%s\n' '  help                             Show this help'
+	@printf '%s\n' '  services.nats.start              Start NATS with JetStream'
+	@printf '%s\n' '  services.nats.help               Show NATS service commands'
+	@printf '%s\n' '  services.agent-spawn.install     Install agent spawn worker dependencies'
+	@printf '%s\n' '  services.agent-spawn.build       Run the agent spawn worker build if configured'
+	@printf '%s\n' '  services.agent-spawn.start       Start the NATS agent spawn worker'
+	@printf '%s\n' '  services.agent-spawn.help        Show agent spawn worker commands'
 	@printf '%s\n' '  services.harness.install         Install harness service deps'
 	@printf '%s\n' '  services.harness.start           Start the harness API server'
 	@printf '%s\n' '  services.harness.cli             Run the harness CLI (ARGS="...")'
@@ -96,6 +103,24 @@ help: ## Show this help
 	@printf '%s\n' '  db.analytics.status              Show analytics Sqitch status'
 	@printf '%s\n' '  db.analytics.verify              Run analytics Sqitch verify scripts'
 	@printf '%s\n' '  db.analytics.revert              Refuse revert (forward-only)'
+
+services.nats.start: ## Start NATS with JetStream
+	$(MAKE) -C services/nats start
+
+services.nats.help: ## Show NATS service commands
+	$(MAKE) -C services/nats help
+
+services.agent-spawn.install: ## Install agent spawn worker dependencies
+	$(MAKE) -C services/agent-spawn install
+
+services.agent-spawn.build: ## Run the agent spawn worker build if configured
+	$(MAKE) -C services/agent-spawn build
+
+services.agent-spawn.start: ## Start the NATS agent spawn worker
+	$(MAKE) -C services/agent-spawn start
+
+services.agent-spawn.help: ## Show agent spawn worker commands
+	$(MAKE) -C services/agent-spawn help
 
 services.harness.install: ## Install harness service deps
 	$(MAKE) -C services/harness install
@@ -320,6 +345,7 @@ install.system: ## Install Ubuntu/Fedora/Amazon Linux system dependencies
 
 install: ## Install all services and UIs, including python venvs
 	$(MAKE) services.harness.install
+	$(MAKE) services.agent-spawn.install
 	$(MAKE) services.terminal.install
 	$(MAKE) services.editor.install
 	$(MAKE) services.git.install
@@ -334,6 +360,7 @@ install: ## Install all services and UIs, including python venvs
 
 install.js: ## Install only JS packages across all services and UIs
 	$(MAKE) services.harness.install
+	$(MAKE) services.agent-spawn.install
 	$(MAKE) services.terminal.install
 	$(MAKE) services.editor.install
 	$(MAKE) services.git.install

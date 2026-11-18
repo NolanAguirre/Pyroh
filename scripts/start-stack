@@ -143,6 +143,8 @@ trap 'request_stop 143' TERM
 trap cleanup 0
 
 launch services/nginx start
+launch services/nats start
+launch services/agent-spawn start
 launch services/harness start
 launch services/terminal start
 launch services/editor start

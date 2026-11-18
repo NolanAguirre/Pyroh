@@ -9,6 +9,7 @@ const questionStore = require('../store/questionStore')
 const steerStore = require('../store/steerStore')
 const imageStore = require('../store/imageStore')
 const proc = require('./process')
+const { requestSpawn } = require('./spawnRequest')
 const { listProviders } = require('../agents/driver')
 const sessionLock = require('../store/sessionLock')
 const { normalizeRunOptions, validatePromptDocument, validateSavedDescriptor } = require('../sdk')
@@ -107,7 +108,7 @@ const spawnRun = (sessionId, action, { mode, prompt, images, promptProvenance, a
     onPrepared?.(run)
     sessionStore.updateSession(sessionId, { status: 'running' }, config.writeDir)
     if (allowQueued && runAfter.cancelled(sessionId)) throw stopped()
-    const pid = proc.spawnHarness([action, sessionId, '--run-id', run.id], lock.spawnOptions())
+    const pid = requestSpawn([action, sessionId, '--run-id', run.id], lock)
     if (autoName && firstUnnamedRun) requestChatName(sessionId, prompt)
     return { ...run, daemonPid: pid }
   } catch (err) {
@@ -140,7 +141,7 @@ const spawnWorkflow = (sessionId, { mode, resume = false, prompt, promptProvenan
       mode, status: 'running', workflowPlugin: registry.turnDescriptor(entry),
       ...(!resume ? { currentPhase: null, currentStep: null, totalPhases: null } : {}),
     }, config.writeDir)
-    const pid = proc.spawnHarness(args, lock.spawnOptions())
+    const pid = requestSpawn(args, lock)
     if (chatInteractionStore.isUserMessage({ prompt, promptProvenance })) chatInteractionStore.recordUser(sessionId, Date.now(), config.writeDir)
     return { sessionId, mode, resume: Boolean(resume), daemonPid: pid }
   } catch (err) {

@@ -156,8 +156,7 @@ const handleTurn = async (action, sessionId, flags) => {
   }
 
   if (flags.detach) {
-    const proc = require('../harness/process')
-    proc.spawnHarness([action, sessionId, '--run-id', run.id], lock.spawnOptions())
+    require('../harness/spawnRequest').requestSpawn([action, sessionId, '--run-id', run.id], lock)
     print(run.id)
     process.exit(0)
   }
@@ -208,10 +207,9 @@ const handleWorkflow = async (sessionId, flags) => {
   }
 
   if (flags.detach) {
-    const proc = require('../harness/process')
     const args = ['workflow', sessionId, '--mode', mode]
     if (resume) args.push('--resume')
-    proc.spawnHarness(args, lock.spawnOptions())
+    require('../harness/spawnRequest').requestSpawn(args, lock)
     print({ sessionId, mode, resume })
     process.exit(0)
   }

@@ -178,7 +178,7 @@ const dispatchOne = async (sessionId) => {
       fs.rmSync(paths.controlFile(sessionId, config.writeDir), { force: true })
       store.updateRun(sessionId, run.id, { status: 'running', endedAt: null, error: null }, config.writeDir)
       store.updateSession(sessionId, { status: 'running' }, config.writeDir)
-      require('./process').spawnHarness([run.mode === 'plan' ? 'plan' : 'run', sessionId, '--run-id', run.id], lock.spawnOptions())
+      require('./spawnRequest').requestSpawn([run.mode === 'plan' ? 'plan' : 'run', sessionId, '--run-id', run.id], lock)
       return null
     }
     return { session, message }

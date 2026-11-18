@@ -5,6 +5,9 @@ status=$2
 lock_file=$3
 shift 3
 
+# Shareable leases retain their named pipes until the final owner exits.
+lease_dir=${control%/*}
+
 # Open in the same order as the caller so neither FIFO needs a dummy writer.
 exec 0< "$control"
 exec 1> "$status"
@@ -16,4 +19,8 @@ printf "0\n"
 exec cat > /dev/null
 '
 result=$?
+# On acquisition failure the caller still needs to read the error file.
+if [ "$result" -eq 0 ]; then
+    rm -rf "$lease_dir"
+fi
 printf '%s\n' "$result"

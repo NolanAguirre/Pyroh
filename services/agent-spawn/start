@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+
+# Match the API's working directory when resolving relative harness settings.
+cd ../harness
+exec node ../agent-spawn/index.js
