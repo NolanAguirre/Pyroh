@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { DevScope, FormTextarea } from 'component-library'
 import api from '../../api'
+import MarkdownPreview, { isMarkdown } from '../../common/MarkdownPreview'
 import './Notepad.css'
 
 const SAVE_DELAY_MS = 500
@@ -53,19 +54,24 @@ const Notepad = ({ devId }) => {
     pending.current = { timer, text: next }
   }
 
+  const markdown = isMarkdown(text)
+
   return (
     <DevScope id={devId} state={{ loaded, error: Boolean(error) }}>
-      <div className="notepad">
+      <div className={markdown ? 'notepad notepad--markdown' : 'notepad'}>
         <h2 className="notepad__title">Notepad</h2>
-        <DevScope id="5dty75y">
-          <FormTextarea
-            className="form__textarea notepad__text"
-            aria-label="Notepad"
-            placeholder={loaded ? 'Write anything…' : 'Loading…'}
-            disabled={!loaded}
-            field={{ value: text, onChange }}
-          />
-        </DevScope>
+        <div className="notepad__body">
+          <DevScope id="5dty75y">
+            <FormTextarea
+              className="form__textarea notepad__text"
+              aria-label="Notepad"
+              placeholder={loaded ? 'Write anything…' : 'Loading…'}
+              disabled={!loaded}
+              field={{ value: text, onChange }}
+            />
+          </DevScope>
+          {markdown && <MarkdownPreview className="notepad__preview" text={text} />}
+        </div>
         {error && <DevScope id="2a8tbkp"><p className="notepad__error">{error}</p></DevScope>}
       </div>
     </DevScope>

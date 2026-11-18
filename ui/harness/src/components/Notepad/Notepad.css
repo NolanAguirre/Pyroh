@@ -36,3 +36,19 @@
   color: var(--danger);
   font-size: 0.8125rem;
 }
+
+.notepad-panel:has(.notepad--markdown) {
+  width: 64rem;
+}
+
+.notepad__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  gap: 0.5rem;
+}
+
+.notepad__body > * {
+  flex: 1;
+  min-width: 0;
+}
