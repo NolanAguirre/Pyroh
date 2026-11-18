@@ -134,12 +134,14 @@ const GitSidebar = ({
               <FoldContent>
                 <ul className="git-history__list">
                   {commits.map((item) => (
-                    <li key={item.hash} className="git-history__item" title={`${item.hash}\n${item.author}`}>
-                      <span className="git-history__subject">{item.subject}</span>
-                      <span className="git-history__meta">
-                        <code>{item.short}</code> · {item.author} · {formatAgo(item.date)}
-                      </span>
-                    </li>
+                    <DevScope key={item.hash} id="xjk64u5" state={{ hash: item.hash }}>
+                      <li className="git-history__item" title={`${item.hash}\n${item.author}`}>
+                        <span className="git-history__subject">{item.subject}</span>
+                        <span className="git-history__meta">
+                          <code>{item.short}</code> · {item.author} · {formatAgo(item.date)}
+                        </span>
+                      </li>
+                    </DevScope>
                   ))}
                 </ul>
               </FoldContent>
