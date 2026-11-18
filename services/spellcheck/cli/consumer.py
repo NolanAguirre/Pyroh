@@ -22,12 +22,14 @@ Prefetch the weights (make install.model):
 import argparse
 import gc
 import json
+import math
 import os
 import re
 import signal
 import sys
 import tempfile
 import time
+from datetime import datetime
 
 import fsqueue
 
@@ -35,6 +37,8 @@ DEFAULT_MODEL = os.environ.get("LLM_MODEL", "Qwen/Qwen3.5-9B")
 DEFAULT_QUANT = os.environ.get("LLM_QUANT", "8bit")
 DEFAULT_MAX_MEMORY = os.environ.get("LLM_MAX_MEMORY", "14GiB")
 IDLE_SECONDS = float(os.environ.get("MODEL_IDLE_SECONDS", "3600"))
+GENERATION_MAX_NEW_TOKENS = int(os.environ.get("GENERATION_MAX_NEW_TOKENS", "16384"))
+GENERATION_CONTEXT_TOKENS = int(os.environ.get("GENERATION_CONTEXT_TOKENS", "32768"))
 POLL_SECONDS = 0.05
 MAX_NEW_TOKENS = 3
 
@@ -171,7 +175,109 @@ class Handler:
             fsqueue.remove_temp(tmp_path)
             raise
 
+    def generate(self, descriptor):
+        import torch
+
+        messages = descriptor.get("messages")
+        if not isinstance(messages, list) or not 1 <= len(messages) <= 128:
+            raise ValueError("messages must contain 1 to 128 messages")
+        for index, message in enumerate(messages):
+            if not isinstance(message, dict) or message.get("role") not in ("system", "user", "assistant"):
+                raise ValueError("each message must have a system, user or assistant role")
+            if not isinstance(message.get("content"), str) or not message["content"].strip():
+                raise ValueError("each message must have nonempty string content")
+            if message["role"] == "system" and index != 0:
+                raise ValueError("system messages must be first")
+        if messages[-1]["role"] != "user":
+            raise ValueError("the last message must have the user role")
+        if GENERATION_MAX_NEW_TOKENS < 1 or GENERATION_CONTEXT_TOKENS < 1:
+            raise ValueError("Generation token limits must be positive")
+        expires_at = datetime.fromisoformat(descriptor["expires_at"])
+        if expires_at.tzinfo is None:
+            raise ValueError("Generation expiry must include a timezone")
+        deadline = expires_at.timestamp()
+        if not math.isfinite(deadline) or time.time() >= deadline:
+            raise TimeoutError("Generation exceeded its overall timeout")
+
+        max_new_tokens = descriptor.get("max_new_tokens")
+        if max_new_tokens is None:
+            # Reordering/copying prompts need room for the entire input, using
+            # this model's tokenizer without loading a model in the caller.
+            content_tokens = sum(len(self.tokenizer.encode(message["content"], add_special_tokens=False))
+                                 for message in messages if message["role"] == "user")
+            max_new_tokens = max(2048, math.ceil(content_tokens * 1.25) + 256)
+        if type(max_new_tokens) is not int or not 1 <= max_new_tokens <= GENERATION_MAX_NEW_TOKENS:
+            raise ValueError("Requested output exceeds the generation token limit (" + str(GENERATION_MAX_NEW_TOKENS) + ")")
+
+        inputs = self.tokenizer.apply_chat_template(
+            messages,
+            add_generation_prompt=True,
+            enable_thinking=False,
+            return_dict=True,
+            return_tensors="pt",
+        )
+        prompt_length = inputs["input_ids"].shape[1]
+        limits = [GENERATION_CONTEXT_TOKENS]
+        for config in (self.model.config, getattr(self.model.config, "text_config", None)):
+            limit = getattr(config, "max_position_embeddings", None)
+            if isinstance(limit, int) and limit > 0:
+                limits.append(limit)
+        tokenizer_limit = getattr(self.tokenizer, "model_max_length", None)
+        if isinstance(tokenizer_limit, int) and 0 < tokenizer_limit < 1_000_000_000:
+            limits.append(tokenizer_limit)
+        context_limit = min(limits)
+        if prompt_length + max_new_tokens > context_limit:
+            raise ValueError("Prompt and output budget exceed the model context limit (" + str(context_limit) + " tokens). Use a smaller input.")
+
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            raise TimeoutError("Generation exceeded its overall timeout")
+        inputs = inputs.to(self.model.device)
+        pad_token_id = self.tokenizer.pad_token_id
+        if pad_token_id is None:
+            pad_token_id = self.tokenizer.eos_token_id
+        with torch.inference_mode():
+            output = self.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                max_time=remaining,
+                do_sample=False,
+                temperature=None,
+                top_p=None,
+                top_k=None,
+                pad_token_id=pad_token_id,
+            )
+        if time.time() >= deadline:
+            raise TimeoutError("Generation exceeded its overall timeout")
+        tokens = output[0][prompt_length:]
+        eos = getattr(self.model.generation_config, "eos_token_id", None)
+        if eos is None:
+            eos = self.tokenizer.eos_token_id
+        eos_ids = eos if isinstance(eos, (list, tuple)) else [eos]
+        if len(tokens) >= max_new_tokens and int(tokens[-1]) not in eos_ids:
+            raise RuntimeError("Generation exhausted its output token budget")
+        text = self.tokenizer.decode(tokens, skip_special_tokens=True).strip()
+        if not text:
+            raise RuntimeError("Generation returned empty text")
+        return {
+            "text": text,
+            "model": self.model_id,
+            "input_tokens": prompt_length,
+            "output_tokens": len(tokens),
+            "max_new_tokens": max_new_tokens,
+        }
+
     def process(self, descriptor):
+        if descriptor.get("type") == "generate":
+            try:
+                result = self.generate(descriptor)
+            except Exception as error:
+                self._write_result(descriptor, {"error": str(error)})
+                raise
+            self._write_result(descriptor, result)
+            sys.stderr.write(str(descriptor.get("_name")) + ": generated\n")
+            sys.stderr.flush()
+            return
         words = descriptor.get("words")
         if not isinstance(words, list):
             raise ValueError("descriptor has no words list")
@@ -210,7 +316,10 @@ def run_consumer(queue_dir, lock_path, handler, idle_seconds):
                 handler.load()
             except Exception as error:
                 sys.stderr.write("model load failed: " + str(error) + "\n")
+                if descriptor.get("type") == "generate":
+                    handler._write_result(descriptor, {"error": "Model load failed: " + str(error)})
                 fsqueue._finish(queue_dir, descriptor, ok=False)
+                handler.unload()
                 continue
             try:
                 idle_since = time.monotonic()

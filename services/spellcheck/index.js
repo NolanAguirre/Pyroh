@@ -1,10 +1,14 @@
 const express = require('express')
 const { checkText, loadSpell } = require('./lib/check')
 const { sweepDone } = require('./lib/queue')
+const { sweepGenerations } = require('./lib/generation')
+const generate = require('./routes/generate')
+const generationStatus = require('./routes/generation-status')
 
 const PORT = Number(process.env.PORT || 6010)
 const HOST = process.env.HOST || 'localhost'
 const JOB_TIMEOUT_MS = Number(process.env.JOB_TIMEOUT_MS || 20000)
+const QUEUE_DIR = process.env.QUEUE_DIR
 const SWEEP_INTERVAL_MS = 60000
 
 const app = express()
@@ -12,7 +16,7 @@ const app = express()
 app.use(express.json({ limit: '1mb' }))
 
 app.get(['/health', '/spellcheck/health'], (_req, res) => {
-  res.json({ status: 'ok', queue_dir: process.env.QUEUE_DIR || null })
+  res.json({ status: 'ok', queue_dir: QUEUE_DIR || null })
 })
 
 // Body: { text, triggers: [{ start, end }], ignore: [word], first }.
@@ -33,8 +37,15 @@ app.post(['/check', '/spellcheck/check'], async (req, res) => {
   }
 })
 
+app.post(['/generate', '/spellcheck/generate'], generate)
+app.get(['/generate/:id', '/spellcheck/generate/:id'], generationStatus)
+app.use(['/generate', '/spellcheck/generate'], (error, _req, res, _next) => {
+  res.status(error.status || 500).json({ error: error.message })
+})
+
 loadSpell().catch((error) => console.error('dictionary load failed:', error))
 setInterval(() => sweepDone(SWEEP_INTERVAL_MS).catch(() => {}), SWEEP_INTERVAL_MS).unref()
+setInterval(() => sweepGenerations().catch((error) => console.error('generation cleanup failed:', error)), SWEEP_INTERVAL_MS).unref()
 
 const server = app.listen(PORT, HOST, () => {
   console.log(`spellcheck running at http://${HOST}:${PORT}`)

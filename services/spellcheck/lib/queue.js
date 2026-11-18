@@ -72,6 +72,7 @@ const sweepDone = async (maxAgeMs) => {
   }
   const cutoff = Date.now() - maxAgeMs
   for (const name of names) {
+    if (name.startsWith('generate__')) continue
     const file = path.join(doneDir, name)
     try {
       if ((await fs.promises.stat(file)).mtimeMs < cutoff) await removeIfExists(file)

@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
 service_dir="$(cd "$(dirname "$0")/.." && pwd)"
 project_dir="$(cd "$service_dir/../.." && pwd)"
@@ -12,10 +12,10 @@ api_dir="$staging_dir/spellcheck"
 consumer_dir="$staging_dir/spellcheck-consumer"
 mkdir -p "$api_dir/services/spellcheck" "$api_dir/packages" "$consumer_dir/cli"
 cp "$service_dir/package.json" "$service_dir/index.js" "$api_dir/services/spellcheck/"
-if [[ -f "$service_dir/package-lock.json" ]]; then
+if [ -f "$service_dir/package-lock.json" ]; then
   cp "$service_dir/package-lock.json" "$api_dir/services/spellcheck/"
 fi
-cp -R "$service_dir/lib" "$api_dir/services/spellcheck/"
+cp -R "$service_dir/lib" "$service_dir/routes" "$api_dir/services/spellcheck/"
 cp -R "$project_dir/packages/prompt-triggers" "$api_dir/packages/"
 (
   cd "$api_dir/services/spellcheck"

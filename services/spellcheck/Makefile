@@ -41,7 +41,7 @@ consumer:
 	envdir "./env-dir/$${ENV_USER:-$$USER}" cli/.venv/bin/python3 -u cli/consumer.py
 
 package:
-	bash scripts/package
+	sh scripts/package
 
 deploy: package
 	remote deploy harness spellcheck-consumer "$(RELEASE_DIR)/spellcheck-consumer" --to "$(REMOTE_TARGET)"
