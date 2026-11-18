@@ -88,7 +88,7 @@ Continue useful coordination while children run. Never poll, sleep, or wait for 
     description: 'Prepended to matching service-creation requests with bootstrap scaffolding instructions.',
     usedBy: ['prompt/actions.js'],
     vars: [],
-    template: 'When adding a new service, run bootstrap service add <name> --type=nodejs from the repository root, then implement the service inside the generated services/<name>/ directory. Use bootstrap for the service scaffold, Makefile, environment directories, and port allocation instead of creating them manually.\nAdd the appropriate repeatable support options: --support=http, --support=fs, --support=db, or --support=python. Check bootstrap service add --help for current options and prerequisites. For database support, first create the matching database with bootstrap db add <name> --support=<backend>.',
+    template: 'When adding a new service, run bootstrap service add <name> --type=nodejs from the repository root, then implement the service inside the generated services/<name>/ directory. Use bootstrap for the service scaffold, Makefile, environment directories, and port allocation instead of creating them manually. Then update the root Makefile and make start so the new service launches with the stack.\nAdd the appropriate repeatable support options: --support=http, --support=fs, --support=db, or --support=python. Check bootstrap service add --help for current options and prerequisites. For database support, first create the matching database with bootstrap db add <name> --support=<backend>.',
   },
   {
     id: 'toolkitTerminology',
