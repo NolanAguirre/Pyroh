@@ -13,7 +13,7 @@ help:
 	@echo 'Loads ENV_DIR/default then ENV_DIR/$$ENV_USER (defaults to $$USER).'
 	@echo 'DATABASE_URL must point at the database configured in db/kanban/env-dir; deploy it before starting.'
 	@echo 'dev and start prepare dependencies before launching the API.'
-	@echo 'ATTACHMENT_DIR defaults to $$HOME/.local/share/harness/kanban/attachments; keep it on persistent disk.'
+	@echo 'ATTACHMENT_DIR defaults to $$HOME/.harness/kanban; keep it on persistent disk.'
 	@echo 'ATTACHMENT_MAX_BYTES defaults to 104857600 (100 MiB), at most 1073741824 (1 GiB).'
 	@echo 'Upload links expire after 10 minutes; unfinished attachments are removed after 24 hours.'
 

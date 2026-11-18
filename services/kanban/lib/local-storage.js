@@ -6,7 +6,7 @@ const { Transform } = require('node:stream')
 const { pipeline } = require('node:stream/promises')
 const { fail, uuid } = require('./attachment-http')
 
-const ATTACHMENT_DIR = process.env.ATTACHMENT_DIR || path.join(os.homedir(), '.local/share/harness/kanban/attachments')
+const ATTACHMENT_DIR = process.env.ATTACHMENT_DIR || path.join(os.homedir(), '.harness/kanban')
 const ATTACHMENT_MAX_BYTES = Number(process.env.ATTACHMENT_MAX_BYTES || 104857600)
 
 const createLocalStorage = (pool) => {
