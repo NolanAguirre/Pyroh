@@ -1,0 +1,26 @@
+#!/bin/sh
+##<help>
+## prepare - Package selected services for remote build.
+## Usage: sh deployment/prepare <absolute-output-directory> <service>...
+## Supports spellcheck and spellcheck-consumer; packages both together.
+##</help>
+set -eu
+
+if [ "$#" -lt 2 ]; then
+    printf '%s\n' 'usage: sh deployment/prepare <absolute-output-directory> <service>...' >&2
+    exit 2
+fi
+output=$1
+shift
+for service in "$@"; do
+    case "$service" in
+        spellcheck|spellcheck-consumer)
+            ;;
+        *)
+            printf 'error: no deployment package configured for %s\n' "$service" >&2
+            exit 1
+            ;;
+    esac
+done
+cd "$(dirname "$0")/.."
+sh services/spellcheck/scripts/package "$output"

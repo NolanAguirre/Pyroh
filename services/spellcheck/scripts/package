@@ -1,12 +1,30 @@
 #!/bin/sh
+##<help>
+## package - Package the spellcheck API and consumer without local state.
+## Usage: sh scripts/package [absolute-output-directory]
+## Defaults to tmp/spellcheck-release beneath the repository root.
+##</help>
 set -eu
 
+[ "$#" -le 1 ] || {
+  printf '%s\n' 'usage: sh scripts/package [absolute-output-directory]' >&2
+  exit 2
+}
 service_dir="$(cd "$(dirname "$0")/.." && pwd)"
 project_dir="$(cd "$service_dir/../.." && pwd)"
-release_dir="$project_dir/tmp/spellcheck-release"
+release_dir=${1:-"$project_dir/tmp/spellcheck-release"}
+case "$release_dir" in
+  /*)
+    ;;
+  *)
+    printf '%s\n' 'error: output directory must be absolute' >&2
+    exit 2
+    ;;
+esac
 mkdir -p "$release_dir"
 staging_dir="$(mktemp -d "$release_dir/.package.XXXXXX")"
-trap 'rm -rf "$staging_dir"' EXIT
+trap 'rm -rf "$staging_dir"' 0
+trap 'exit 1' HUP INT TERM
 
 api_dir="$staging_dir/spellcheck"
 consumer_dir="$staging_dir/spellcheck-consumer"
