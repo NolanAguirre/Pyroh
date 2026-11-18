@@ -373,7 +373,7 @@ const analyzeSubagents = async (sessionId, rawAssumptions = '') => {
     '',
     conclusion,
     '',
-    'Estimate assumption: remove 13,000 startup input tokens once per descendant chat, carried through later retained history until it clears. Measured usage is unchanged.',
+    'Estimate: use original attributed turn inputs as new entries, subtract up to 13,000 from the first entry of each descendant chat, then sum cumulative request contexts. Retained output enters later context once. Allocated turns use uncertain synthetic positions. Removed turns are omitted and partial block removals use proportional estimates. Measured usage is unchanged.',
   ]
   if (withoutSubagents !== null && !replay.coverage.complete) lines.push('', 'The estimate is incomplete because some evidence is missing or uncertain.')
   lines.push('', `[Full details (JSON)](${artifact})`)
