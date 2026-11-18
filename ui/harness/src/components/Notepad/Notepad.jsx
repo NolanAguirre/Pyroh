@@ -43,8 +43,7 @@ const Notepad = ({ devId }) => {
       .catch((err) => setError(err.message))
   }
 
-  const onChange = (event) => {
-    const next = event.target.value
+  const updateText = (next) => {
     setText(next)
     if (pending.current) clearTimeout(pending.current.timer)
     const timer = setTimeout(() => {
@@ -53,6 +52,8 @@ const Notepad = ({ devId }) => {
     }, SAVE_DELAY_MS)
     pending.current = { timer, text: next }
   }
+
+  const onChange = (event) => updateText(event.target.value)
 
   const markdown = isMarkdown(text)
 
@@ -70,7 +71,7 @@ const Notepad = ({ devId }) => {
               field={{ value: text, onChange }}
             />
           </DevScope>
-          {markdown && <MarkdownPreview className="notepad__preview" text={text} />}
+          {markdown && <MarkdownPreview className="notepad__preview" text={text} onTextChange={loaded ? updateText : undefined} />}
         </div>
         {error && <DevScope id="2a8tbkp"><p className="notepad__error">{error}</p></DevScope>}
       </div>

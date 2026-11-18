@@ -154,8 +154,9 @@ Read the target file and at most one sibling view for patterns. Do not spawn a s
   },
   {
     id: 'makefileRules',
+    includeOnce: true,
     messageTypes: ['user'],
-    activation: { kind: 'Text trigger', condition: 'A user request to set up, add, create, update, or fix a Makefile, make rule, or make target. Applies to matching first messages and follow-ups; skipped on agent messages.' },
+    activation: { kind: 'Text trigger', condition: 'A user request to set up, add, create, update, or fix a Makefile, make rule, or make target. Applies to the first matching message in each conversation by default; skipped on agent messages.' },
     name: 'Makefile rules',
     group: 'flags',
     description: 'Prepended to matching messages with explicit forwarding and root Makefile requirements.',
@@ -168,8 +169,9 @@ Read the target file and at most one sibling view for patterns. Do not spawn a s
   },
   {
     id: 'makefileConventions',
+    includeOnce: true,
     messageTypes: ['user'],
-    activation: { kind: 'Text trigger', condition: 'A user prompt mentioning make rule, make rules, or Makefile, case-insensitively. Applies to matching first messages and follow-ups; skipped on agent messages.' },
+    activation: { kind: 'Text trigger', condition: 'A user prompt mentioning make rule, make rules, or Makefile, case-insensitively. Applies to the first matching message in each conversation by default; skipped on agent messages.' },
     name: 'Makefile conventions',
     group: 'flags',
     description: 'Prepended to matching messages with text-based Makefile help and rule maintenance conventions.',
