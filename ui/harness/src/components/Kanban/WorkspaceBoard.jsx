@@ -25,7 +25,7 @@ const WorkspaceBoard = ({ workspace, ...props }) => {
 
   if (error) return <div className="kanban__error-banner" role="alert">{error}<Button variant="secondary" size="sm" onClick={() => setAttempt((value) => value + 1)}>Retry</Button></div>
   if (!boardId) return <p className="kanban__loading" role="status">Loading workspace board…</p>
-  return <KanbanBoard key={boardId} {...props} scopedBoardId={boardId} workspaceId={id} />
+  return <KanbanBoard key={boardId} {...props} scopedBoardId={boardId} workspaceId={id} workspace={workspace} />
 }
 
 export default WorkspaceBoard

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   DropdownTypeahead,
   DropdownTypeaheadTrigger,
@@ -21,6 +21,8 @@ const NewSessionForm = ({
   title = 'New Session',
   submitLabel = 'Create Session',
   afterCreate,
+  reuseSessionOnRetry = false,
+  onBusyChange,
   popup,
   onCreated,
 }) => {
@@ -32,6 +34,8 @@ const NewSessionForm = ({
   const [claude, setClaude] = useState({ ...DEFAULT_CLAUDE_SETTINGS, ...defaults.claude })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const [createdSession, setCreatedSession] = useState(null)
+  const submissionLock = useRef(false)
 
   const selectedWorkspace = workspaces?.find((item) => item.id === workspaceId) || workspace
   const workspaceOptions = (workspaces || []).map((item) => ({ value: item.id, displayValue: item.name }))
@@ -61,15 +65,18 @@ const NewSessionForm = ({
   const selectedModel = current?.models?.find((entry) => entry.id === model) || current?.models?.[0]
 
   const submit = async () => {
+    if (submissionLock.current) return
     if (!selectedWorkspace) {
       setError('Create a workspace first')
       return
     }
+    submissionLock.current = true
     setBusy(true)
+    onBusyChange?.(true)
     setError(null)
     try {
       const chosenModel = model || current?.models?.[0]?.id || null
-      const { session } = await api.createSession({
+      const { session } = createdSession ? { session: createdSession } : await api.createSession({
         workspaceId: selectedWorkspace.id,
         provider,
         model: chosenModel,
@@ -77,13 +84,16 @@ const NewSessionForm = ({
         ...(provider === 'grok' ? { grok } : {}),
         ...(provider === 'claude' ? { claude } : {}),
       })
+      if (reuseSessionOnRetry) setCreatedSession(session)
       if (afterCreate) await afterCreate(session)
       if (onCreated) onCreated(session)
       if (popup && popup.close) popup.close()
     } catch (err) {
       setError(err.message)
     } finally {
+      submissionLock.current = false
       setBusy(false)
+      onBusyChange?.(false)
     }
   }
 
@@ -99,6 +109,7 @@ const NewSessionForm = ({
           )}
         </div>
 
+        <div className="new-session__settings" inert={busy || Boolean(createdSession)}>
         {workspaceOptions.length > 0 && (
           <DevScope id="w5k2n8r" state={{ workspaceId }}>
             <div className="field">
@@ -162,11 +173,13 @@ const NewSessionForm = ({
         {!implemented && (
           <p className="hint hint--warn">This provider is not implemented yet.</p>
         )}
-        {error && <p className="hint hint--error">{error}</p>}
+        </div>
+        {error && <p className="hint hint--error" role="alert">{error}</p>}
+        {error && createdSession && <p className="hint">Session {createdSession.id} already exists. Retry continues with this session.</p>}
 
         <div className="new-session__actions">
           {popup && (
-            <Button variant="ghost" size="sm" onClick={() => popup.close()} devId="q4v8b1e">
+            <Button variant="ghost" size="sm" disabled={busy} onClick={() => popup.close()} devId="q4v8b1e">
               Cancel
             </Button>
           )}
@@ -174,10 +187,10 @@ const NewSessionForm = ({
             variant="primary"
             onClick={submit}
             loading={busy}
-            disabled={!implemented || !selectedWorkspace || Boolean(current?.error)}
+            disabled={busy || !implemented || !selectedWorkspace || Boolean(current?.error)}
             devId="hr0x6m8"
           >
-            {submitLabel}
+            {error && createdSession ? 'Retry' : submitLabel}
           </Button>
         </div>
       </div>

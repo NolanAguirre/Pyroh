@@ -4,6 +4,7 @@ import { BOARDS_QUERY, archiveCard, mutate, moveCard, moveColumn, moveTask, move
 import TaskComments from './TaskComments'
 import TaskAttachments from './TaskAttachments'
 import CardRelationships from './CardRelationships'
+import CardAgentForm, { SpawnAgentButton } from './CardAgentForm'
 import { createCardHierarchy } from './hierarchy'
 import { Button, PopupDisplay, Matrix, FormInput, DevScope, Fold, FoldTrigger, FoldContent, SplitPane, useBrowserLocation } from 'component-library'
 import KanbanQuery from './KanbanQuery'
@@ -13,7 +14,7 @@ import AttachmentDropCard, { rejectFileDrop } from './AttachmentDropCard'
 
 
 
-const Editor = ({ devId, user, editor, boards, hierarchy, busy, error, onSave, onDelete, onArchive, onOpenCard, onCommentChange, popup }) => {
+const Editor = ({ devId, user, editor, boards, hierarchy, busy, error, onSave, onDelete, onArchive, onOpenCard, onCommentChange, onSaveAndSpawn, workspace, popup }) => {
   const [title, setTitle] = useState(editor.item.title || '')
   const [description, setDescription] = useState(editor.item.description || '')
   const [boardId, setBoardId] = useState(editor.boardId || '')
@@ -77,10 +78,12 @@ const Editor = ({ devId, user, editor, boards, hierarchy, busy, error, onSave, o
           </div>
           {editor.item.id && <DevScope id="w22yyj6" state={{ card: editor.item.id }}><CardRelationships card={hierarchy.getCard(editor.item.id) || editor.item} hierarchy={hierarchy} busy={busy} onOpenCard={onOpenCard} expanded /></DevScope>}
         </>}
+        {editor.kind === 'card' && (!description.trim() || !workspace) && <p className="kanban__advanced-hint">{!workspace ? 'Select a workspace to spawn an agent.' : 'Add a description to spawn an agent.'}</p>}
         {error && <p role="alert" className="kanban__error">{error}</p>}
         <div className="kanban__editor-actions">
           {editor.item.id && <Button type="button" variant="danger" size="sm" onClick={onDelete} devId="ce03obf">Delete {noun}</Button>}
           {editor.kind === 'card' && editor.item.id && <Button type="button" variant="secondary" size="sm" onClick={onArchive} devId="ilzmmz9">{editor.item.archivedAt ? 'Restore card' : 'Archive card'}</Button>}
+          {editor.kind === 'card' && <Button type="button" variant="secondary" size="sm" disabled={!workspace || !title.trim() || !description.trim() || !validColumn} onClick={() => onSaveAndSpawn({ title: title.trim(), description, columnId, parentId: parentId || null, epic: epicLocked || epic })}>Save and spawn agent</Button>}
           <span />
           <Button type="button" variant="secondary" size="sm" onClick={popup.close} devId="43vqubf">Cancel</Button>
           <Button type="submit" size="sm" disabled={!title.trim() || !validColumn} devId="wd0pmd7">{busy ? 'Saving…' : 'Save'}</Button>
@@ -103,7 +106,7 @@ const rememberedBoard = () => {
 const activeCards = (column) => column.cardsByColumnId.nodes.filter((card) => !card.archivedAt)
 const columnKey = (column) => column.title.trim().toLowerCase()
 
-const ProjectMatrix = ({ devId, boards, hierarchy, busy, matchesCard, searching, onSelectBoard, onOpenCard, onMoveCard }) => {
+const ProjectMatrix = ({ devId, boards, hierarchy, busy, matchesCard, searching, onSelectBoard, onOpenCard, onSpawn, onMoveCard }) => {
   const [dropTarget, setDropTarget] = useState(null)
   const { dragged, dragRef, clearDrag, getDragProps } = useCardDrag(busy, () => setDropTarget(null))
   const columns = []
@@ -164,6 +167,7 @@ const ProjectMatrix = ({ devId, boards, hierarchy, busy, matchesCard, searching,
               <button className="kanban__card-content" draggable={!busy} disabled={busy} onClick={() => onOpenCard(project.id, card)}><span>{card.title}</span>{card.description && <small>{card.description}</small>}<small>By {card.userByAuthorId?.name || 'Unknown author'}</small></button>
             </DevScope>
             <CardRelationships card={card} hierarchy={hierarchy} busy={busy} onOpenCard={onOpenCard} />
+            <div className="kanban__card-actions"><SpawnAgentButton card={card} busy={busy} onSpawn={onSpawn} /></div>
           </AttachmentDropCard>
         </DevScope>)}
       </div>
@@ -174,7 +178,7 @@ const BoardLayout = ({ scoped, children }) => {
   return <SplitPane devId="7tb882x" defaultSize={236} minSize={200} maxSize={480} storageKey="kanban-sidebar-width" stackBelow={760} stackedSize="auto">{children}</SplitPane>
 }
 
-const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = '', workspaceId }) => {
+const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = '', workspaceId, workspace, providers = [], onCreated }) => {
   const { url, navigate } = useBrowserLocation()
   const [scopedTaskId, setScopedTaskId] = useState('')
   const route = scopedBoardId
@@ -190,7 +194,13 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = 
     ? boards.find((item) => item.id === route.boardId) || null
     : boards.find((item) => item.id === rememberedBoard()) || boards[0] || null
   const activeId = board?.id || ''
-  const [busy, setBusy] = useState(false)
+  const [saving, setBusy] = useState(false)
+  const [spawning, setSpawning] = useState(false)
+  const [spawnTarget, setSpawnTarget] = useState(null)
+  const [agentNotice, setAgentNotice] = useState('')
+  const busy = saving || spawning
+  const currentData = useRef({ boards, hierarchy })
+  currentData.current = { boards, hierarchy }
   const [error, setError] = useState('')
   const [editorKind, setEditorKind] = useState('')
   const [editorId, setEditorId] = useState('')
@@ -278,9 +288,49 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = 
     if (kind === 'card' && item.id) navigateTo({ boardId, taskId: item.id })
     else setEditor({ kind, item })
   }
-  const save = ({ title, description, columnId, parentId, epic }) => {
+  const spawnDestination = (card, currentBoards) => {
+    const sourceBoard = currentBoards.find((item) => item.boardColumnsByBoardId.nodes.some((column) => column.id === card.columnId))
+    if (!sourceBoard) throw new Error('The card’s board could not be found.')
+    const sourceColumns = sourceBoard.boardColumnsByBoardId.nodes
+    const source = sourceColumns.find((column) => column.id === card.columnId)
+    if (!['to do', 'todo'].includes(columnKey(source))) return null
+    const target = sourceColumns.find((column) => columnKey(column) === 'in progress')
+    if (!target) throw new Error('Add an In progress column to this board before spawning an agent.')
+    return { boardId: sourceBoard.id, columnId: target.id }
+  }
+  const openSpawn = (card) => {
+    if (mutationLock.current) return
+    setError('')
+    setAgentNotice('')
+    try {
+      if (!workspace) throw new Error('Select a workspace to spawn an agent.')
+      if (!card.description?.trim()) throw new Error('Add and save a description before spawning an agent.')
+      spawnDestination(card, boards)
+      setSpawnTarget({ card, workspace, providers })
+    } catch (failure) {
+      setError(failure.message)
+    }
+  }
+  const markAgentStarted = async (savedCard) => {
+    const current = currentData.current
+    const card = current.hierarchy.getCard(savedCard.id)
+    if (!card) throw new Error('The card could not be found.')
+    const target = spawnDestination(card, current.boards)
+    if (!target) return
+    if (card.parentId) await moveTask(card.id, target.columnId, card.parentId, null, target.boardId)
+    else await moveCard(card.id, target.columnId, null, target.boardId)
+  }
+  const setAgentBusy = (value) => {
+    mutationLock.current = value
+    setSpawning(value)
+  }
+  const save = async ({ title, description, columnId, parentId, epic }, { spawn = false } = {}) => {
+    if (spawn && !description?.trim()) {
+      setError('Add a description before spawning an agent.')
+      return
+    }
     const destination = editor.kind === 'card' ? boards.find((board) => board.boardColumnsByBoardId.nodes.some((column) => column.id === columnId)) : null
-    return change(() => {
+    const result = await change(() => {
       const { kind, item } = editor
       if (kind === 'card') {
         if (!destination) throw new Error('Choose a board with a valid column before saving.')
@@ -296,6 +346,12 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = 
       if (item.id) return mutate(`update${type}ById`, `Update${type}ByIdInput`, { id: item.id, [`${kind}Patch`]: { title } }, undefined, kind === 'board' ? undefined : activeId)
       return mutate(`create${type}`, `Create${type}Input`, { [kind]: { title, ...(kind === 'boardColumn' ? { boardId: activeId } : {}) } }, undefined, kind === 'board' ? undefined : activeId)
     }, { close: true, boardId: destination?.id })
+    if (spawn && result) {
+      const card = result.saveCardWithParent?.card || result.createCard?.card
+      if (card) openSpawn(card)
+      else setError('The card was saved, but could not be loaded to spawn an agent. Open it and try again.')
+    }
+    return result
   }
   const remove = ({ kind, item }) => {
     const noun = kind === 'boardColumn' ? 'column' : kind
@@ -312,7 +368,7 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = 
         <div className="kanban__workspace">
           <BoardLayout scoped={Boolean(scopedBoardId)}>
           <DevScope id="j56xrh1">
-          <aside className="kanban__sidebar" inert={Boolean(editor)}>
+          <aside className="kanban__sidebar" inert={Boolean(editor || spawnTarget)}>
             <div className="kanban__brand"><span aria-hidden="true">▥</span> Kanban</div>
             <div className="kanban__board-views" role="group" aria-label="Workspace view">
               <Button variant={view === 'board' ? 'primary' : 'ghost'} size="sm" aria-pressed={view === 'board'} disabled={busy} onClick={() => navigateTo({ view: 'board' })} devId="707ej5f">Board</Button>
@@ -340,7 +396,7 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = 
             <div className="kanban__sidebar-footer"><span>Signed in as <strong>{user.name}</strong></span><Button variant="secondary" size="sm" disabled={busy} onClick={onSwitchUser} devId="yen2yfb">Switch user</Button></div>
           </aside>
           </DevScope>
-          <main className="kanban__main" inert={Boolean(editor)} onDragOver={rejectFileDrop} onDrop={rejectFileDrop}>
+          <main className="kanban__main" inert={Boolean(editor || spawnTarget)} onDragOver={rejectFileDrop} onDrop={rejectFileDrop}>
             <header className="kanban__board-header">
               <div className="kanban__eyebrow">{scopedBoardId ? board?.title || 'Workspace board' : `MY WORKSPACE / ${view === 'matrix' ? 'MATRIX' : 'BOARD'}`}</div>
               <DevScope id="86i9hrw"><FormInput type="search" className="kanban__search" field={{ value: search, onChange: (event) => setSearch(event.target.value) }} aria-label={view === 'matrix' ? 'Search cards across all projects' : 'Search cards on this board'} placeholder={view === 'matrix' ? 'Search all projects’ cards…' : 'Search this board’s cards…'} /></DevScope>
@@ -349,12 +405,13 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = 
               {scopedBoardId && board && <a className="kanban__expand" href={fullPageUrl.href} aria-label={`Open ${board.title} full page`}>Full page <span aria-hidden="true">↗</span></a>}
             </header>
             {error && !editor && <div className="kanban__error-banner" role="alert">{error}<Button variant="secondary" size="sm" disabled={busy} onClick={() => setError('')} devId="vva6h9m">Dismiss</Button></div>}
+            {agentNotice && <p role="status">{agentNotice}</p>}
             {routeError && <div className="kanban__error-banner" role="alert">{routeError}</div>}
             {query && matchingCount === 0 && <p className="kanban__search-empty" role="status">No matching cards. Try another search or clear the search.</p>}
             {!board && !error && !routeError && <div className="kanban__empty-state"><span aria-hidden="true">▥</span><h2>A little space to get things done.</h2><p>Create a board for your next project.</p><Button onClick={() => openEditor('board')} devId="gh69869">Create a board</Button></div>}
-            {view === 'matrix' && boards.length > 0 && <ProjectMatrix devId="dg0n347" boards={boards} hierarchy={hierarchy} busy={busy} matchesCard={matchesCard} searching={Boolean(query)} onSelectBoard={selectBoard} onOpenCard={(boardId, item) => openEditor('card', item, boardId)} onMoveCard={(cardId, columnId, beforeCardId, boardId) => change(() => moveCard(cardId, columnId, beforeCardId, boardId))} />}
+            {view === 'matrix' && boards.length > 0 && <ProjectMatrix devId="dg0n347" boards={boards} hierarchy={hierarchy} busy={busy} matchesCard={matchesCard} searching={Boolean(query)} onSelectBoard={selectBoard} onSpawn={openSpawn} onOpenCard={(boardId, item) => openEditor('card', item, boardId)} onMoveCard={(cardId, columnId, beforeCardId, boardId) => change(() => moveCard(cardId, columnId, beforeCardId, boardId))} />}
             {view === 'board' && board && <KanbanRows key={board.id} board={board} hierarchy={hierarchy} busy={busy} searching={Boolean(query)} matchesCard={matchesCard}
-              onOpenCard={(boardId, item) => openEditor('card', item, boardId)} onNewCard={(item) => openEditor('card', item)}
+              onSpawn={openSpawn} onOpenCard={(boardId, item) => openEditor('card', item, boardId)} onNewCard={(item) => openEditor('card', item)}
               onEditColumn={(column) => openEditor('boardColumn', column)} onNewColumn={() => openEditor('boardColumn')}
               onMoveColumn={(columnId, beforeColumnId) => change(() => moveColumn(columnId, beforeColumnId, activeId))} onArchive={toggleArchive}
               onMoveCard={(cardId, columnId, beforeCardId) => change(() => moveCard(cardId, columnId, beforeCardId, activeId))}
@@ -363,7 +420,14 @@ const BoardWorkspace = ({ devId, user, onSwitchUser, allBoards, scopedBoardId = 
           </main>
           </BoardLayout>
           <PopupDisplay backdropDevId="v3varah" closeDevId="dhzhr12" contentDevId="tsk9wm9" devId="2foeazy" isOpen={Boolean(editor)} close={() => { if (!busy) closeEditor() }} lockScroll={!scopedBoardId} panelClassName="kanban__editor">
-            {editor ? <Editor devId="z22w4qd" user={user} key={`${editor.kind}-${editor.item.id || 'new'}`} editor={editor} boards={boards} hierarchy={hierarchy} busy={busy} error={error} onSave={save} onDelete={() => remove(editor)} onArchive={() => toggleArchive(editor.item, { close: !editor.item.archivedAt })} onOpenCard={(boardId, item) => openEditor('card', item, boardId)} onCommentChange={change} /> : <span />}
+            {editor ? <Editor devId="z22w4qd" user={user} key={`${editor.kind}-${editor.item.id || 'new'}`} editor={editor} boards={boards} hierarchy={hierarchy} busy={busy} error={error} workspace={workspace} onSave={save} onSaveAndSpawn={(values) => save(values, { spawn: true })} onDelete={() => remove(editor)} onArchive={() => toggleArchive(editor.item, { close: !editor.item.archivedAt })} onOpenCard={(boardId, item) => openEditor('card', item, boardId)} onCommentChange={change} /> : <span />}
+          </PopupDisplay>
+          <PopupDisplay devId="kbspawn" isOpen={Boolean(spawnTarget)} close={() => { if (!mutationLock.current) setSpawnTarget(null) }} lockScroll={!scopedBoardId} panelClassName="new-session-panel">
+            {spawnTarget ? <CardAgentForm key={`${spawnTarget.workspace.id}:${spawnTarget.card.id}`} {...spawnTarget} onStarted={markAgentStarted} onBusyChange={setAgentBusy} onCreated={(session) => {
+              onCreated?.(session, { stay: true })
+              setAgentNotice(`Agent started for ${spawnTarget.card.title}.`)
+              setSpawnTarget(null)
+            }} /> : <span />}
           </PopupDisplay>
         </div>
       </DevScope>

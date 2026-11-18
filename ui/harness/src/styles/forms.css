@@ -123,6 +123,12 @@
   gap: 4px;
 }
 
+.new-session__settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
 .new-session__header h2 {
   margin: 0;
   font-size: 16px;

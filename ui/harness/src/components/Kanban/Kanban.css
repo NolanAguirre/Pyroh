@@ -61,7 +61,7 @@
 .kanban__card-content > span { font-size: 1rem; font-weight: 550; color: #fff; }
 .kanban__card-content small { color: #c5ccd6; font-size: .875rem; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .kanban__card-footer { display: flex; align-items: center; justify-content: space-between; padding: 0 0.625rem 0.625rem 0.875rem; gap: 0.5rem; }
-.kanban__card-actions { display: flex; align-items: center; gap: 0.25rem; }
+.kanban__card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
 .kanban__archived-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.25rem; }
 .kanban__archived-cards > li { display: flex; align-items: center; gap: 0.5rem; }
 .kanban__archived-title { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 0.25rem 0.125rem; color: #c5ccd6; font: inherit; font-size: .8125rem; cursor: pointer; overflow-wrap: anywhere; }

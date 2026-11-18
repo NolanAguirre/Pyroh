@@ -32,7 +32,7 @@ export const createPanelComponents = ({
   closePanel,
 }) => ({
   kanban: () => {
-    return <KanbanView devId="c2yy0pk" onBack={() => closePanel('kanban')} />
+    return <KanbanView devId="c2yy0pk" workspace={workspace} providers={providers} onCreated={onCreated} onBack={() => closePanel('kanban')} />
   },
   analytics: () => (
     <AnalyticsView

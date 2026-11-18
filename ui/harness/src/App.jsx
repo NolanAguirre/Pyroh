@@ -328,7 +328,7 @@ const App = () => {
           <DesktopLayout sidebar={sidebar} main={mainPane} jobs={jobsNav} jobsCollapsed={jobsCollapsed} />
         )}
         <PopupDisplay isOpen={kanbanOpen} close={() => setKanbanOpen(false)} closeOnEscape={false} showClose={false} lockScroll panelClassName="kanban__popup">
-          <KanbanView key={activeWorkspaceId || 'no-workspace'} devId="wkboard" scoped workspace={workspace} onBack={() => setKanbanOpen(false)} />
+          <KanbanView key={activeWorkspaceId || 'no-workspace'} devId="wkboard" scoped workspace={workspace} providers={providers} onCreated={onCreated} onBack={() => setKanbanOpen(false)} />
         </PopupDisplay>
       </DevScope>
     </DevInspector>
