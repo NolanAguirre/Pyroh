@@ -13,6 +13,7 @@ const prompts = require('../prompts')
 const { promptIds, appliedPromptIds } = require('../prompt/inclusions')
 const { sessionModel } = require('../prompt/context')
 const { actionsForPrompt, triggerMcpServers, prependNotesWithProvenance } = require('../prompt/actions')
+const { publishPrompt } = require('./promptPublisher')
 
 const addUsage = (total, usage) => {
   if (!usage) return total
@@ -342,6 +343,17 @@ const runOneTurn = async ({
         images: segmentImages,
         promptProvenance: sendPrompt,
         onEvent: event => handleEvent(event, collector) }
+      // Publish the final segment once, including notes and any fork history.
+      // A follow-up transport retry retains the same segment and published prompt.
+      await publishPrompt(provenance.capture(sendPrompt, {
+        sessionId: session.id, runId, segmentId: collector.segmentId,
+        provider: session.provider, providerAgentId, workspaceId: session.workspaceId,
+        parentSessionId: session.parentSessionId, parentRunId: session.parentRunId,
+        childKind: session.childKind, depth, action, mode, logicalMode,
+        followUp: !firstSend, promptContext: options.promptContext,
+        instructions: options.instructions,
+        images: segmentImages.map(({ id, sessionId, name, mimeType, size }) => ({ id, sessionId, name, mimeType, size })),
+      }))
       const inflight = firstSend ? await driver.send(sendPrompt.text, options) : await sendFollowUp(sendPrompt.text, options)
       historySent = true
       if (historyObserved) markHistorySeeded()

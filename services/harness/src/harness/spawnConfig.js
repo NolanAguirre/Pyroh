@@ -30,4 +30,5 @@ if (!Number.isSafeInteger(timeout) || timeout < 1000 || timeout > 300000) {
 
 const storageKey = createHash('sha256').update(`${config.writeDir}\n${config.dbPath}`).digest('hex').slice(0, 24)
 
-module.exports = { servers, timeout, subject: `harness.agent-spawn.${storageKey}.v1` }
+module.exports = { servers, timeout, subject: `harness.agent-spawn.${storageKey}.v1`,
+  promptSubject: `harness.agent-prompt.${storageKey}.v1` }
