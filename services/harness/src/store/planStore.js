@@ -2,6 +2,7 @@ const fs = require('fs')
 const path = require('path')
 const paths = require('./paths')
 const runIndexStore = require('./runIndexStore')
+const { writeRun } = require('./runLifecycle')
 const { readJson, writeJson, ensureDir } = require('./jsonFile')
 const { loadSession } = require('./sessionRecord')
 const { persistRecordPrompt, readRecordPrompt } = require('./recordPrompt')
@@ -51,8 +52,7 @@ const readPhasePlan = (sessionId, phase, writeDir) => {
 
 const writeStepRun = (sessionId, { phase, stepId }, record, writeDir) => {
   const file = paths.stepRunFile(sessionId, phase, stepId, writeDir)
-  const stored = persistRecordPrompt(file, record)
-  writeJson(file, stored)
+  const stored = writeRun(file, persistRecordPrompt(file, record), writeDir)
   runIndexStore.recordRun(stored, loadSession(sessionId, writeDir), writeDir, file)
   return stored
 }

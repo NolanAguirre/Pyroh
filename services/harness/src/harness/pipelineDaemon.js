@@ -8,7 +8,7 @@ const { errorMessage, formatError } = require('../store/formatError')
 const { failureStatus } = require('../store/networkError')
 const { runWorkflowTurn } = require('./workflow')
 const { attachLog, readControlIntent, clearControl, removePid } = require('./daemon')
-const analytics = require('../analytics/client')
+const runLifecycle = require('../store/runLifecycle')
 const registry = require('../registry')
 const prompts = require('../prompts')
 
@@ -61,7 +61,7 @@ const shouldSkip = (resume, currentPhase, currentStep, itemPhase, itemStepId, or
 
 const runPipelineDaemon = async ({ sessionId, mode, resume = false }) => {
   const writeDir = config.writeDir
-  require('../store/sessionLock').acquire(sessionId, writeDir)
+  const sessionLease = require('../store/sessionLock').acquire(sessionId, writeDir)
   const log = attachLog(sessionId, writeDir)
   const logLine = (msg) => process.stdout.write(`[${new Date().toISOString()}] ${msg}\n`)
 
@@ -116,8 +116,10 @@ const runPipelineDaemon = async ({ sessionId, mode, resume = false }) => {
       logLine(`finalize failed: ${formatError(err)}`)
     }
     log.end()
-    // Covers failed steps and lets a step notify still in flight land before exit.
-    analytics.notifySession(sessionId).finally(() => process.exit(exitCode))
+    sessionLease.release()
+    runLifecycle.flush(writeDir).catch(err => {
+      logLine(`lifecycle publication failed: ${formatError(err)}`)
+    }).finally(() => process.exit(exitCode))
   }
 
   const fail = (err, extra = {}, exitCode = 2) => {

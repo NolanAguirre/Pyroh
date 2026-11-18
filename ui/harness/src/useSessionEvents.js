@@ -55,6 +55,19 @@ const useSessionEvents = (sessionId) => {
       lastOffset = 0
       setEvents([])
     })
+    const lifecycleIds = new Set()
+    source.addEventListener('lifecycle', (e) => {
+      const snapshot = JSON.parse(e.data)
+      const event = snapshot.event
+      if (event?.version !== 1 || lifecycleIds.has(event.eventId)) return
+      lifecycleIds.add(event.eventId)
+      if (lifecycleIds.size > 1000) lifecycleIds.delete(lifecycleIds.values().next().value)
+      // The server reads current disk state after NATS delivery, including when
+      // a delayed terminal event arrives after a continuation has already begun.
+      setSession(api.adoptSession(sessionId, snapshot.session))
+      setRuns(snapshot.runs)
+      if (event.type !== 'started') flushEvents()
+    })
     source.addEventListener('session', (e) => setSession(api.adoptSession(sessionId, JSON.parse(e.data))))
     source.addEventListener('runs', (e) => setRuns(JSON.parse(e.data)))
     source.addEventListener('queuedMessages', (e) => setQueuedMessages(JSON.parse(e.data)))

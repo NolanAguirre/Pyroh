@@ -436,16 +436,17 @@ const settleSubagentParent = (sessionId) => {
 
 // The queue is independent of archive/idle state: later messages stay cheap,
 // while child results and interrupted deliveries survive server restarts.
-const recover = async () => {
+const recover = async ({ sessionIds } = {}) => {
   if (recovering) return
   recovering = true
   try {
     await seedPending()
     for (const session of require('../store/sessionIndex').query({ statuses: ['running', 'awaiting_input'], includeArchived: true })) {
+      if (sessionIds && !sessionIds.includes(session.id)) continue
       recoverIdleOwner(session)
       await new Promise(resolve => setImmediate(resolve))
     }
-    for (const sessionId of listNames(pendingDir())) {
+    for (const sessionId of sessionIds || listNames(pendingDir())) {
       try {
         if (!store.loadSession(sessionId, config.writeDir)) continue
         for (const { runId, state } of pendingStatesFor(sessionId)) {

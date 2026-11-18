@@ -8,6 +8,8 @@ const questionStore = require('../store/questionStore')
 const queuedMessageStore = require('../store/queuedMessageStore')
 const submissionStore = require('../store/submissionStore')
 const { readForkHistory } = require('../harness/fork')
+const { createRunLifecycleConsumer } = require('../harness/runLifecycleConsumer')
+const transport = require('../harness/spawnConfig')
 
 const feeds = new Map()
 const fingerprint = (stat) => stat ? `${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}` : 'missing'
@@ -36,6 +38,7 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
   const frames = new Map()
   const dirty = new Set(Object.keys(locations))
   let session = initialSession
+  let runs = []
   let children = []
   let submissions = []
   let events = { stamp: 'missing', size: 0 }
@@ -84,6 +87,8 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
     const requested = new Set(dirty)
     dirty.clear()
     refreshing = (async () => {
+      // Lifecycle frames are live invalidations, not a stale snapshot to replay.
+      frames.delete('lifecycle')
       const entries = await Promise.all(Object.entries(locations).map(async ([type, file]) =>
         [type, await statOrMissing(file)]))
       const changed = new Set(entries.filter(([type, stat]) =>
@@ -111,6 +116,7 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
           if (!value) continue
           session = value
         }
+        if (type === 'runs') runs = value
         if (type === 'children') children = value
         if (type === 'submissions') submissions = value
         const frame = `event: ${type}\ndata: ${JSON.stringify(value)}\n\n`
@@ -148,6 +154,17 @@ const createFeed = (sessionId, writeDir, initialSession, onDispose) => {
   const poll = setInterval(() => { refresh().catch(() => {}) }, 1000)
   return {
     refresh,
+    lifecycle: async (event) => {
+      for (const type of ['session', 'runs', 'children', 'questions']) dirty.add(type)
+      await refresh()
+      // An already-running read may predate the lifecycle notification.
+      if (dirty.size) await refresh()
+      if (disposed) return
+      frames.set('lifecycle', `event: lifecycle\ndata: ${JSON.stringify({
+        event, sessionId, session, runs,
+      })}\n\n`)
+      for (const listener of listeners) listener()
+    },
     snapshot: () => ({ ready, frames: new Map(frames), events }),
     subscribe: (listener) => {
       listeners.add(listener)
@@ -284,4 +301,19 @@ const streamSession = async (req, res, sessionId) => {
   }, 15000)
 }
 
-module.exports = { streamSession }
+const startLifecycle = () => {
+  const consumer = createRunLifecycleConsumer({
+    transport, name: 'harness-sse-lifecycle',
+    onEvent: async event => {
+      const ids = new Set([event.sessionId, event.parentSessionId].filter(Boolean))
+      await Promise.all([...ids].map(id => feeds.get(`${config.writeDir}\0${id}`)?.lifecycle(event)))
+    },
+    onReconnect: async () => {
+      await Promise.all([...feeds.values()].map(feed => feed.refresh()))
+    },
+  })
+  consumer.start()
+  return consumer.stop
+}
+
+module.exports = { streamSession, startLifecycle }

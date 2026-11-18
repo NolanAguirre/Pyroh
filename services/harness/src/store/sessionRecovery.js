@@ -2,6 +2,7 @@ const fs = require('fs')
 const path = require('path')
 const paths = require('./paths')
 const runIndexStore = require('./runIndexStore')
+const { writeRun } = require('./runLifecycle')
 const { readJson, writeJson } = require('./jsonFile')
 const { loadSession, updateSession } = require('./sessionRecord')
 const { usageDir, receiptDir, runRecords, rebuildTotals } = require('./usageStore')
@@ -33,6 +34,7 @@ const recoverSession = (sessionId, writeDir, { excludeRunId } = {}) => {
   let interrupted = false
   let latestUsage = null
   let recoveryError = null
+  let repairedUsage = false
   const rememberError = (message, record, at) => {
     if (!recoveryError || at >= recoveryError.at) recoveryError = { message, runId: record.id, at }
     require('./eventLog').append(sessionId, { type: 'error', message, runId: record.id }, writeDir)
@@ -52,6 +54,7 @@ const recoverSession = (sessionId, writeDir, { excludeRunId } = {}) => {
         transcriptStatus: 'incomplete', transcriptError: 'Daemon stopped before the run finished streaming events' }
     }
     if (receipt && (!record.endedAt || (!record.usage && !record.receiptRecovered))) {
+      if (record.endedAt) repairedUsage = true
       beforeChange()
       const endedAt = receipt.endedAt || Date.now()
       const durationMs = receipt.durationMs || Math.max(0, endedAt - record.startedAt)
@@ -62,7 +65,7 @@ const recoverSession = (sessionId, writeDir, { excludeRunId } = {}) => {
       const next = { ...record, status, endedAt, durationMs, receiptRecovered: true, usage: receipt.usage ?? record.usage ?? null,
         result: receipt.result, error: receipt.error || receipt.transcriptError || null,
         transcriptStatus: receipt.transcriptStatus, transcriptError: receipt.transcriptError }
-      writeJson(file, next)
+      writeRun(file, next, writeDir)
       runIndexStore.recordRun(next, session, writeDir, file)
       require('../harness/delegation').closeRun(sessionId, record.id)
       if (receipt.providerUsage && (!latestUsage || endedAt > latestUsage.endedAt)) latestUsage = { endedAt, value: receipt.providerUsage }
@@ -82,7 +85,7 @@ const recoverSession = (sessionId, writeDir, { excludeRunId } = {}) => {
       const next = { ...record, status: 'interrupted', endedAt,
         usage: sdk?.usage || record.usage, providerRunId: sdk?.runId || record.providerRunId,
         transcriptStatus: 'incomplete', error: message }
-      writeJson(file, next)
+      writeRun(file, next, writeDir)
       runIndexStore.recordRun(next, session, writeDir, file)
       require('../harness/delegation').closeRun(sessionId, record.id)
       rememberError(message, record, endedAt)
@@ -96,7 +99,7 @@ const recoverSession = (sessionId, writeDir, { excludeRunId } = {}) => {
   // A durable marker covers a crash between repairing a run and its totals/index.
   const recovered = changed || retryRecovery ? rebuildTotals(sessionId, writeDir) : loadSession(sessionId, writeDir)
   if (changed || retryRecovery) fs.rmSync(pendingFile, { force: true })
-  if (session.parentRunId && (interrupted || recoveryError)) require('../analytics/client').notifySession(sessionId)
+  if (repairedUsage) require('../analytics/client').notifySession(sessionId)
   return recovered
 }
 

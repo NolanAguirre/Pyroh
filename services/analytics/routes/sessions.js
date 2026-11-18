@@ -120,7 +120,7 @@ const createSessionsRouter = ({ queue }) => {
     })
   })
 
-  // Harness hook after a run: sync one session and queue its stale metrics.
+  // Explicit resync and late usage repair also use this endpoint.
   router.post('/:id/notify', async (req, res) => {
     const id = await sync.syncSession(req.params.id)
     if (!id) return res.status(404).json({ error: `session not found: ${req.params.id}` })

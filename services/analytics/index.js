@@ -1,7 +1,7 @@
 const express = require('express')
 const config = require('./lib/config')
 const db = require('./lib/db')
-const sync = require('./lib/sync')
+const { createLifecycle } = require('./lib/runLifecycle')
 const { createJobQueue } = require('./lib/jobs')
 const healthRouter = require('./routes/health')
 const createSyncRouter = require('./routes/sync')
@@ -14,6 +14,7 @@ const aggregateRouter = require('./routes/aggregate')
 const analyzeSubagentRouter = require('./routes/analyzeSubagent')
 
 const queue = createJobQueue({ concurrency: config.computeConcurrency })
+const lifecycle = createLifecycle({ queue })
 
 const app = express()
 
@@ -38,9 +39,7 @@ app.use((err, _req, res, _next) => {
 // everything that changed while the service was down.
 const startup = async () => {
   await queue.recover()
-  const ids = await sync.syncAll()
-  const job = await queue.enqueue({ kind: 'startup', params: {}, pairs: await sync.stalePairs({ sessionIds: ids }) })
-  console.log(`analytics: synced ${ids.length} sessions, job ${job.id} computing ${job.total} stale results`)
+  if (!stopping) lifecycle.start()
 }
 
 const server = app.listen(config.port, config.host, () => {
@@ -56,7 +55,7 @@ const shutdown = (signal) => {
   }
   stopping = true
   console.log(`Received ${signal}, shutting down`)
-  server.close(() => db.close().finally(() => process.exit(0)))
+  server.close(() => lifecycle.stop().finally(() => db.close().finally(() => process.exit(0))))
   server.closeAllConnections()
   setTimeout(() => process.exit(1), 8000).unref()
 }

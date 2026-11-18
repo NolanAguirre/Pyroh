@@ -3,10 +3,11 @@ const path = require('path')
 const paths = require('./paths')
 const runIndexStore = require('./runIndexStore')
 const chatInteractionStore = require('./chatInteractionStore')
-const { readJson, readJsonAsync, writeJson } = require('./jsonFile')
+const { readJson, readJsonAsync } = require('./jsonFile')
 const { genId, loadSession } = require('./sessionRecord')
 const { writePromptFile, persistRecordPrompt, readRecordPrompt, readRecordPromptAsync } = require('./recordPrompt')
 const { isDelegatedChild, detachDelegation } = require('./delegationBoundary')
+const { writeRun } = require('./runLifecycle')
 
 const createRun = (sessionId, { mode, prompt, images, promptProvenance, handoff, plugin, delegationDelivery, queuedMessage, localCommand, userSentAt }, writeDir) => {
   let session = loadSession(sessionId, writeDir)
@@ -64,7 +65,7 @@ const createRun = (sessionId, { mode, prompt, images, promptProvenance, handoff,
     result: null,
     error: null,
   })
-  writeJson(file, run)
+  writeRun(file, run, writeDir)
   if (interactionAt) chatInteractionStore.recordUser(sessionId, interactionAt, writeDir)
   runIndexStore.recordRun(run, loadSession(sessionId, writeDir), writeDir, file)
   return run
@@ -124,8 +125,7 @@ const updateRun = (sessionId, runId, patch, writeDir) => {
   const run = loadRun(sessionId, runId, writeDir)
   if (!run) throw new Error(`run not found: ${runId}`)
   const file = paths.runFile(sessionId, runId, writeDir)
-  const next = persistRecordPrompt(file, { ...run, ...patch })
-  writeJson(file, next)
+  const next = writeRun(file, persistRecordPrompt(file, { ...run, ...patch }), writeDir)
   runIndexStore.recordRun(next, loadSession(sessionId, writeDir), writeDir, file)
   return next
 }

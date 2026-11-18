@@ -1,6 +1,8 @@
 const path = require('path')
 const { fork } = require('child_process')
 const config = require('../config')
+const { createRunLifecycleConsumer } = require('../harness/runLifecycleConsumer')
+const transport = require('../harness/spawnConfig')
 
 // Internal worker, not another service: it shares configuration and dies when
 // the API's IPC channel closes. Agent daemons retain their existing lifecycle.
@@ -64,7 +66,23 @@ const runMaintenance = () => {
     run()
     setInterval(run, interval)
   }
-  process.once('disconnect', () => process.exit(0))
+  const lifecycle = createRunLifecycleConsumer({
+    transport, name: 'harness-parent-lifecycle',
+    onEvent: async event => {
+      if (event.type === 'started' || event.scope === 'step') return
+      await initiallyReconciled
+      await require('../harness/delegation').recover({
+        sessionIds: [...new Set([event.sessionId, event.parentSessionId].filter(Boolean))],
+      })
+    },
+    onReconnect: async () => {
+      await initiallyReconciled
+      await require('../harness/delegation').recover()
+    },
+  })
+  lifecycle.start()
+  process.once('disconnect', () => { lifecycle.stop().finally(() => process.exit(0)) })
+  schedule('run lifecycle publish', 1000, () => require('../store/runLifecycle').flush(config.writeDir))
   schedule('session index reconcile', 60000, async () => {
     await require('../store/sessionIndex').reconcile(config.writeDir)
     markReconciled()

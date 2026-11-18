@@ -11,7 +11,7 @@ const { errorMessage, formatError } = require('../store/formatError')
 const { failureStatus } = require('../store/networkError')
 const { runOneTurn } = require('./runTurn')
 const registry = require('../registry')
-const analytics = require('../analytics/client')
+const runLifecycle = require('../store/runLifecycle')
 
 const attachedLogs = new Set()
 
@@ -61,7 +61,7 @@ const removePid = (sessionId, writeDir) => {
 // action: 'run' | 'plan' | 'resume'
 const runDaemon = async ({ sessionId, runId, action, mode }) => {
   const writeDir = config.writeDir
-  require('../store/sessionLock').acquire(sessionId, writeDir)
+  const sessionLease = require('../store/sessionLock').acquire(sessionId, writeDir)
   const log = attachLog(sessionId, writeDir)
   const logLine = (msg) => process.stdout.write(`[${new Date().toISOString()}] ${msg}\n`)
 
@@ -166,8 +166,10 @@ const runDaemon = async ({ sessionId, runId, action, mode }) => {
       logLine(`finalize failed: ${formatError(err)}`)
     }
     log.end()
-    // Errored and cancelled runs count too; exit once the notify settles.
-    analytics.notifySession(sessionId).finally(() => process.exit(exitCode))
+    sessionLease.release()
+    runLifecycle.flush(writeDir).catch(err => {
+      logLine(`lifecycle publication failed: ${formatError(err)}`)
+    }).finally(() => process.exit(exitCode))
   }
 
   const fail = (err, label, exitCode, patch = {}) => {

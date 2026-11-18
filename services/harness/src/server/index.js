@@ -27,6 +27,7 @@ const start = () => {
   let reconciled
   sessionIndex.waitForInitialSeed(new Promise(resolve => { reconciled = resolve }))
   const app = createApp()
+  const stopLifecycle = require('./sse').startLifecycle()
   let stopMaintenance = () => {}
   const server = app.listen(config.port, config.host, (err) => {
     if (err) throw err
@@ -35,6 +36,7 @@ const start = () => {
     stopMaintenance = startMaintenance({ onReconciled: reconciled })
   })
   const stop = () => {
+    stopLifecycle().catch(err => process.stderr.write(`SSE lifecycle shutdown: ${err.message}\n`))
     stopMaintenance()
     server.close()
     server.closeAllConnections()
@@ -43,6 +45,7 @@ const start = () => {
   process.once('SIGTERM', stop)
   process.once('exit', () => stopMaintenance())
   server.once('close', () => {
+    stopLifecycle().catch(err => process.stderr.write(`SSE lifecycle shutdown: ${err.message}\n`))
     stopMaintenance()
     process.removeListener('SIGINT', stop)
     process.removeListener('SIGTERM', stop)
