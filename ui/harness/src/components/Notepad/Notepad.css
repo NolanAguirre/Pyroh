@@ -1,0 +1,36 @@
+.notepad-panel {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  padding: 1rem;
+  box-shadow: 0 1rem 2.25rem rgba(0, 0, 0, 0.6);
+  width: 32rem;
+  height: 24rem;
+  max-width: 90vw;
+  display: flex;
+}
+
+.notepad {
+  flex: 1;
+  min-height: 0;
+  gap: 0.5rem;
+}
+
+.notepad__title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.notepad__text {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  resize: none;
+  font-family: inherit;
+}
+
+.notepad__error {
+  margin: 0;
+  color: var(--danger, #e5484d);
+  font-size: 0.8125rem;
+}

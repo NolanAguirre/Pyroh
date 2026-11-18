@@ -2,6 +2,7 @@ import { Popup, Button, DevScope } from 'component-library'
 import NewSessionForm from '../NewSessionForm'
 import NewWorkspaceForm from '../NewWorkspaceForm'
 import UiSettingsForm from '../UiSettingsForm'
+import Notepad from '../Notepad/Notepad'
 import { ICONS, Icon } from './icons'
 
 // Header buttons come from registry panels; these are their DevScope ids.
@@ -46,6 +47,12 @@ const SidebarHeader = ({
           />
           <Button variant="secondary" size="sm" devId="k4m8q2w" title="Settings" aria-label="Settings">
             <Icon d={ICONS.settings} />
+          </Button>
+        </Popup>
+        <Popup devId="yxkyepe" panelClassName="notepad-panel">
+          <Notepad devId="x72v4pe" />
+          <Button variant="secondary" size="sm" devId="x6dy20f" title="Notepad" aria-label="Notepad">
+            <Icon d={ICONS.notepad} />
           </Button>
         </Popup>
         {panels.map((panel) => {

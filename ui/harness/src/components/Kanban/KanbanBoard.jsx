@@ -8,6 +8,7 @@ import { createCardHierarchy } from './hierarchy'
 import { Button, PopupDisplay, Matrix, FormInput, DevScope, Fold, FoldTrigger, FoldContent, SplitPane, useBrowserLocation } from 'component-library'
 import KanbanQuery from './KanbanQuery'
 import KanbanRows from './KanbanRows'
+import useCardDrag from './useCardDrag'
 
 
 
@@ -102,12 +103,8 @@ const activeCards = (column) => column.cardsByColumnId.nodes.filter((card) => !c
 const columnKey = (column) => column.title.trim().toLowerCase()
 
 const ProjectMatrix = ({ devId, boards, hierarchy, busy, matchesCard, searching, onSelectBoard, onOpenCard, onMoveCard }) => {
-  const [draggedId, setDragged] = useState(null)
-  const draggedBoard = boards.find((board) => board.boardColumnsByBoardId.nodes.some((column) => activeCards(column).some((card) => card.id === draggedId)))
-  const draggedCard = draggedBoard?.boardColumnsByBoardId.nodes.flatMap(activeCards).find((card) => card.id === draggedId)
-  const dragged = draggedCard ? { cardId: draggedId, boardId: draggedBoard.id, columnId: draggedCard.columnId } : null
   const [dropTarget, setDropTarget] = useState(null)
-  const suppressClick = useRef(false)
+  const { dragged, dragRef, clearDrag, getDragProps } = useCardDrag(busy, () => setDropTarget(null))
   const columns = []
   const seen = new Set()
   for (const board of boards) {
@@ -123,11 +120,8 @@ const ProjectMatrix = ({ devId, boards, hierarchy, busy, matchesCard, searching,
     }
   }
   const rows = searching ? boards.filter((project) => project.boardColumnsByBoardId.nodes.some((column) => activeCards(column).some(matchesCard))) : boards
-  const clearDrag = () => {
-    setDragged(null)
-    setDropTarget(null)
-  }
   const dragOver = (event, target, boardId) => {
+    const dragged = dragRef.current
     if (!dragged || busy || dragged.boardId !== boardId) return
     event.preventDefault()
     event.stopPropagation()
@@ -137,15 +131,17 @@ const ProjectMatrix = ({ devId, boards, hierarchy, busy, matchesCard, searching,
   const dropCard = (event, project, stage, beforeCardId = null) => {
     event.preventDefault()
     event.stopPropagation()
+    const dragged = dragRef.current
+    const draggedCard = dragged?.card
     const matches = project.boardColumnsByBoardId.nodes.filter((item) => columnKey(item) === stage.id)
     const stageIds = new Set(matches.map((item) => item.id))
     const beforeCard = beforeCardId ? matches.flatMap((item) => activeCards(item)).find((card) => card.id === beforeCardId) : null
     const targetColumnId = beforeCard?.columnId || matches[0]?.id
     // Dropping on the same stage background keeps the card where it is.
     const unchanged = !beforeCardId && dragged && stageIds.has(dragged.columnId)
-    if (dragged && !busy && dragged.boardId === project.id && targetColumnId && dragged.cardId !== beforeCardId && !unchanged) {
+    if (dragged && !busy && dragged.boardId === project.id && targetColumnId && dragged.id !== beforeCardId && !unchanged) {
       const sameScope = beforeCard && (beforeCard.parentId || null) === (draggedCard.parentId || null) && (draggedCard.parentId || beforeCard.epic === draggedCard.epic)
-      onMoveCard(dragged.cardId, targetColumnId, sameScope ? beforeCard.id : null, project.id)
+      onMoveCard(dragged.id, targetColumnId, sameScope ? beforeCard.id : null, project.id)
     }
     clearDrag()
   }
@@ -160,14 +156,9 @@ const ProjectMatrix = ({ devId, boards, hierarchy, busy, matchesCard, searching,
       return <div className={`kanban__cards kanban__matrix-cell ${dropTarget === cellKey ? 'kanban__drop-target' : ''}`} onDragOver={(event) => dragOver(event, cellKey, project.id)} onDrop={(event) => dropCard(event, project, column)}>
         <span className="kanban__matrix-card-count">{cards.length} cards</span>
         {!countOnly && cards.map((card) => <DevScope key={card.id} id="b9bhybr" state={{ card: card.id }}>
-          <article className={`kanban__task-card ${dragged?.cardId === card.id ? 'kanban__dragging' : ''} ${dropTarget === card.id ? 'kanban__drop-before' : ''}`}>
+          <article className={`kanban__task-card ${dragged?.id === card.id ? 'kanban__dragging' : ''} ${dropTarget === card.id ? 'kanban__drop-before' : ''}`} {...getDragProps({ id: card.id, boardId: project.id, columnId: card.columnId, card })} onDragOver={(event) => dragOver(event, card.id, project.id)} onDrop={(event) => dropCard(event, project, column, card.id)}>
             <DevScope id="20wmwyd">
-              <button className="kanban__card-content" draggable={!busy} disabled={busy} onDragStart={(event) => { suppressClick.current = true
-      setDragged(card.id)
-      event.dataTransfer.effectAllowed = 'move'
-      event.dataTransfer.setData('text/plain', card.id) }} onDragEnd={() => { clearDrag()
-      setTimeout(() => { suppressClick.current = false }, 0) }} onDragOver={(event) => dragOver(event, card.id, project.id)} onDrop={(event) => dropCard(event, project, column, card.id)} onClick={() => { if (suppressClick.current) return
-      onOpenCard(project.id, card) }}><span>{card.title}</span>{card.description && <small>{card.description}</small>}<small>By {card.userByAuthorId?.name || 'Unknown author'}</small></button>
+              <button className="kanban__card-content" draggable={!busy} disabled={busy} onClick={() => onOpenCard(project.id, card)}><span>{card.title}</span>{card.description && <small>{card.description}</small>}<small>By {card.userByAuthorId?.name || 'Unknown author'}</small></button>
             </DevScope>
             <CardRelationships card={card} hierarchy={hierarchy} busy={busy} onOpenCard={onOpenCard} />
           </article>

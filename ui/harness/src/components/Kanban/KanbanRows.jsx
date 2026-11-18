@@ -1,13 +1,14 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { Button, Fold, FoldContent, FoldTrigger, OrderDisplay } from 'component-library'
 import CardRelationships from './CardRelationships'
+import useCardDrag from './useCardDrag'
 
 const activeCards = (column) => column.cardsByColumnId.nodes.filter((card) => !card.archivedAt)
 const isEpicRow = (card) => card.epic && !card.parentId
 
 const TaskCard = ({ card, hierarchy, busy, dragging, dropBefore, order, totalCount, onOpenCard, onArchive, onReorder, dragProps }) => {
   return <article className={`kanban__task-card${dragging ? ' kanban__dragging' : ''}${dropBefore ? ' kanban__drop-before' : ''}`} {...dragProps}>
-    <button className="kanban__card-content" disabled={busy} onClick={() => onOpenCard(hierarchy.getCard(card.id).boardId, card)}><span>{card.title}</span>{card.description && <small>{card.description}</small>}<small>By {card.userByAuthorId?.name || 'Unknown author'}</small></button>
+    <button className="kanban__card-content" draggable={!busy} disabled={busy} onClick={() => onOpenCard(hierarchy.getCard(card.id).boardId, card)}><span>{card.title}</span>{card.description && <small>{card.description}</small>}<small>By {card.userByAuthorId?.name || 'Unknown author'}</small></button>
     <CardRelationships card={card} hierarchy={hierarchy} busy={busy} onOpenCard={onOpenCard} />
     <div className="kanban__card-footer"><span className="kanban__card-hint">Drag to move</span><span className="kanban__card-actions">
       <button className="kanban__icon-button" aria-label={`Archive ${card.title}`} disabled={busy} onClick={() => onArchive(card)}>Archive</button>
@@ -18,9 +19,8 @@ const TaskCard = ({ card, hierarchy, busy, dragging, dropBefore, order, totalCou
 
 const KanbanRows = ({ board, hierarchy, busy, searching, matchesCard, onOpenCard, onNewCard, onEditColumn, onNewColumn, onMoveColumn, onArchive, onMoveCard, onMoveTask, onMoveEpic }) => {
   const [collapsedIds, setCollapsedIds] = useState([])
-  const [dragged, setDragged] = useState(null)
   const [dropTarget, setDropTarget] = useState(null)
-  const suppressClick = useRef(false)
+  const { dragged, dragRef, clearDrag, getDragProps } = useCardDrag(busy, () => setDropTarget(null))
   const columns = board.boardColumnsByBoardId.nodes
   const cards = columns.flatMap(activeCards)
   const rowIds = new Set(cards.flatMap((card) => isEpicRow(card) ? [card.id] : card.parentId ? [card.parentId] : []))
@@ -30,19 +30,8 @@ const KanbanRows = ({ board, hierarchy, busy, searching, matchesCard, onOpenCard
   const rows = [...epics.filter((epic) => !searching || matchesCard(epic) || cards.some((card) => card.parentId === epic.id && matchesCard(card))), null]
   const collapsed = (column) => !searching && collapsedIds.includes(column.id)
   const toggleColumn = (id) => setCollapsedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
-  const clearDrag = () => {
-    setDragged(null)
-    setDropTarget(null)
-    setTimeout(() => { suppressClick.current = false }, 0)
-  }
-  const startDrag = (event, card, kind) => {
-    event.stopPropagation()
-    suppressClick.current = true
-    setDragged({ id: card.id, kind })
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('text/plain', card.id)
-  }
   const dragOver = (event, target, kind) => {
+    const dragged = dragRef.current
     if (!dragged || busy || (kind && dragged.kind !== kind)) return
     event.preventDefault()
     event.stopPropagation()
@@ -52,6 +41,7 @@ const KanbanRows = ({ board, hierarchy, busy, searching, matchesCard, onOpenCard
   const dropTask = (event, columnId, parentId, beforeCardId = null) => {
     event.preventDefault()
     event.stopPropagation()
+    const dragged = dragRef.current
     if (dragged?.kind === 'task' && !busy && dragged.id !== beforeCardId) {
       const becomesEpicRow = !parentId && hierarchy.getCard(dragged.id).epic
       onMoveTask(dragged.id, columnId, parentId, becomesEpicRow ? null : beforeCardId)
@@ -61,22 +51,20 @@ const KanbanRows = ({ board, hierarchy, busy, searching, matchesCard, onOpenCard
   const dropEpic = (event, beforeEpicId = null) => {
     event.preventDefault()
     event.stopPropagation()
+    const dragged = dragRef.current
     if (dragged?.kind === 'epic' && !busy && dragged.id !== beforeEpicId) onMoveEpic(dragged.id, beforeEpicId)
     clearDrag()
   }
   const dropStatus = (event, columnId) => {
     event.preventDefault()
     event.stopPropagation()
-    const card = hierarchy.getCard(dragged?.id)
+    const card = hierarchy.getCard(dragRef.current?.id)
     if (card && !busy && card.boardId === board.id && !card.archivedAt && card.columnId !== columnId) onMoveCard(card.id, columnId, null)
     clearDrag()
   }
   const reorderEpic = (id, direction) => {
     const index = epics.findIndex((epic) => epic.id === id)
     onMoveEpic(id, epics[index + (direction === 'up' ? -1 : 2)]?.id || null)
-  }
-  const openCard = (boardId, card) => {
-    if (!suppressClick.current) onOpenCard(boardId, card)
   }
   return <div className="kanban__board-canvas kanban__board-canvas--rows" aria-busy={busy}>
     <table className="kanban__epic-table" aria-label={`${board.title}: epics and tasks by status`}>

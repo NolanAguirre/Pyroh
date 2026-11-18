@@ -37,8 +37,7 @@
 .kanban__project-matrix .matrix__table tbody td { height: 0.0625rem; }
 .kanban__project-matrix .kanban__matrix-cell { height: auto; min-height: 4.5rem; box-sizing: border-box; border: 0.125rem solid transparent; border-radius: 0.5rem; overflow: visible; flex: none; }
 .kanban__project-matrix .kanban__matrix-cell.kanban__drop-target { border-color: #8ec0ff; }
-.kanban__project-matrix .kanban__card-content { padding-bottom: 0.9375rem; cursor: grab; }
-.kanban__project-matrix .kanban__task-card.kanban__dragging .kanban__card-content { cursor: grabbing; }
+.kanban__project-matrix .kanban__card-content { padding-bottom: 0.9375rem; }
 .kanban__matrix-card-count { color: #b4bcc8; font-size: .8125rem; }
 .kanban__board-canvas { display: flex; align-items: flex-start; gap: 1.25rem; padding: 1.75rem 2rem; overflow-x: auto; overflow-y: hidden; flex: 1; min-height: 0; }
 .kanban__board-canvas.kanban__is-loading { opacity: .55; pointer-events: none; }
@@ -166,6 +165,9 @@
 .kanban__toolbar h1 { margin: 0; font-size: 1rem; }
 .kanban button, .kanban__editor button { color: inherit; cursor: pointer; }
 .kanban button:disabled, .kanban__editor button:disabled { cursor: default; }
+.kanban__task-card[draggable="true"], .kanban .kanban__card-content[draggable="true"] { cursor: grab; user-select: none; }
+.kanban__task-card[draggable="true"]:active, .kanban__task-card.kanban__dragging, .kanban .kanban__card-content[draggable="true"]:active, .kanban .kanban__dragging .kanban__card-content { cursor: grabbing; }
+.kanban__task-card .kanban__epic-status { cursor: default; }
 .kanban input, .kanban textarea, .kanban select, .kanban__editor input, .kanban__editor textarea, .kanban__editor select { font: inherit; box-sizing: border-box; }
 .kanban__workspace { min-width: 0; }
 .kanban__editor { color-scheme: dark; }
@@ -193,7 +195,7 @@
 .kanban__epic-cell > .button { margin-top: .5rem; color: #c5ccd6; }
 .kanban__epic-table .kanban__drop-target { box-shadow: inset 0 0 0 .125rem #8ec0ff; }
 .kanban__epic-table .kanban__drop-before { border-top: .25rem solid #8ec0ff; }
-.kanban__epic-card { cursor: grab; font-weight: 400; }
+.kanban__epic-card { font-weight: 400; }
 .kanban__epic-card .kanban__card-footer { flex-wrap: wrap; }
 .kanban__epic-status { display: grid; gap: .375rem; padding: 0 .875rem .75rem; font-size: .8125rem; color: #c5ccd6; }
 .kanban__epic-status select { width: 100%; padding: .375rem; border: .0625rem solid #5a6374; border-radius: .25rem; background: #252830; color: inherit; font: inherit; }
