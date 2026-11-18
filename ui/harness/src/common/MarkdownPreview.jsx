@@ -24,7 +24,7 @@ const Input = ({ node, ...props }) => {
   const toggle = useContext(ToggleContext)
   const offset = useContext(ItemOffsetContext)
   if (props.type !== 'checkbox' || !toggle || offset === null) return <input {...props} />
-  return <input {...props} disabled={false} className="markdown-preview__checkbox" onChange={() => toggle(offset)} />
+  return <input {...props} disabled={false} className={`markdown-preview__checkbox ${props.className ?? ''}`.trim()} onChange={() => toggle(offset)} />
 }
 
 const components = { li: ListItem, input: Input }

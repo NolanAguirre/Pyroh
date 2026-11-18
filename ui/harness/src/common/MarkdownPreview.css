@@ -7,3 +7,17 @@
 .markdown-preview__checkbox {
   cursor: pointer;
 }
+
+.markdown-preview .contains-task-list {
+  padding-left: 1.5rem;
+}
+
+.markdown-preview .task-list-item {
+  list-style: none;
+}
+
+/* Pull the checkbox into the bullet gutter so it lines up with bullets on sibling items. */
+.markdown-preview .task-list-item > input[type='checkbox'] {
+  margin: 0 0.4rem 0 -1.25rem;
+  vertical-align: middle;
+}
