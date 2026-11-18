@@ -30,8 +30,8 @@ const delegationCall = block => {
 const delegation = block => delegationCall(block)?.method || null
 const pureRead = block => /^(?:Read|read_file|read_file_text|mcp__filesystem__read_file)$/.test(block.name || '')
 const relayText = value => value.replace(/^\s*(?:[-*#>]\s+|\d+[.)]\s+)/gm, '').replace(/[*`]/g, '').replace(/\s+/g, ' ').trim()
-// Deliberately limited vocabulary: task reasoning and novel findings do not qualify
-// merely because they mention agents. This is an estimate, not semantic equivalence.
+// Coordination is classified only beside replaced calls or captured deliveries.
+// Unmatched task reasoning and novel findings remain, even if they mention agents.
 const coordinationWords = new Set(('i we ill well im ive will shall am are is be been have has had do does '
   + 'the a an to for from of on in with and or then now next just only still already all both each their them they '
   + 'my our its it this that these those as once until after before here heres back up can need needs should must '
@@ -175,6 +175,12 @@ const createSubagentReplay = (data, assumptions = {}) => {
     const candidates = links.filter(link => link.sessionId === child.id)
     if (!candidates.length && child.session.parentSessionId) candidates.push({ sessionId: child.id,
       parentSessionId: child.session.parentSessionId, parentRunId: child.session.parentRunId })
+    for (const call of evidence.blocks.filter(block => block.kind === 'tool_call' && delegation(block) === 'spawn'
+      && unpack(blocks.get(block.resultId)?.content)?.sessionId === child.id)) {
+      if (!candidates.some(link => link.parentSessionId === call.sessionId && link.parentRunId === call.runId)) {
+        candidates.push({ sessionId: child.id, parentSessionId: call.sessionId, parentRunId: call.runId, source: call.sources[0] })
+      }
+    }
     let selected = null
     for (const link of candidates) {
       const calls = evidence.blocks.filter(block => block.sessionId === link.parentSessionId
@@ -648,10 +654,14 @@ const createSubagentReplay = (data, assumptions = {}) => {
   const difference = compare(total)
   const ignoredAssumptions = Object.keys(assumptions).map(key => `${key}=${assumptions[key]}`)
   if (ignoredAssumptions.length) gap(`Legacy scalar overrides are recorded but not applied to ordered replay: ${ignoredAssumptions.join(', ')}.`)
+  const finalRootText = finalBlocks.get(root?.id)?.at(-1)
+  const finalAnswer = finalRootText ? { originalBlockId: finalRootText.id,
+    retainedBlockIds: (retainedDependencies(finalRootText.id) || []).filter(id => blocks.get(id)?.kind === 'text'),
+    substituted: dispositions.get(finalRootText.id).action === 'remove' } : null
   const gapReasons = [...new Set(gaps.map(item => item.reason))].map(reason => ({ reason,
     count: gaps.filter(item => item.reason === reason).length }))
   return freeze({ version: 4, cutoff: data.cutoff, sourceSessionId: root?.id || null,
-    measured, measuredRuns: data.agents.flatMap(agent => agent.rows.map(row => ({ sessionId: row.sessionId, runId: row.id,
+    measured, finalAnswer, measuredRuns: data.agents.flatMap(agent => agent.rows.map(row => ({ sessionId: row.sessionId, runId: row.id,
       provider: row.provider, model: row.model, source: row.usageSource, status: row.status,
       usage: Object.fromEntries(['input', 'output', 'cacheRead', 'cacheWrite', 'fresh', 'reasoning', 'total', 'requests'].map(field => [field, row[field]])) }))),
     estimate: { input, output, total, difference,

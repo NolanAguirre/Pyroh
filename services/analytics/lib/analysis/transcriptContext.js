@@ -198,6 +198,7 @@ const createTranscriptEvidence = (agents) => {
       })
       let inferred = null
       let afterResult = false
+      let boundaryOrder = -Infinity
       for (const block of runBlocks) {
         let turn = null
         if (block.itemId) turn = runTurns.find(item => block.itemId === item.responseId || block.itemId.startsWith(`${item.responseId}:`))
@@ -207,6 +208,11 @@ const createTranscriptEvidence = (agents) => {
           // Tool snapshots can arrive just after message_stop, before a new request starts.
           if (!turn && block.kind === 'tool_call') turn = [...runTurns].reverse().find(item => item.end !== null && item.end <= block.order
             && !runBlocks.some(result => result.kind === 'tool_result' && result.lastOrder > item.end && result.lastOrder < block.order))
+        }
+        if (turn && block.generated && (block.kind !== 'tool_call' || inferred?.order > boundaryOrder)
+          && turn.blocks.some(id => runBlocks.find(item => item.id === id)?.order < boundaryOrder)) {
+          // A continuation consuming a completed tool result cannot be the request that produced that tool.
+          turn = null
         }
         if (!turn && block.generated) {
           if (!inferred || afterResult) {
@@ -228,7 +234,10 @@ const createTranscriptEvidence = (agents) => {
           turn.blocks.push(block.id)
           afterResult = false
         }
-        if (['tool_result', 'prompt', 'boundary'].includes(block.kind)) afterResult = true
+        if (['tool_result', 'prompt', 'boundary'].includes(block.kind)) {
+          afterResult = true
+          boundaryOrder = block.kind === 'tool_result' ? block.lastOrder : block.order
+        }
       }
       const segments = row.requestEvidence?.segments || []
       const reported = segments.length && segments.every(segment => known(segment.reportedModelRequests))
