@@ -36,13 +36,17 @@ const post = (url, body) => send('POST', url, body).then(json)
 let machinesRequest = null
 const loadMachines = () => {
   if (!machinesRequest) {
-    machinesRequest = fetch(at(null, '/machines.json'), { cache: 'no-store' })
+    const request = fetch(at(null, '/machines.json'), { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : {}))
       .catch(() => ({}))
       .then((data) => ({
         self: data.self || null,
         machines: Array.isArray(data.machines) ? data.machines : [],
       }))
+      .finally(() => {
+        if (machinesRequest === request) machinesRequest = null
+      })
+    machinesRequest = request
   }
   return machinesRequest
 }
@@ -189,10 +193,7 @@ const api = {
   getRemotes: () => fetch(at(null, '/api/remotes'), { cache: 'no-store' }).then(json),
   setRemotes: async (config) => {
     const result = await send('PUT', at(null, '/api/remotes'), config).then(json)
-    machinesRequest = Promise.resolve({
-      self: result.config.self,
-      machines: result.config.machines.map(({ name }) => name),
-    })
+    machinesRequest = null
     window.dispatchEvent(new Event('pyroh:remotes-changed'))
     return result
   },

@@ -24,7 +24,13 @@ const useWorkspaces = () => {
   useEffect(() => {
     loadWorkspaces()
     window.addEventListener('pyroh:remotes-changed', loadWorkspaces)
-    return () => window.removeEventListener('pyroh:remotes-changed', loadWorkspaces)
+    window.addEventListener('focus', loadWorkspaces)
+    window.addEventListener('online', loadWorkspaces)
+    return () => {
+      window.removeEventListener('pyroh:remotes-changed', loadWorkspaces)
+      window.removeEventListener('focus', loadWorkspaces)
+      window.removeEventListener('online', loadWorkspaces)
+    }
   }, [loadWorkspaces])
 
   const putWorkspace = (workspace) => {
