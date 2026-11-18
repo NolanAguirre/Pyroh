@@ -153,6 +153,7 @@ launch services/categorizer consumer
 launch services/analytics start
 launch services/mcp-memory start
 launch services/memory start
+launch services/notepad start
 launch services/mcpdevid start
 launch ui/harness dev
 

@@ -6,6 +6,7 @@
 	services.analytics.install services.analytics.build services.analytics.start services.analytics.sync services.analytics.backfill \
 	services.mcp-memory.install services.mcp-memory.build services.mcp-memory.start services.mcp-memory.help \
 	services.memory.install services.memory.build services.memory.start services.memory.help \
+	services.notepad.install services.notepad.build services.notepad.start services.notepad.help \
 	services.mcpdevid.install services.mcpdevid.build services.mcpdevid.start services.mcpdevid.import services.mcpdevid.reclaim services.mcpdevid.help \
 	ui.harness.setup ui.harness.install ui.harness.dev ui.harness.build ui.harness.lint ui.harness.preview \
 	services.nginx.start services.nginx.stop services.nginx.reload services.nginx.status services.nginx.test services.nginx.render
@@ -48,6 +49,10 @@ help: ## Show this help
 	@printf '%s\n' '  services.memory.build            memory: Run the configured build'
 	@printf '%s\n' '  services.memory.start            memory: Start the foreground memory CRUD API'
 	@printf '%s\n' '  services.memory.help             memory: Show service help'
+	@printf '%s\n' '  services.notepad.install         notepad: Install dependencies'
+	@printf '%s\n' '  services.notepad.build           notepad: Run the configured build'
+	@printf '%s\n' '  services.notepad.start           notepad: Start the foreground notepad API'
+	@printf '%s\n' '  services.notepad.help            notepad: Show service help'
 	@printf '%s\n' '  services.mcpdevid.install        mcpdevid: Install dependencies'
 	@printf '%s\n' '  services.mcpdevid.build          mcpdevid: Run the configured build'
 	@printf '%s\n' '  services.mcpdevid.start          mcpdevid: Start the dev id MCP server'
@@ -202,6 +207,18 @@ services.memory.start: ## memory: Start the foreground memory CRUD API
 services.memory.help: ## memory: Show service help
 	$(MAKE) -C services/memory help
 
+services.notepad.install: ## notepad: Install dependencies
+	$(MAKE) -C services/notepad install
+
+services.notepad.build: ## notepad: Run the configured build
+	$(MAKE) -C services/notepad build
+
+services.notepad.start: ## notepad: Start the foreground notepad API
+	$(MAKE) -C services/notepad start
+
+services.notepad.help: ## notepad: Show service help
+	$(MAKE) -C services/notepad help
+
 services.mcpdevid.install: ## mcpdevid: Install dependencies
 	$(MAKE) -C services/mcpdevid install
 
@@ -311,6 +328,7 @@ install: ## Install all services and UIs, including python venvs
 	$(MAKE) services.analytics.install
 	$(MAKE) services.mcp-memory.install
 	$(MAKE) services.memory.install
+	$(MAKE) services.notepad.install
 	$(MAKE) services.mcpdevid.install
 	$(MAKE) ui.harness.install
 
@@ -324,6 +342,7 @@ install.js: ## Install only JS packages across all services and UIs
 	$(MAKE) services.analytics.install
 	$(MAKE) services.mcp-memory.install
 	$(MAKE) services.memory.install
+	$(MAKE) services.notepad.install
 	$(MAKE) services.mcpdevid.install
 	$(MAKE) ui.harness.install
 
