@@ -96,7 +96,7 @@ help: ## Show this help
 	@printf '%s\n' '  services.git.start               git: Start the foreground API server'
 	@printf '%s\n' '  services.git.help                git: Show service help'
 	@printf '%s\n' '  install                          Install all services and UIs, including python venvs'
-	@printf '%s\n' '  install.system                   Install Ubuntu/Fedora/Amazon Linux system deps (ARGS="--start-postgres" optional)'
+	@printf '%s\n' '  install.system                   Install Ubuntu/Fedora/Amazon Linux/macOS system deps (ARGS="--start-postgres" optional)'
 	@printf '%s\n' '  install.js                       Install only JS packages across all services and UIs'
 	@printf '%s\n' '  install.py                       Install python venvs for the GPU services'
 	@printf '%s\n' '  start                            Start the harness stack; Ctrl+C closes the terminal host and shells'
@@ -354,7 +354,7 @@ services.git.start: ## git: Start the foreground API server
 services.git.help: ## git: Show service help
 	$(MAKE) -C services/git help
 
-install.system: ## Install Ubuntu/Fedora/Amazon Linux system dependencies
+install.system: ## Install Ubuntu/Fedora/Amazon Linux/macOS system dependencies
 	sh scripts/install-system-deps $(ARGS)
 
 install: ## Install all services and UIs, including python venvs

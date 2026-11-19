@@ -16,12 +16,12 @@ build:
 	npm run build --if-present
 
 start:
-	envdir "./env-dir/$${ENV_USER:-$$USER}" npm start
+	s6-envdir ./env-dir/default s6-envdir -I "./env-dir/$${ENV_USER:-$$USER}" npm start
 
 import:
 	@if [ -z "$(REPOS)" ]; then echo 'usage: make import REPOS="~/a ~/b"' >&2; exit 1; fi
-	envdir "./env-dir/$${ENV_USER:-$$USER}" node scripts/import.js $(REPOS)
+	s6-envdir ./env-dir/default s6-envdir -I "./env-dir/$${ENV_USER:-$$USER}" node scripts/import.js $(REPOS)
 
 reclaim:
 	@if [ -z "$(REPOS)" ]; then echo 'usage: make reclaim REPOS="~/a ~/b"' >&2; exit 1; fi
-	envdir "./env-dir/$${ENV_USER:-$$USER}" node scripts/reclaim.js $(REPOS)
+	s6-envdir ./env-dir/default s6-envdir -I "./env-dir/$${ENV_USER:-$$USER}" node scripts/reclaim.js $(REPOS)

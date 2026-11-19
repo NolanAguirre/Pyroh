@@ -1,8 +1,10 @@
 # React UI
 
 Run `make install`, then `make start`. Start runs Vite in the background using
-`envdir` and `env-dir/${ENV_USER:-$USER}`; output goes to `start.log`.
-For foreground development, use `envdir ./env-dir/$USER npm start`.
+`s6-envdir` with `env-dir/default`, overlaid by `env-dir/${ENV_USER:-$USER}` if
+present; output goes to `start.log`.
+For foreground development, use
+`s6-envdir ./env-dir/default s6-envdir -I ./env-dir/$USER npm start`.
 `npm start` alone uses env-dir/default unless HOST and PORT are supplied.
 Use Node 20.19+ or 22.12+ (see package.json).
 

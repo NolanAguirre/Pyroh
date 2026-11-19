@@ -5,19 +5,23 @@ usage() {
     cat <<'EOF'
 Usage: sh scripts/install-system-deps [--start-postgres]
 
-Install system dependencies on Ubuntu, Fedora, or Amazon Linux 2023
-using sudo when needed. Amazon Linux 2 is not supported.
+Install system dependencies on Ubuntu, Fedora, Amazon Linux 2023, or macOS
+using sudo (Linux) or Homebrew (macOS). Amazon Linux 2 is not supported.
 Includes PostgreSQL, SQLite, Sqitch and its drivers, nginx, NATS Server, Python,
-native build tools, Git, ripgrep, envdir, s6-setsid, and s6-setlock.
+native build tools, Git, ripgrep, s6-envdir, s6-setsid, and s6-setlock.
 Installs distro Node/npm only when they are missing; requires Node >=22.13.
 Fedora/Amazon Linux install Sqitch from CPAN and build missing s6 helpers
 from source. Amazon Linux preserves an installed PostgreSQL major (defaults
 to 15), uses Node 22 packages, and
 enables AWS's SPAL repository for ripgrep (requires a recent AL2023 release).
 Amazon Linux installs a pinned official NATS Server RPM if it is missing.
+macOS requires Homebrew and the Xcode Command Line Tools, runs as your normal
+user, preserves an installed postgresql@N formula (defaults to 17), and
+installs Sqitch from the sqitchers/sqitch tap if it is missing.
 
   --start-postgres  Initialize the default RPM-based cluster if absent, then
-                    enable and start PostgreSQL (requires systemd).
+                    enable and start PostgreSQL (requires systemd on Linux;
+                    uses brew services on macOS).
   -h, --help        Show this help.
 
 Package managers may start services during installation. This script does
@@ -40,15 +44,19 @@ for arg do
     esac
 done
 
-[ -r /etc/os-release ] || die 'This installer supports Ubuntu, Fedora, and Amazon Linux 2023 only.'
-. /etc/os-release
-case "${ID:-}" in
-    ubuntu|fedora) ;;
-    amzn)
-        [ "${VERSION_ID:-}" = 2023 ] || die 'Amazon Linux 2023 is required; Amazon Linux 2 is not supported.'
-        ;;
-    *) die "Unsupported distribution: ${ID:-unknown}. Expected Ubuntu, Fedora, or Amazon Linux 2023." ;;
-esac
+if [ "$(uname -s)" = Darwin ]; then
+    ID=macos
+else
+    [ -r /etc/os-release ] || die 'This installer supports Ubuntu, Fedora, Amazon Linux 2023, and macOS only.'
+    . /etc/os-release
+    case "${ID:-}" in
+        ubuntu|fedora) ;;
+        amzn)
+            [ "${VERSION_ID:-}" = 2023 ] || die 'Amazon Linux 2023 is required; Amazon Linux 2 is not supported.'
+            ;;
+        *) die "Unsupported distribution: ${ID:-unknown}. Expected Ubuntu, Fedora, Amazon Linux 2023, or macOS." ;;
+    esac
+fi
 
 as_root() {
     if [ "$(id -u)" -eq 0 ]; then
@@ -58,12 +66,17 @@ as_root() {
     fi
 }
 
-if [ "$(id -u)" -ne 0 ]; then
+if [ "$ID" = macos ]; then
+    # Homebrew refuses to run as root.
+    [ "$(id -u)" -ne 0 ] || die 'Run as your normal user on macOS, not root.'
+    command -v brew >/dev/null 2>&1 || die 'Install Homebrew first: https://brew.sh'
+    xcode-select -p >/dev/null 2>&1 || die 'Install the Xcode Command Line Tools first: xcode-select --install'
+elif [ "$(id -u)" -ne 0 ]; then
     command -v sudo >/dev/null 2>&1 || die 'Run as root or install sudo first.'
     sudo -v
 fi
 
-if [ "$start_postgres" -eq 1 ]; then
+if [ "$start_postgres" -eq 1 ] && [ "$ID" != macos ]; then
     [ -d /run/systemd/system ] || die '--start-postgres requires a running systemd instance.'
 fi
 
@@ -71,23 +84,47 @@ fi
 set --
 node_package=nodejs
 npm_package=npm
-if [ "$ID" = amzn ]; then
-    node_package=nodejs22
-    npm_package=nodejs22-npm
-fi
+case "$ID" in
+    amzn)
+        node_package=nodejs22
+        npm_package=nodejs22-npm
+        ;;
+    macos)
+        # Homebrew's node formula includes npm.
+        node_package=node
+        npm_package=node
+        ;;
+esac
 if ! command -v node >/dev/null 2>&1; then
     set -- "$@" "$node_package"
 fi
-if ! command -v npm >/dev/null 2>&1; then
+if ! command -v npm >/dev/null 2>&1 && [ "${1:-}" != "$npm_package" ]; then
     set -- "$@" "$npm_package"
 fi
 
 case "$ID" in
+    macos)
+        # Keep an installed PostgreSQL major instead of replacing it.
+        postgres_formula=postgresql@17
+        for major in 18 17 16 15 14; do
+            if brew list --versions "postgresql@$major" >/dev/null 2>&1; then
+                postgres_formula=postgresql@$major
+                break
+            fi
+        done
+        brew install python git ripgrep nginx nats-server s6 sqlite \
+            "$postgres_formula" "$@"
+        if ! command -v sqitch >/dev/null 2>&1; then
+            brew tap sqitchers/sqitch
+            brew install sqitchers/sqitch/sqitch \
+                --with-postgres-support --with-sqlite-support
+        fi
+        ;;
     ubuntu)
         as_root apt-get update
         as_root apt-get install -y \
             ca-certificates curl build-essential python3 python3-venv python3-pip \
-            git ripgrep nginx nats-server daemontools s6 \
+            git ripgrep nginx nats-server s6 \
             postgresql postgresql-client postgresql-contrib sqlite3 \
             sqitch libdbd-pg-perl libdbd-sqlite3-perl "$@"
         ;;
@@ -157,7 +194,7 @@ case "$ID" in
         # Build in isolation and install only the binaries the app uses.
         if ! command -v s6-setsid >/dev/null 2>&1 ||
             ! command -v s6-setlock >/dev/null 2>&1 ||
-            ! command -v envdir >/dev/null 2>&1; then
+            ! command -v s6-envdir >/dev/null 2>&1; then
             skalibs_version=2.16.0.0
             s6_version=2.15.1.1
             (
@@ -187,14 +224,17 @@ case "$ID" in
             if ! command -v s6-setlock >/dev/null 2>&1; then
                 as_root install -m 755 "$build_dir/local/bin/s6-setlock" /usr/local/bin/s6-setlock
             fi
-            if ! command -v envdir >/dev/null 2>&1; then
-                as_root install -m 755 "$build_dir/local/bin/s6-envdir" /usr/local/bin/envdir
+            if ! command -v s6-envdir >/dev/null 2>&1; then
+                as_root install -m 755 "$build_dir/local/bin/s6-envdir" /usr/local/bin/s6-envdir
             fi
         fi
         ;;
 esac
 
-if [ "$start_postgres" -eq 1 ]; then
+if [ "$start_postgres" -eq 1 ] && [ "$ID" = macos ]; then
+    # Homebrew initializes the cluster when the formula is installed.
+    brew services start "$postgres_formula"
+elif [ "$start_postgres" -eq 1 ]; then
     if [ "$ID" = fedora ] || [ "$ID" = amzn ]; then
         # The distro setup command refuses nonempty data directories.
         # Never reinitialize an existing cluster.
@@ -209,6 +249,11 @@ printf '%s\n' \
     'System packages installed.' \
     'Configure PostgreSQL credentials and PGHOST/PGPORT in your env-dir before starting the app.' \
     'Use make install as your normal user to install application packages.'
+if [ "$ID" = macos ]; then
+    # PostgreSQL formulae are keg-only, so their binaries are not linked onto PATH.
+    printf 'Add %s/bin to PATH to use the PostgreSQL client and server tools.\n' \
+        "$(brew --prefix "$postgres_formula")"
+fi
 
 # Older Ubuntu repositories ship Node versions without built-in node:sqlite.
 if ! node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 13) ? 0 : 1)' ; then

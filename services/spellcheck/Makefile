@@ -29,16 +29,16 @@ install.python:
 	cli/.venv/bin/pip install -r cli/requirements.txt
 
 install.model:
-	envdir "./env-dir/$${ENV_USER:-$$USER}" cli/.venv/bin/python3 cli/consumer.py --download
+	s6-envdir ./env-dir/default s6-envdir -I "./env-dir/$${ENV_USER:-$$USER}" cli/.venv/bin/python3 cli/consumer.py --download
 
 build:
 	npm run build --if-present
 
 start:
-	nohup envdir "./env-dir/$${ENV_USER:-$$USER}" npm start >start.log 2>&1 </dev/null & echo "started in background, pid $$! (logs: start.log)"
+	nohup s6-envdir ./env-dir/default s6-envdir -I "./env-dir/$${ENV_USER:-$$USER}" npm start >start.log 2>&1 </dev/null & echo "started in background, pid $$! (logs: start.log)"
 
 consumer:
-	envdir "./env-dir/$${ENV_USER:-$$USER}" cli/.venv/bin/python3 -u cli/consumer.py
+	s6-envdir ./env-dir/default s6-envdir -I "./env-dir/$${ENV_USER:-$$USER}" cli/.venv/bin/python3 -u cli/consumer.py
 
 package:
 	sh scripts/package

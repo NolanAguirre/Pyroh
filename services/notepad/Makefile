@@ -15,5 +15,5 @@ build:
 	npm run build --if-present
 
 start:
-	envdir "./env-dir/$${ENV_USER:-$$USER}" npm start
+	s6-envdir ./env-dir/default s6-envdir -I "./env-dir/$${ENV_USER:-$$USER}" npm start
 
