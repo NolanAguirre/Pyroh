@@ -8,7 +8,8 @@ shift 3
 # Shareable leases retain their named pipes until the final owner exits.
 lease_dir=${control%/*}
 
-# Open in the same order as the caller so neither FIFO needs a dummy writer.
+# The caller opens the status reader nonblocking before connecting its writer.
+# Only real lease writers keep control open; never add a dummy writer.
 exec 0< "$control"
 exec 1> "$status"
 
@@ -19,8 +20,9 @@ printf "0\n"
 exec cat > /dev/null
 '
 result=$?
+# s6-setlock has released the lock. Report before potentially slow cleanup.
+printf '%s\n' "$result"
 # On acquisition failure the caller still needs to read the error file.
 if [ "$result" -eq 0 ]; then
     rm -rf "$lease_dir"
 fi
-printf '%s\n' "$result"
