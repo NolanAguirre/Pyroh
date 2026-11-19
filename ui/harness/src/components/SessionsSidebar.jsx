@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Badge,
   Popup,
@@ -13,6 +13,25 @@ import SidebarHeader from './Sidebar/SidebarHeader'
 import WorkspaceSection from './Sidebar/WorkspaceSection'
 import useSidebarSessions, { LATEST_KEPT } from './Sidebar/useSidebarSessions'
 import { ICONS, Icon } from './Sidebar/icons'
+
+const COLLAPSED_KEY = 'harness.sidebar.collapsed'
+
+const readCollapsed = () => {
+  try {
+    const value = JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]')
+    return new Set(Array.isArray(value) ? value.filter((id) => typeof id === 'string' && id) : [])
+  } catch {
+    return new Set()
+  }
+}
+
+const writeCollapsed = (ids) => {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...ids]))
+  } catch {
+    // ignore
+  }
+}
 
 const SessionsSidebar = ({
   devId,
@@ -66,7 +85,7 @@ const SessionsSidebar = ({
     onPin: (...args) => handlers.current.onPin(...args),
   }), [])
 
-  const [collapsedIds, setCollapsedIds] = useState(() => new Set())
+  const [collapsedIds, setCollapsedIds] = useState(readCollapsed)
   const toggleCollapsed = useCallback((id) => {
     setCollapsedIds((prev) => {
       const next = new Set(prev)
@@ -75,6 +94,10 @@ const SessionsSidebar = ({
       return next
     })
   }, [])
+
+  useEffect(() => {
+    writeCollapsed(collapsedIds)
+  }, [collapsedIds])
 
   const groupedSessions = useMemo(() => {
     const ids = new Set(shownSessions.map(session => session.id))
