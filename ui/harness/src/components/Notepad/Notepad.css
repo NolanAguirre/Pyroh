@@ -41,6 +41,7 @@
 
 .notepad__tab,
 .notepad__add,
+.notepad__rename-button,
 .notepad__retry {
   flex-shrink: 0;
   border: 1px solid var(--border);
@@ -61,14 +62,42 @@
 
 .notepad__tab:focus-visible,
 .notepad__add:focus-visible,
+.notepad__rename-button:focus-visible,
+.notepad__name:focus-visible,
 .notepad__retry:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: -2px;
 }
 
-.notepad__add:disabled {
+.notepad__add:disabled,
+.notepad__rename-button:disabled {
   opacity: 0.5;
   cursor: wait;
+}
+
+.notepad__rename {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.notepad__rename label,
+.notepad__rename .notepad__error {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+}
+
+.notepad__name {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  padding: 0.375rem 0.5rem;
+  background: var(--bg-elev);
+  color: inherit;
+  font: inherit;
 }
 
 .notepad__text {

@@ -379,6 +379,7 @@ const api = {
   deleteMemory: (id) => fetch(at(null, `/api/memory/memories/${encodeURIComponent(id)}`), { method: 'DELETE' }).then(empty),
   listNoteFiles: () => fetch(at(null, '/api/notepad/files')).then(json),
   createNoteFile: (name) => post(at(null, '/api/notepad/files'), { name }),
+  renameNoteFile: (file, displayName) => send('PATCH', at(null, '/api/notepad/files'), { file, displayName }).then(json),
   getNote: (file) => fetch(at(null, `/api/notepad${file === undefined ? '' : `?file=${encodeURIComponent(file)}`}`)).then(json),
   saveNote: (text, file) => send('PUT', at(null, `/api/notepad${file === undefined ? '' : `?file=${encodeURIComponent(file)}`}`), { text }).then(json),
   getCodeStats: (workspace, { signal } = {}) => {

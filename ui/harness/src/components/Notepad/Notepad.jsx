@@ -17,6 +17,11 @@ const saveNote = (text, file) => {
 const Notepad = ({ devId }) => {
   const id = useId()
   const [files, setFiles] = useState([DEFAULT_FILE])
+  const [displayNames, setDisplayNames] = useState({})
+  const [rename, setRename] = useState(null)
+  const [renaming, setRenaming] = useState(false)
+  const [renameError, setRenameError] = useState('')
+  const namesRevision = useRef(0)
   const [activeFile, setActiveFile] = useState(DEFAULT_FILE)
   const [notes, setNotes] = useState({})
   const [creating, setCreating] = useState(false)
@@ -59,9 +64,12 @@ const Notepad = ({ devId }) => {
 
   useEffect(() => {
     let cancelled = false
+    const revision = namesRevision.current
     api.listNoteFiles()
       .then((body) => {
-        if (!cancelled) setFiles((current) => [...new Set([...body.files, ...current])])
+        if (cancelled) return
+        setFiles((current) => [...new Set([...body.files, ...current])])
+        if (revision === namesRevision.current) setDisplayNames(body.displayNames || {})
       })
       .catch((err) => {
         if (!cancelled) setError(err.message)
@@ -120,6 +128,29 @@ const Notepad = ({ devId }) => {
     }
   }
 
+  const submitRename = async (event) => {
+    event.preventDefault()
+    if (renaming || !rename) return
+    const displayName = rename.name.trim()
+    if (!displayName || displayName.length > 120 || /[\u0000-\u001f\u007f-\u009f]/.test(displayName)) {
+      setRenameError('Name must be 1–120 characters without control characters')
+      return
+    }
+    setRenaming(true)
+    setRenameError('')
+    try {
+      const body = await api.renameNoteFile(rename.file, displayName)
+      if (!mounted.current) return
+      namesRevision.current += 1
+      setDisplayNames((current) => ({ ...current, [body.file]: body.displayName }))
+      setRename(null)
+    } catch (err) {
+      if (mounted.current) setRenameError(err.message)
+    } finally {
+      if (mounted.current) setRenaming(false)
+    }
+  }
+
   const onTabKeyDown = (event, index) => {
     let next
     if (event.key === 'ArrowRight') next = (index + 1) % files.length
@@ -156,20 +187,50 @@ const Notepad = ({ devId }) => {
                 aria-controls={`${id}-panel`}
                 tabIndex={file === activeFile ? 0 : -1}
                 className="notepad__tab"
+                title={file}
                 onClick={() => selectFile(file)}
                 onKeyDown={(event) => onTabKeyDown(event, index)}
-              >{file}</button>
+              >{displayNames[file] || file}</button>
             ))}
           </div>
           <button type="button" className="notepad__add" onClick={addFile} disabled={creating}>
             {creating ? 'Adding…' : '+ Add file'}
           </button>
+          <button type="button" className="notepad__rename-button" disabled={renaming} onClick={() => {
+            setRename({ file: activeFile, name: displayNames[activeFile] || activeFile })
+            setRenameError('')
+          }}>Rename</button>
         </div>
+        {rename && <form className="notepad__rename" onSubmit={submitRename}>
+          <label htmlFor={`${id}-name`}>Name for {displayNames[rename.file] || rename.file}</label>
+          <input
+            id={`${id}-name`}
+            className="notepad__name"
+            value={rename.name}
+            onChange={(event) => setRename({ ...rename, name: event.target.value })}
+            maxLength={120}
+            required
+            autoFocus
+            disabled={renaming}
+            aria-invalid={Boolean(renameError)}
+            aria-describedby={renameError ? `${id}-rename-error` : undefined}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                event.stopPropagation()
+                if (!renaming) setRename(null)
+              }
+            }}
+          />
+          <button type="submit" className="notepad__rename-button" disabled={renaming}>{renaming ? 'Saving…' : 'Save name'}</button>
+          <button type="button" className="notepad__rename-button" disabled={renaming} onClick={() => setRename(null)}>Cancel</button>
+          {renameError && <p id={`${id}-rename-error`} className="notepad__error" role="alert">{renameError}</p>}
+        </form>}
         <div className="notepad__body" role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-tab-${files.indexOf(activeFile)}`}>
           <DevScope id="5dty75y">
             <FormTextarea
               className="form__textarea notepad__text"
-              aria-label={activeFile}
+              aria-label={displayNames[activeFile] || activeFile}
               placeholder={loaded ? 'Write anything…' : note?.error ? 'Unable to load note' : 'Loading…'}
               disabled={!loaded}
               field={{ value: text, onChange }}
