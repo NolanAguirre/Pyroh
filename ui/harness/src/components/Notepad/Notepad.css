@@ -15,12 +15,60 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  min-width: 0;
   gap: 0.5rem;
 }
 
 .notepad__title {
   margin: 0;
   font-size: 1rem;
+}
+
+.notepad__files {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.notepad__tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 0.25rem;
+  overflow-x: auto;
+}
+
+.notepad__tab,
+.notepad__add,
+.notepad__retry {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  padding: 0.375rem 0.5rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.notepad__tab[aria-selected="true"] {
+  border-color: currentColor;
+  font-weight: 600;
+}
+
+.notepad__tab:focus-visible,
+.notepad__add:focus-visible,
+.notepad__retry:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}
+
+.notepad__add:disabled {
+  opacity: 0.5;
+  cursor: wait;
 }
 
 .notepad__text {

@@ -377,8 +377,10 @@ const api = {
   createMemory: (memory) => post(at(null, '/api/memory/memories'), memory),
   updateMemory: (id, patch) => send('PATCH', at(null, `/api/memory/memories/${encodeURIComponent(id)}`), patch).then(json),
   deleteMemory: (id) => fetch(at(null, `/api/memory/memories/${encodeURIComponent(id)}`), { method: 'DELETE' }).then(empty),
-  getNote: () => fetch(at(null, '/api/notepad')).then(json),
-  saveNote: (text) => send('PUT', at(null, '/api/notepad'), { text }).then(json),
+  listNoteFiles: () => fetch(at(null, '/api/notepad/files')).then(json),
+  createNoteFile: (name) => post(at(null, '/api/notepad/files'), { name }),
+  getNote: (file) => fetch(at(null, `/api/notepad${file === undefined ? '' : `?file=${encodeURIComponent(file)}`}`)).then(json),
+  saveNote: (text, file) => send('PUT', at(null, `/api/notepad${file === undefined ? '' : `?file=${encodeURIComponent(file)}`}`), { text }).then(json),
   getCodeStats: (workspace, { signal } = {}) => {
     const target = fsTarget(workspace)
     return fetch(at(target.machine, `/api/analytics/code-stats?${target.query({})}`), { signal }).then(json)
