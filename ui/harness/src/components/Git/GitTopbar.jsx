@@ -1,4 +1,4 @@
-import { Button, DevScope, Popup, SelectDisplay } from 'component-library'
+import { Button, DevScope, DropdownTypeahead, DropdownTypeaheadMenu, DropdownTypeaheadTrigger, Popup, SelectDisplay } from 'component-library'
 import NewBranchForm from './NewBranchForm'
 
 const GitTopbar = ({
@@ -57,14 +57,17 @@ const GitTopbar = ({
         {status && (
           <div className="git-topbar__branch">
             <DevScope id="8f1tz86" state={{ branch: status.branch || null, count: branchOptions.length }}>
-              <SelectDisplay
-                className="editor-topbar__workspace git-topbar__branch-select"
-                aria-label="Branch"
-                selected={currentOption}
-                options={branchOptions}
-                select={switchBranch}
-                disabled={Boolean(busy)}
-              />
+              <div className="git-topbar__branch-select">
+                <DropdownTypeahead
+                  defaultValue={currentOption}
+                  options={branchOptions}
+                  change={switchBranch}
+                  filter
+                >
+                  <DropdownTypeaheadTrigger aria-label="Branch" disabled={Boolean(busy)} />
+                  <DropdownTypeaheadMenu filterPlaceholder="Find a branch…" emptyMessage="No branches" />
+                </DropdownTypeahead>
+              </div>
             </DevScope>
             <Popup devId="4d3lhkv" panelClassName="new-session-panel">
               <NewBranchForm
