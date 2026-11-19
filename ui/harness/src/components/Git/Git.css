@@ -8,15 +8,15 @@
 }
 
 .git-topbar__branch-select {
-  flex: 0 1 280px;
-  min-width: 160px;
-  max-width: 280px;
+  flex: 0 1 480px;
+  min-width: 280px;
+  max-width: 480px;
 }
 
 .git-topbar__branch-select .form-dropdown__trigger {
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 15px;
 }
 
 .git-topbar__branch-select .form-dropdown__trigger:disabled {
