@@ -151,6 +151,22 @@
   word-break: normal;
 }
 
+.transcript__mermaid {
+  margin: 6px 0;
+  padding: 8px;
+  overflow-x: auto;
+  white-space: normal;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.transcript__mermaid svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
 .transcript__thinking-block {
   background: rgba(255, 255, 255, 0.03);
   border-left: 2px solid var(--accent);

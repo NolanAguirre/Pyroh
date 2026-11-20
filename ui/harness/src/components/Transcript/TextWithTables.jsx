@@ -2,6 +2,7 @@ import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { DevScope } from 'component-library'
+import MermaidDiagram from './MermaidDiagram'
 
 const fenceOpen = (line) => {
   const match = line.match(/^(\s*)(`{3,}|~{3,})(.*)$/)
@@ -96,8 +97,9 @@ const splitMarkdownTables = (text) => {
         body.push(lines[index].replace(/\r$/, ''))
         index += 1
       }
-      if (index < lines.length) index += 1
-      parts.push({ kind: 'code', language: languageOf(open.info), text: body.join('\n') })
+      const closed = index < lines.length
+      if (closed) index += 1
+      parts.push({ kind: 'code', language: languageOf(open.info), text: body.join('\n'), closed })
       continue
     }
     const next = lines[index + 1]?.replace(/\r$/, '')
@@ -134,6 +136,15 @@ const TextWithTables = ({ text }) => {
             <div key={index} className="transcript__table">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
             </div>
+          )
+        }
+        if (part.kind === 'code' && part.closed && part.language.toLowerCase() === 'mermaid') {
+          return (
+            <MermaidDiagram
+              key={index}
+              code={part.text}
+              fallback={<CodeFence language={part.language} code={part.text} />}
+            />
           )
         }
         if (part.kind === 'code') return <CodeFence key={index} language={part.language} code={part.text} />
