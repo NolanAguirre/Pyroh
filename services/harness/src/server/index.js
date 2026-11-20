@@ -6,6 +6,7 @@ const routes = require('./routes')
 const analyticsRoutes = require('./analyticsRoutes')
 const { startMaintenance } = require('./maintenance')
 const { UPLOAD_JSON_LIMIT } = require('../store/imageStore')
+const { refreshModels } = require('../../scripts/refresh-models')
 
 const createApp = () => {
   const app = express()
@@ -22,8 +23,13 @@ const createApp = () => {
   return app
 }
 
-const start = () => {
+const start = async () => {
   workspaceStore.ensureLayout(config.writeDir)
+  try {
+    await refreshModels()
+  } catch (err) {
+    process.stderr.write(`Model refresh failed; continuing with cached models: ${err && err.message ? err.message : err}\n`)
+  }
   let reconciled
   sessionIndex.waitForInitialSeed(new Promise(resolve => { reconciled = resolve }))
   const app = createApp()
@@ -53,6 +59,11 @@ const start = () => {
   return server
 }
 
-if (require.main === module) start()
+if (require.main === module) {
+  start().catch(err => {
+    process.stderr.write(`${err && err.stack ? err.stack : err}\n`)
+    process.exitCode = 1
+  })
+}
 
 module.exports = { createApp, start }

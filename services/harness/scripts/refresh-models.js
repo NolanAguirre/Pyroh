@@ -25,7 +25,7 @@ const listModels = async (name) => {
   }
 }
 
-const main = async () => {
+const refreshModels = async () => {
   const current = readCurrent()
   const next = {}
   await Promise.all(listProviders().map(async (name) => {
@@ -41,7 +41,11 @@ const main = async () => {
   fs.writeFileSync(FILE, `${JSON.stringify(ordered, null, 2)}\n`)
 }
 
-main().then(() => process.exit(0), (err) => {
-  process.stderr.write(`${err && err.stack ? err.stack : err}\n`)
-  process.exit(1)
-})
+if (require.main === module) {
+  refreshModels().then(() => process.exit(0), (err) => {
+    process.stderr.write(`${err && err.stack ? err.stack : err}\n`)
+    process.exit(1)
+  })
+}
+
+module.exports = { refreshModels }
